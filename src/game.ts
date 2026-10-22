@@ -1,0 +1,579 @@
+import {
+  BoxGeometry,
+  CanvasTexture,
+  ConeGeometry,
+  CylinderGeometry,
+  DirectionalLight,
+  Entity,
+  InputComponent,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  PhysicsBody,
+  PhysicsManipulation,
+  PhysicsShape,
+  PhysicsShapeType,
+  PhysicsState,
+  PhysicsSystem,
+  PlaneGeometry,
+  Quaternion,
+  SphereGeometry,
+  TorusGeometry,
+  Vector3,
+  createSystem,
+} from '@iwsdk/core';
+import { Marble, MarbleKinds } from './marble-component.js';
+
+// ---- Layout (meters). Everything sits within arm's reach of a seated player.
+const TABLE_Y = 0.72;
+const TABLE_CENTER_Z = -0.55;
+const TABLE_RADIUS = 0.36;
+const RING_RADIUS = 0.13; // the "গোল্লা" circle
+const MARBLE_R = 0.02;
+const SHOOTER_START_Z = TABLE_CENTER_Z + 0.27;
+// ---- Slingshot tuning
+const GRAB_RADIUS = 0.16;
+const MAX_PULL = 0.18;
+const MIN_PULL = 0.03;
+const MAX_SPEED = 3.2;
+const PINCH_START = 0.92;
+const PINCH_HOLD = 0.6;
+const MOUSE_METERS_PER_PX = 0.0006;
+
+type Phase = 'aim' | 'rolling' | 'message';
+type HandName = 'left' | 'right';
+
+interface LevelDef {
+  targets: number;
+  shots: number;
+}
+
+function levelDef(level: number): LevelDef {
+  const targets = Math.min(2 + Math.ceil(level * 0.8), 10);
+  return { targets, shots: targets + 2 };
+}
+
+const MAX_LEVEL = 10;
+
+export class GameSystem extends createSystem({}) {
+  private phase: Phase = 'aim';
+  private level = 1;
+  private shotsLeft = 0;
+  private totalTargets = 0;
+  private outCount = 0;
+  private messageTimer = 0;
+  private restTimer = 0;
+  private rollTimer = 0;
+  private won = false;
+  private messageText = '';
+
+  private shooter!: Entity;
+  private targets: Entity[] = [];
+  private tableEntity!: Entity;
+  private hudMesh!: Mesh;
+  private hudCanvas!: HTMLCanvasElement;
+  private hudCtx!: CanvasRenderingContext2D;
+  private hudTexture!: CanvasTexture;
+  private hudDirty = true;
+
+  // aim arrow
+  private arrowShaft!: Mesh;
+  private arrowHead!: Mesh;
+  private arrowMat!: MeshBasicMaterial;
+  private shooterMat!: MeshStandardMaterial;
+
+  // sharing geometry/materials across marbles
+  private marbleGeo!: SphereGeometry;
+  private targetMats: MeshStandardMaterial[] = [];
+
+  // input state
+  private dragging = false;
+  private dragHand: HandName | 'mouse' | null = null;
+  private anchor = new Vector3();
+  private handPos = new Vector3();
+  private shotDir = new Vector3();
+  private pullLen = 0;
+  private tmp = new Vector3();
+  private identityQuat = new Quaternion();
+  private shooterPos = new Vector3();
+  private pinching: Record<HandName, boolean> = { left: false, right: false };
+  private mouseDown = false;
+  private mouseAnchorX = 0;
+  private mouseAnchorY = 0;
+  private mouseX = 0;
+  private mouseY = 0;
+
+  init(): void {
+    this.buildStage();
+    this.buildArrow();
+    this.buildHud();
+    this.startLevel(1);
+
+    const down = (e: PointerEvent) => {
+      if (this.phase !== 'aim') return;
+      this.mouseDown = true;
+      this.mouseAnchorX = this.mouseX = e.clientX;
+      this.mouseAnchorY = this.mouseY = e.clientY;
+    };
+    const move = (e: PointerEvent) => {
+      this.mouseX = e.clientX;
+      this.mouseY = e.clientY;
+    };
+    const up = () => {
+      this.mouseDown = false;
+    };
+    window.addEventListener('pointerdown', down);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    this.cleanupFuncs.push(() => {
+      window.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    });
+  }
+
+  // ------------------------------------------------------------------ build
+  private buildStage(): void {
+    const world = this.world;
+
+    // warm low sun, like a late afternoon in a village courtyard
+    const sun = new DirectionalLight(0xffc288, 2.2);
+    sun.position.set(-1.5, 2.5, 1);
+    world.createTransformEntity(sun);
+
+    // earthen courtyard floor (visual only)
+    const floor = new Mesh(
+      new CylinderGeometry(6, 6, 0.02, 48),
+      new MeshStandardMaterial({ color: 0x6b4a33, roughness: 1 }),
+    );
+    floor.position.set(0, -0.01, TABLE_CENTER_Z);
+    world.createTransformEntity(floor);
+
+    // the playing ground: a round disc of packed clay at hand height
+    const table = new Mesh(
+      new CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.04, 64),
+      new MeshStandardMaterial({ color: 0xb98a5e, roughness: 0.95 }),
+    );
+    table.position.set(0, TABLE_Y - 0.02, TABLE_CENTER_Z);
+    this.tableEntity = world.createTransformEntity(table);
+    this.tableEntity.addComponent(PhysicsShape, {
+      shape: PhysicsShapeType.Cylinder,
+      dimensions: [TABLE_RADIUS, 0.04, 0],
+      friction: 0.7,
+      restitution: 0.2,
+    });
+    this.tableEntity.addComponent(PhysicsBody, { state: PhysicsState.Static });
+
+    // pedestal so the clay disc is not floating
+    const stem = new Mesh(
+      new CylinderGeometry(0.06, 0.1, TABLE_Y - 0.04, 24),
+      new MeshStandardMaterial({ color: 0x5a3d2a, roughness: 1 }),
+    );
+    stem.position.set(0, (TABLE_Y - 0.04) / 2, TABLE_CENTER_Z);
+    world.createTransformEntity(stem);
+
+    // the goalla ring drawn in the clay
+    const ring = new Mesh(
+      new TorusGeometry(RING_RADIUS, 0.003, 8, 96),
+      new MeshStandardMaterial({
+        color: 0xfff2d6,
+        emissive: 0x4a3a20,
+        roughness: 0.6,
+      }),
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(0, TABLE_Y + 0.002, TABLE_CENTER_Z);
+    world.createTransformEntity(ring);
+
+    // shared marble geometry + a palette of glass-like colors
+    this.marbleGeo = new SphereGeometry(MARBLE_R, 24, 16);
+    const palette = [0x3fa7ff, 0xff5a5a, 0x5fe38a, 0xffd23f, 0xc77dff];
+    for (const c of palette) {
+      this.targetMats.push(
+        new MeshStandardMaterial({
+          color: c,
+          roughness: 0.08,
+          metalness: 0.1,
+          emissive: c,
+          emissiveIntensity: 0.12,
+        }),
+      );
+    }
+    this.shooterMat = new MeshStandardMaterial({
+      color: 0xfafafa,
+      roughness: 0.05,
+      metalness: 0.2,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.1,
+    });
+    this.shooter = this.spawnMarble(
+      new Vector3(0, TABLE_Y + MARBLE_R + 0.001, SHOOTER_START_Z),
+      MarbleKinds.Shooter,
+      this.shooterMat,
+      1.4,
+    );
+  }
+
+  private spawnMarble(
+    pos: Vector3,
+    kind: (typeof MarbleKinds)[keyof typeof MarbleKinds],
+    mat: MeshStandardMaterial,
+    densityScale: number,
+  ): Entity {
+    const mesh = new Mesh(this.marbleGeo, mat);
+    mesh.position.copy(pos);
+    const e = this.world.createTransformEntity(mesh);
+    e.addComponent(Marble, { kind });
+    e.addComponent(PhysicsShape, {
+      shape: PhysicsShapeType.Sphere,
+      dimensions: [MARBLE_R, 0, 0],
+      density: 2.5 * densityScale,
+      restitution: 0.55,
+      friction: 0.5,
+    });
+    e.addComponent(PhysicsBody, {
+      state: PhysicsState.Dynamic,
+      linearDamping: 0.9,
+      angularDamping: 0.6,
+    });
+    return e;
+  }
+
+  private buildArrow(): void {
+    this.arrowMat = new MeshBasicMaterial({
+      color: 0x66ff88,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const shaftGeo = new BoxGeometry(0.008, 0.004, 1);
+    shaftGeo.translate(0, 0, 0.5);
+    this.arrowShaft = new Mesh(shaftGeo, this.arrowMat);
+    const headGeo = new ConeGeometry(0.02, 0.04, 16);
+    headGeo.rotateX(Math.PI / 2); // cone tip along +Z
+    this.arrowHead = new Mesh(headGeo, this.arrowMat);
+    this.arrowShaft.visible = false;
+    this.arrowHead.visible = false;
+    this.world.createTransformEntity(this.arrowShaft);
+    this.world.createTransformEntity(this.arrowHead);
+  }
+
+  private buildHud(): void {
+    this.hudCanvas = document.createElement('canvas');
+    this.hudCanvas.width = 640;
+    this.hudCanvas.height = 256;
+    this.hudCtx = this.hudCanvas.getContext('2d') as CanvasRenderingContext2D;
+    this.hudTexture = new CanvasTexture(this.hudCanvas);
+    this.hudMesh = new Mesh(
+      new PlaneGeometry(0.5, 0.2),
+      new MeshBasicMaterial({ map: this.hudTexture, transparent: true }),
+    );
+    this.hudMesh.position.set(0, TABLE_Y + 0.3, TABLE_CENTER_Z - 0.25);
+    this.hudMesh.rotation.x = -0.35;
+    this.world.createTransformEntity(this.hudMesh);
+  }
+
+  private drawHud(): void {
+    const c = this.hudCtx;
+    c.clearRect(0, 0, 640, 256);
+    c.fillStyle = 'rgba(30, 18, 10, 0.78)';
+    c.fillRect(0, 0, 640, 256);
+    c.strokeStyle = '#ffd9a0';
+    c.lineWidth = 6;
+    c.strokeRect(3, 3, 634, 250);
+    c.fillStyle = '#ffe9c4';
+    c.textAlign = 'center';
+    c.font = 'bold 54px sans-serif';
+    c.fillText('গুটি  •  Level ' + this.level, 320, 78);
+    c.font = '40px sans-serif';
+    if (this.phase === 'message') {
+      c.fillStyle = this.won ? '#8dff9d' : '#ff9d8d';
+      c.fillText(this.messageText, 320, 150);
+    } else {
+      c.fillText(
+        'Out ' + this.outCount + ' / ' + this.totalTargets + '     Shots ' + this.shotsLeft,
+        320,
+        150,
+      );
+    }
+    c.font = '30px sans-serif';
+    c.fillStyle = '#cdb99a';
+    c.fillText(
+      this.phase === 'aim'
+        ? 'Pinch the white marble, pull back, release'
+        : this.phase === 'rolling'
+          ? ' '
+          : ' ',
+      320,
+      215,
+    );
+    this.hudTexture.needsUpdate = true;
+  }
+
+  // ------------------------------------------------------------------ levels
+  private startLevel(level: number): void {
+    this.level = level;
+    const def = levelDef(level);
+    this.shotsLeft = def.shots;
+    this.totalTargets = def.targets;
+    this.outCount = 0;
+    this.won = false;
+
+    for (const t of this.targets) t.dispose();
+    this.targets.length = 0;
+
+    // cluster targets inside the ring in a tight, slightly jittered spiral
+    const n = def.targets;
+    const spread = Math.min(RING_RADIUS * 0.72, 0.03 + n * 0.007);
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.399963; // golden angle
+      const r = n === 1 ? 0 : spread * Math.sqrt((i + 0.5) / n);
+      this.tmp.set(
+        Math.cos(a) * r,
+        TABLE_Y + MARBLE_R + 0.001,
+        TABLE_CENTER_Z + Math.sin(a) * r,
+      );
+      const mat = this.targetMats[i % this.targetMats.length];
+      this.targets.push(
+        this.spawnMarble(this.tmp, MarbleKinds.Target, mat, 1),
+      );
+    }
+    this.resetShooter();
+    this.phase = 'aim';
+    this.hudDirty = true;
+  }
+
+  private resetShooter(): void {
+    const physics = this.world.getSystem(PhysicsSystem);
+    if (!physics) return;
+    this.tmp.set(0, TABLE_Y + MARBLE_R + 0.001, SHOOTER_START_Z);
+    physics.setBodyTransform(this.shooter, {
+      position: this.tmp,
+      quaternion: this.identityQuat,
+    });
+  }
+
+  // ------------------------------------------------------------------ input
+  /** Returns true if the given hand is currently pinching (with hysteresis). */
+  private readPinch(hand: HandName): boolean {
+    const adapter = this.input.xr.visualAdapters.hand[hand];
+    if (adapter.connected) {
+      const s = adapter.getPinchStrength();
+      return this.pinching[hand] ? s >= PINCH_HOLD : s >= PINCH_START;
+    }
+    // controller fallback: trigger acts as the pinch
+    const pad = this.input.xr.gamepads[hand];
+    return pad ? pad.getButtonPressed(InputComponent.Trigger) : false;
+  }
+
+  private readHandPos(hand: HandName, out: Vector3): boolean {
+    const hand3d = this.input.xr.visualAdapters.hand[hand];
+    const space =
+      (hand3d.connected ? hand3d.gripSpace : undefined) ??
+      this.player.gripSpaces[hand];
+    if (!space) return false;
+    space.getWorldPosition(out);
+    return true;
+  }
+
+  private updateInput(): void {
+    this.shooter.object3D!.getWorldPosition(this.shooterPos);
+    let nearHand = false;
+
+    if (!this.dragging) {
+      // Look for a hand that starts a pinch near the shooter marble.
+      for (const hand of ['right', 'left'] as HandName[]) {
+        const p = this.readPinch(hand);
+        const wasPinching = this.pinching[hand];
+        this.pinching[hand] = p;
+        if (!this.readHandPos(hand, this.handPos)) continue;
+        const near = this.handPos.distanceTo(this.shooterPos) < GRAB_RADIUS;
+        if (near) nearHand = true;
+        if (p && !wasPinching && near) {
+          this.dragging = true;
+          this.dragHand = hand;
+          this.anchor.copy(this.handPos);
+          break;
+        }
+      }
+      if (!this.dragging && this.mouseDown) {
+        this.dragging = true;
+        this.dragHand = 'mouse';
+      }
+    } else if (this.dragHand === 'mouse') {
+      if (!this.mouseDown) {
+        this.releaseShot();
+      }
+    } else {
+      const hand = this.dragHand as HandName;
+      const p = this.readPinch(hand);
+      this.pinching[hand] = p;
+      if (!p) {
+        this.releaseShot();
+      } else if (this.readHandPos(hand, this.handPos)) {
+        // pull vector is anchor -> hand; the marble flies the opposite way
+        this.shotDir.copy(this.anchor).sub(this.handPos);
+        this.shotDir.y = 0;
+        this.pullLen = Math.min(this.shotDir.length(), MAX_PULL);
+      }
+    }
+
+    if (this.dragging && this.dragHand === 'mouse') {
+      this.shotDir.set(
+        (this.mouseAnchorX - this.mouseX) * MOUSE_METERS_PER_PX,
+        0,
+        (this.mouseAnchorY - this.mouseY) * MOUSE_METERS_PER_PX,
+      );
+      this.pullLen = Math.min(this.shotDir.length(), MAX_PULL);
+    }
+
+    // marble glows when a hand is close enough to grab it
+    this.shooterMat.emissiveIntensity = this.dragging
+      ? 0.6
+      : nearHand
+        ? 0.45
+        : 0.1;
+
+    this.updateArrow();
+  }
+
+  private updateArrow(): void {
+    const show =
+      this.dragging && this.phase === 'aim' && this.pullLen > MIN_PULL * 0.5;
+    this.arrowShaft.visible = show;
+    this.arrowHead.visible = show;
+    if (!show) return;
+    const power = this.pullLen / MAX_PULL;
+    const len = 0.05 + power * 0.25;
+    const yaw = Math.atan2(this.shotDir.x, this.shotDir.z);
+    this.arrowShaft.position.copy(this.shooterPos);
+    this.arrowShaft.position.y = TABLE_Y + 0.006;
+    this.arrowShaft.rotation.set(0, yaw, 0);
+    this.arrowShaft.scale.set(1, 1, len);
+    this.arrowHead.position.copy(this.arrowShaft.position);
+    this.arrowHead.position.x += Math.sin(yaw) * (len + 0.02);
+    this.arrowHead.position.z += Math.cos(yaw) * (len + 0.02);
+    this.arrowHead.rotation.set(0, yaw, 0);
+    this.arrowMat.color.setHSL(0.33 - 0.33 * power, 1, 0.55); // green -> red
+  }
+
+  private releaseShot(): void {
+    const fire = this.pullLen >= MIN_PULL && this.shotDir.lengthSq() > 1e-8;
+    this.dragging = false;
+    this.dragHand = null;
+    this.mouseDown = false;
+    if (fire && this.phase === 'aim') {
+      const power = this.pullLen / MAX_PULL;
+      this.shotDir.normalize().multiplyScalar(MAX_SPEED * (0.15 + 0.85 * power));
+      this.shooter.addComponent(PhysicsManipulation, {
+        linearVelocity: [this.shotDir.x, 0, this.shotDir.z],
+      });
+      this.shotsLeft -= 1;
+      this.phase = 'rolling';
+      this.rollTimer = 0;
+      this.restTimer = 0;
+      this.hudDirty = true;
+    }
+    this.pullLen = 0;
+  }
+
+  // ------------------------------------------------------------------ rules
+  private isOut(e: Entity): boolean {
+    const o = e.object3D;
+    if (!o) return true;
+    const dx = o.position.x;
+    const dz = o.position.z - TABLE_CENTER_Z;
+    return (
+      o.position.y < TABLE_Y - 0.1 ||
+      Math.sqrt(dx * dx + dz * dz) > RING_RADIUS + MARBLE_R * 0.5
+    );
+  }
+
+  private speedOf(e: Entity): number {
+    const v = e.getVectorView(PhysicsBody, '_linearVelocity');
+    return Math.hypot(v[0], v[1], v[2]);
+  }
+
+  private updateRolling(delta: number): void {
+    this.rollTimer += delta;
+    let moving = false;
+    if (this.speedOf(this.shooter) > 0.04) moving = true;
+    for (const t of this.targets) {
+      if (t.object3D && this.speedOf(t) > 0.04) {
+        moving = true;
+        break;
+      }
+    }
+    this.restTimer = moving ? 0 : this.restTimer + delta;
+    const shooterFell =
+      (this.shooter.object3D?.position.y ?? 0) < TABLE_Y - 0.1;
+    if (this.restTimer > 0.5 || this.rollTimer > 9 || shooterFell) {
+      this.resolveShot();
+    }
+  }
+
+  private resolveShot(): void {
+    let out = 0;
+    for (const t of this.targets) if (this.isOut(t)) out++;
+    if (out !== this.outCount) {
+      this.outCount = out;
+    }
+    if (out >= this.totalTargets) {
+      this.won = true;
+      this.messageText =
+        this.level >= MAX_LEVEL ? 'তুমি চ্যাম্পিয়ন!' : 'Level clear!';
+      this.beginMessage(1.8);
+    } else if (this.shotsLeft <= 0) {
+      this.won = false;
+      this.messageText = 'Out of shots — try again';
+      this.beginMessage(2);
+    } else {
+      this.resetShooter();
+      this.phase = 'aim';
+    }
+    this.hudDirty = true;
+  }
+
+  private beginMessage(seconds: number): void {
+    this.phase = 'message';
+    this.messageTimer = seconds;
+  }
+
+  // ------------------------------------------------------------------ frame
+  update(delta: number): void {
+    if (this.phase === 'aim') {
+      this.updateInput();
+    } else {
+      this.arrowShaft.visible = false;
+      this.arrowHead.visible = false;
+      this.dragging = false;
+    }
+
+    if (this.phase === 'rolling') {
+      this.updateRolling(delta);
+    } else if (this.phase === 'message') {
+      this.messageTimer -= delta;
+      if (this.messageTimer <= 0) {
+        if (this.won) {
+          this.startLevel(this.level >= MAX_LEVEL ? 1 : this.level + 1);
+        } else {
+          this.startLevel(this.level);
+        }
+      }
+    }
+
+    // keep the "out" counter live while marbles roll
+    if (this.phase === 'rolling') {
+      let out = 0;
+      for (const t of this.targets) if (this.isOut(t)) out++;
+      if (out !== this.outCount) {
+        this.outCount = out;
+        this.hudDirty = true;
+      }
+    }
+
+    if (this.hudDirty) {
+      this.hudDirty = false;
+      this.drawHud();
+    }
+  }
+}
