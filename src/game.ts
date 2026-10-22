@@ -1,6 +1,5 @@
 import {
   BoxGeometry,
-  CanvasTexture,
   ConeGeometry,
   CylinderGeometry,
   DirectionalLight,
@@ -15,14 +14,17 @@ import {
   PhysicsShapeType,
   PhysicsState,
   PhysicsSystem,
-  PlaneGeometry,
+  RingGeometry,
   Quaternion,
   SphereGeometry,
   TorusGeometry,
   Vector3,
   createSystem,
 } from '@iwsdk/core';
+import { sfx } from './audio.js';
 import { Marble, MarbleKinds } from './marble-component.js';
+import { modeState } from './mode.js';
+import { isFontReady, TextPanel } from './panel.js';
 
 // ---- Layout (meters). Everything sits within arm's reach of a seated player.
 const TABLE_Y = 0.72;
@@ -70,11 +72,17 @@ export class GameSystem extends createSystem({}) {
   private shooter!: Entity;
   private targets: Entity[] = [];
   private tableEntity!: Entity;
-  private hudMesh!: Mesh;
-  private hudCanvas!: HTMLCanvasElement;
-  private hudCtx!: CanvasRenderingContext2D;
-  private hudTexture!: CanvasTexture;
+  private hud!: TextPanel;
   private hudDirty = true;
+  private lastMode = '';
+  private fontWasReady = false;
+  private hintRing!: Mesh;
+  private firedOnce = false;
+  private noHands = false;
+  private elapsed = 0;
+  private prevSpeeds: number[] = [];
+  private modeObjects: Mesh[] = [];
+  private ringMesh!: Mesh;
 
   // aim arrow
   private arrowShaft!: Mesh;
@@ -107,7 +115,13 @@ export class GameSystem extends createSystem({}) {
     this.buildStage();
     this.buildArrow();
     this.buildHud();
-    this.startLevel(1);
+    this.modeObjects.push(
+      this.hud.mesh,
+      this.hintRing,
+      this.ringMesh,
+      this.shooter.object3D as Mesh,
+    );
+    this.setModeVisible(false);
 
     const down = (e: PointerEvent) => {
       if (this.phase !== 'aim') return;
@@ -184,6 +198,7 @@ export class GameSystem extends createSystem({}) {
     ring.rotation.x = Math.PI / 2;
     ring.position.set(0, TABLE_Y + 0.002, TABLE_CENTER_Z);
     world.createTransformEntity(ring);
+    this.ringMesh = ring;
 
     // shared marble geometry + a palette of glass-like colors
     this.marbleGeo = new SphereGeometry(MARBLE_R, 24, 16);
@@ -258,55 +273,48 @@ export class GameSystem extends createSystem({}) {
   }
 
   private buildHud(): void {
-    this.hudCanvas = document.createElement('canvas');
-    this.hudCanvas.width = 640;
-    this.hudCanvas.height = 256;
-    this.hudCtx = this.hudCanvas.getContext('2d') as CanvasRenderingContext2D;
-    this.hudTexture = new CanvasTexture(this.hudCanvas);
-    this.hudMesh = new Mesh(
-      new PlaneGeometry(0.5, 0.2),
-      new MeshBasicMaterial({ map: this.hudTexture, transparent: true }),
+    this.hud = new TextPanel(0.5, 0.2);
+    this.hud.mesh.position.set(0, TABLE_Y + 0.27, TABLE_CENTER_Z - 0.3);
+    this.hud.mesh.rotation.x = -0.45;
+    this.world.createTransformEntity(this.hud.mesh);
+
+    this.hintRing = new Mesh(
+      new RingGeometry(0.03, 0.036, 40),
+      new MeshBasicMaterial({
+        color: 0xffee88,
+        transparent: true,
+        opacity: 0.9,
+      }),
     );
-    this.hudMesh.position.set(0, TABLE_Y + 0.3, TABLE_CENTER_Z - 0.25);
-    this.hudMesh.rotation.x = -0.35;
-    this.world.createTransformEntity(this.hudMesh);
+    this.hintRing.rotation.x = -Math.PI / 2;
+    this.world.createTransformEntity(this.hintRing);
   }
 
   private drawHud(): void {
-    const c = this.hudCtx;
-    c.clearRect(0, 0, 640, 256);
-    c.fillStyle = 'rgba(30, 18, 10, 0.78)';
-    c.fillRect(0, 0, 640, 256);
-    c.strokeStyle = '#ffd9a0';
-    c.lineWidth = 6;
-    c.strokeRect(3, 3, 634, 250);
-    c.fillStyle = '#ffe9c4';
-    c.textAlign = 'center';
-    c.font = 'bold 54px sans-serif';
-    c.fillText('গুটি  •  Level ' + this.level, 320, 78);
-    c.font = '40px sans-serif';
+    const h = this.hud;
+    h.card();
+    h.text('গুটি  •  Level ' + this.level, 70, 52);
     if (this.phase === 'message') {
-      c.fillStyle = this.won ? '#8dff9d' : '#ff9d8d';
-      c.fillText(this.messageText, 320, 150);
+      h.text(this.messageText, 150, 44, this.won ? '#8dff9d' : '#ff9d8d');
     } else {
-      c.fillText(
+      h.text(
         'Out ' + this.outCount + ' / ' + this.totalTargets + '     Shots ' + this.shotsLeft,
-        320,
-        150,
+        148,
+        40,
       );
     }
-    c.font = '30px sans-serif';
-    c.fillStyle = '#cdb99a';
-    c.fillText(
-      this.phase === 'aim'
-        ? 'Pinch the white marble, pull back, release'
-        : this.phase === 'rolling'
-          ? ' '
-          : ' ',
-      320,
-      215,
-    );
-    this.hudTexture.needsUpdate = true;
+    let hint = '';
+    if (this.noHands) hint = 'হাত দুটো সামনে আনুন';
+    else if (this.phase === 'aim')
+      hint = this.firedOnce
+        ? 'চিমটি দাও • পেছনে টানো • ছাড়ো'
+        : 'সাদা গুটিতে চিমটি দাও, পেছনে টানো, ছাড়ো';
+    h.text(hint, 220, 30, '#cdb99a');
+    h.commit();
+  }
+
+  private setModeVisible(on: boolean): void {
+    for (const m of this.modeObjects) m.visible = on;
   }
 
   // ------------------------------------------------------------------ levels
@@ -320,6 +328,7 @@ export class GameSystem extends createSystem({}) {
 
     for (const t of this.targets) t.dispose();
     this.targets.length = 0;
+    this.prevSpeeds.length = 0;
 
     // cluster targets inside the ring in a tight, slightly jittered spiral
     const n = def.targets;
@@ -337,6 +346,8 @@ export class GameSystem extends createSystem({}) {
         this.spawnMarble(this.tmp, MarbleKinds.Target, mat, 1),
       );
     }
+    this.prevSpeeds.length = n;
+    this.prevSpeeds.fill(0);
     this.resetShooter();
     this.phase = 'aim';
     this.hudDirty = true;
@@ -392,12 +403,14 @@ export class GameSystem extends createSystem({}) {
           this.dragging = true;
           this.dragHand = hand;
           this.anchor.copy(this.handPos);
+          sfx.grab();
           break;
         }
       }
       if (!this.dragging && this.mouseDown) {
         this.dragging = true;
         this.dragHand = 'mouse';
+        sfx.grab();
       }
     } else if (this.dragHand === 'mouse') {
       if (!this.mouseDown) {
@@ -468,6 +481,8 @@ export class GameSystem extends createSystem({}) {
         linearVelocity: [this.shotDir.x, 0, this.shotDir.z],
       });
       this.shotsLeft -= 1;
+      this.firedOnce = true;
+      sfx.shot(power);
       this.phase = 'rolling';
       this.rollTimer = 0;
       this.restTimer = 0;
@@ -497,11 +512,13 @@ export class GameSystem extends createSystem({}) {
     this.rollTimer += delta;
     let moving = false;
     if (this.speedOf(this.shooter) > 0.04) moving = true;
-    for (const t of this.targets) {
-      if (t.object3D && this.speedOf(t) > 0.04) {
-        moving = true;
-        break;
-      }
+    for (let i = 0; i < this.targets.length; i++) {
+      const t = this.targets[i];
+      if (!t.object3D) continue;
+      const sp = this.speedOf(t);
+      if (sp > 0.04) moving = true;
+      if (sp - this.prevSpeeds[i] > 0.12) sfx.clack((sp - this.prevSpeeds[i]) / 1.5);
+      this.prevSpeeds[i] = sp;
     }
     this.restTimer = moving ? 0 : this.restTimer + delta;
     const shooterFell =
@@ -521,10 +538,12 @@ export class GameSystem extends createSystem({}) {
       this.won = true;
       this.messageText =
         this.level >= MAX_LEVEL ? 'তুমি চ্যাম্পিয়ন!' : 'Level clear!';
+      sfx.win();
       this.beginMessage(1.8);
     } else if (this.shotsLeft <= 0) {
       this.won = false;
       this.messageText = 'Out of shots — try again';
+      sfx.lose();
       this.beginMessage(2);
     } else {
       this.resetShooter();
@@ -540,12 +559,63 @@ export class GameSystem extends createSystem({}) {
 
   // ------------------------------------------------------------------ frame
   update(delta: number): void {
+    this.elapsed += delta;
+    if (modeState.mode !== this.lastMode) {
+      const wasGuti = this.lastMode === 'guti';
+      this.lastMode = modeState.mode;
+      if (modeState.mode === 'guti') {
+        this.setModeVisible(true);
+        for (const t of this.targets) if (t.object3D) t.object3D.visible = true;
+        this.firedOnce = false;
+        this.startLevel(1);
+      } else if (wasGuti || this.lastMode !== 'guti') {
+        this.setModeVisible(false);
+        for (const t of this.targets) if (t.object3D) t.object3D.visible = false;
+        this.arrowShaft.visible = false;
+        this.arrowHead.visible = false;
+        this.dragging = false;
+        this.dragHand = null;
+      }
+    }
+    if (modeState.mode !== 'guti') return;
+
+    if (isFontReady() !== this.fontWasReady) {
+      this.fontWasReady = isFontReady();
+      this.hudDirty = true;
+    }
+
+    // XR with no hands/controllers in view: ask the player to raise their hands
+    const hl = this.input.xr.visualAdapters.hand.left.connected;
+    const hr = this.input.xr.visualAdapters.hand.right.connected;
+    const gp = !!(this.input.xr.gamepads.left || this.input.xr.gamepads.right);
+    const inXR = this.world.visibilityState.value !== 'non-immersive';
+    const nh = inXR && !hl && !hr && !gp;
+    if (nh !== this.noHands) {
+      this.noHands = nh;
+      this.hudDirty = true;
+    }
+
     if (this.phase === 'aim') {
       this.updateInput();
     } else {
       this.arrowShaft.visible = false;
       this.arrowHead.visible = false;
       this.dragging = false;
+    }
+
+    // pulsing hint ring on the shooter for the very first shot
+    const showHint =
+      this.phase === 'aim' && !this.firedOnce && !this.dragging;
+    this.hintRing.visible = showHint;
+    if (showHint) {
+      this.shooter.object3D!.getWorldPosition(this.shooterPos);
+      this.hintRing.position.set(
+        this.shooterPos.x,
+        TABLE_Y + 0.004,
+        this.shooterPos.z,
+      );
+      const k = 1 + 0.35 * Math.sin(this.elapsed * 5);
+      this.hintRing.scale.set(k, k, k);
     }
 
     if (this.phase === 'rolling') {
@@ -561,7 +631,6 @@ export class GameSystem extends createSystem({}) {
       }
     }
 
-    // keep the "out" counter live while marbles roll
     if (this.phase === 'rolling') {
       let out = 0;
       for (const t of this.targets) if (this.isOut(t)) out++;

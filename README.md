@@ -1,26 +1,32 @@
-# IWSDK App
+# গুটি · Guti
 
-This project uses `iwsdk.config.json` for declarative scene, asset, component,
-XR, and emulator configuration. Application systems remain explicit in
-`src/index.ts`.
+Hands-only VR village games from Bangladesh, built for the **Meta VR Start Developer Competition 2026**.
+No controllers. Seated. Everything within arm's reach.
 
-```sh
+* **গুলি (Marbles)** – pinch the white marble, pull back, release. Flick the coloured marbles out of the *goalla* ring. 10 levels.
+* **ঘুড়ি কাটাকাটি (Kite Fight)** – pinch and move your hand to fly your kite. Touch the other kites **fast** to cut their strings; touch slowly and they cut you. 60-second rounds.
+
+Built with the Immersive Web SDK (IWSDK, WebXR), TypeScript, Three.js, Havok physics and Vite.
+
+## Play
+
+Open the deployed link in the Meta Quest Browser, tap **Enter XR**, put your hands in front of you.
+On a laptop you can try it with the mouse: click a card, then click-and-drag (drag down/back = pull; in kite mode drag to steer).
+
+## Run locally
+
+```bash
 npm install
-npm run dev
+npm run dev        # https://localhost:8081  (IWER emulator runs automatically in desktop browsers)
+npm run build      # production build in dist/
 ```
 
-Use the Runtime and Editor controls in the managed browser to switch between
-the running experience and its authored scene.
+## Deploy (GitHub Pages)
 
-## Starter content
+Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**. Every push to `main` is built and published by `.github/workflows/deploy.yml`.
 
-The robot and welcome panel are small examples of authored scene content plus
-runtime systems. The robot turns toward the player's head and plays a sound
-when pressed. To remove the robot, delete its scene node, its `RobotSystem`
-registration from `src/index.ts` or `src/index.js`, and its `Robot` registration
-from `src/components.ts` or `src/components.js`; you can then delete the unused
-robot component and system files. To remove the welcome panel, delete its scene
-node and its `PanelSystem` registration from the application entry point.
+## Controls / design notes
 
-- Minimal scene walkthrough: https://iwsdk.dev/guides/01b-minimal-scene.html
-- XR-enabled projects — IWER emulator controls: https://iwsdk.dev/guides/02-testing-experience.html#iwer-controls
+* Input is *pinch → move → release* instead of fast gestures, because hand tracking drops out on quick motion.
+* Controllers still work as a fallback (trigger = pinch), but the whole game is playable with bare hands, including the menu (point + pinch).
+* All sound effects are synthesised at runtime; no audio files.
