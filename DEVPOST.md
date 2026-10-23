@@ -10,8 +10,8 @@
 Every Bangladeshi kid knows two games: গুলি (marbles) and ঘুড়ি কাটাকাটি (kite fighting). Both are played with bare hands, in a courtyard or on a rooftop, and both fit a short, social, seated-friendly VR session. Guti brings them into VR with nothing but your hands.
 
 ## What it does
-* **গুলি:** a clay disc sits at hand height. Pinch the white marble, pull back to see the aim arrow and power colour, release. Knock all coloured marbles out of the গোল্লা ring within your shots. 10 levels.
-* **ঘুড়ি কাটাকাটি:** pinch and move your hand to steer your kite. Touch another kite fast to slice its string; touch slowly and you get cut. 60-second rounds with a best score.
+* **Marbles (গুলি):** a clay disc sits at hand height. Pinch the white marble, pull back to see the aim arrow, power colour and aim dots, release. Knock every coloured marble out of the গোল্লা ring. 10 hand-designed levels add rocks to bank around, heavy steel marbles, golden bonus marbles (extra shot), shrinking rings, combos, a score and 1-3 star ratings that are saved.
+* **Kite Fight (ঘুড়ি কাটাকাটি):** pinch and move your hand to steer your kite. Touch another kite fast to cut its string; touch slowly and you get cut. Four rival kite types (normal, fast, armored, golden +5 s), wind gusts, combo multipliers, a "sharp string" pickup and rising waves in 60-second rounds.
 
 ## Hand interaction
 Everything is *pinch, move, release*. Hand tracking drops out during fast motion, so shots use a slow pull-back (slingshot) instead of a fling, and the kite follows the hand with a little lag like a real kite. Menus are big cards you point at and pinch. The whole play space is within about two feet in front of a seated player. Controllers work as a fallback (trigger = pinch) but are never required.

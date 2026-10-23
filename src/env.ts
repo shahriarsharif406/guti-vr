@@ -25,6 +25,7 @@ export class EnvSystem extends createSystem({}) {
   private ffPhase = new Float32Array(FIREFLIES);
   private ffGeo!: BufferGeometry;
   private t = 0;
+  private clouds: Mesh[] = [];
 
   private add(m: Mesh, x: number, y: number, z: number): Mesh {
     m.position.set(x, y, z);
@@ -123,6 +124,15 @@ export class EnvSystem extends createSystem({}) {
       -4, 3.2, -28,
     );
 
+    // slow drifting clouds
+    const cloudMat = new MeshBasicMaterial({ color: 0xffd9c0, transparent: true, opacity: 0.55 });
+    for (let i = 0; i < 7; i++) {
+      const c = new Mesh(new SphereGeometry(1, 12, 8), cloudMat);
+      c.scale.set(2.5 + Math.random() * 2, 0.45, 0.9);
+      this.add(c, -14 + i * 4.5, 4.5 + Math.random() * 3, -22 - Math.random() * 6);
+      this.clouds.push(c);
+    }
+
     // fireflies
     for (let i = 0; i < FIREFLIES; i++) {
       this.ffBase[i * 3] = (Math.random() - 0.5) * 7;
@@ -149,6 +159,10 @@ export class EnvSystem extends createSystem({}) {
 
   update(dt: number): void {
     this.t += dt;
+    for (const c of this.clouds) {
+      c.position.x += dt * 0.15;
+      if (c.position.x > 18) c.position.x = -18;
+    }
     for (let i = 0; i < FIREFLIES; i++) {
       const p = this.ffPhase[i];
       this.ffPos[i * 3] = this.ffBase[i * 3] + Math.sin(this.t * 0.4 + p) * 0.4;

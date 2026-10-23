@@ -71,7 +71,39 @@ function burst(dur: number, vol: number, freq: number, q = 1): void {
   s.stop(t0 + dur + 0.02);
 }
 
+let ambientOn = false;
+
+/** Evening ambience: soft drone, crickets and the odd bird. Starts once. */
+function startAmbience(): void {
+  if (ambientOn) return;
+  const c = ac();
+  if (!c) return;
+  ambientOn = true;
+  for (const f of [110, 164.8, 220]) {
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = 'sine';
+    o.frequency.value = f;
+    g.gain.value = 0.006;
+    o.connect(g).connect(c.destination);
+    o.start();
+  }
+  window.setInterval(() => {
+    if (Math.random() < 0.6) {
+      const base = 4000 + Math.random() * 600;
+      for (let i = 0; i < 3; i++) tone(base, 0.035, 0.008, 'sine', undefined, i * 0.05);
+    }
+  }, 240);
+  window.setInterval(() => {
+    if (Math.random() < 0.5) {
+      tone(1500 + Math.random() * 400, 0.18, 0.02, 'sine', 2300);
+      tone(1800, 0.12, 0.015, 'sine', 2600, 0.22);
+    }
+  }, 6500);
+}
+
 export const sfx = {
+  ambience: startAmbience,
   /** glass-marble click; strength 0..1 */
   clack(strength: number): void {
     const v = 0.08 + 0.25 * Math.min(1, strength);

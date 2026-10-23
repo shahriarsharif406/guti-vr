@@ -114,6 +114,7 @@ export class MenuSystem extends createSystem({
       // only act on buttons that are visible in the current mode
       const o = entity.object3D;
       if (!o || !o.visible) return;
+      sfx.ambience();
       sfx.select();
       this.cooldown = 0.4;
       setMode(target as 'menu' | 'guti' | 'kite');
