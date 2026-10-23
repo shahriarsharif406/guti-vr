@@ -387,7 +387,8 @@ export class KiteSystem extends createSystem({}) {
     e.state = 'fly';
     e.vy = 0;
     e.lungeT = 0;
-    e.nextLunge = 3 + Math.random() * 3;
+    // no dives during the first seconds so new players can learn the controls
+    e.nextLunge = Math.max(0, 12 - this.roundT) + 3 + Math.random() * 3;
     e.hitCooldown = 0;
     e.kite.group.rotation.z = 0;
     e.kite.group.visible = true;
@@ -499,7 +500,7 @@ export class KiteSystem extends createSystem({}) {
         this.hudDirty = true;
       } else if (e.lungeT > 0 && this.hurtCooldown <= 0) {
         this.lives -= 1;
-        this.hurtCooldown = 1.5;
+        this.hurtCooldown = 2;
         this.combo = 0;
         this.comboTimer = 0;
         sfx.hurt();
