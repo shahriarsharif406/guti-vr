@@ -2,6 +2,8 @@
 
 **Project name:** Guti
 **Elevator pitch (<=140 chars):** Guti: hands-only VR village games from Bangladesh. Flick marbles out of the ring and cut rival kites. No controllers, seated.
+**Playable link (Try it out):** https://shahriarsharif406.github.io/guti-vr/
+**GitHub:** https://github.com/shahriarsharif406/guti-vr
 **Track:** Gaming  **Division:** New Experience  **Build path:** IWSDK (WebXR)
 
 ## Inspiration

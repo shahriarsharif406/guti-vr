@@ -10,6 +10,8 @@ Built with the Immersive Web SDK (IWSDK, WebXR), TypeScript, Three.js, Havok phy
 
 ## Play
 
+**Live:** https://shahriarsharif406.github.io/guti-vr/
+
 Open the deployed link in the Meta Quest Browser, tap **Enter XR**, put your hands in front of you.
 On a laptop you can try it with the mouse: click a card, then click-and-drag (drag down/back = pull; in kite mode drag to steer).
 
