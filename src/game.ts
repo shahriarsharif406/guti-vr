@@ -293,7 +293,7 @@ export class GameSystem extends createSystem({}) {
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('গুটি  •  Level ' + this.level, 70, 52);
+    h.text('GUTI  •  Level ' + this.level, 70, 52);
     if (this.phase === 'message') {
       h.text(this.messageText, 150, 44, this.won ? '#8dff9d' : '#ff9d8d');
     } else {
@@ -304,11 +304,11 @@ export class GameSystem extends createSystem({}) {
       );
     }
     let hint = '';
-    if (this.noHands) hint = 'হাত দুটো সামনে আনুন';
+    if (this.noHands) hint = 'Raise both hands in front of you';
     else if (this.phase === 'aim')
       hint = this.firedOnce
-        ? 'চিমটি দাও • পেছনে টানো • ছাড়ো'
-        : 'সাদা গুটিতে চিমটি দাও, পেছনে টানো, ছাড়ো';
+        ? 'Pinch • Pull back • Release'
+        : 'Pinch the white marble, pull back, release';
     h.text(hint, 220, 30, '#cdb99a');
     h.commit();
   }
@@ -537,7 +537,7 @@ export class GameSystem extends createSystem({}) {
     if (out >= this.totalTargets) {
       this.won = true;
       this.messageText =
-        this.level >= MAX_LEVEL ? 'তুমি চ্যাম্পিয়ন!' : 'Level clear!';
+        this.level >= MAX_LEVEL ? 'You are the champion!' : 'Level clear!';
       sfx.win();
       this.beginMessage(1.8);
     } else if (this.shotsLeft <= 0) {

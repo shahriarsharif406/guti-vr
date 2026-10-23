@@ -376,10 +376,10 @@ export class KiteSystem extends createSystem({}) {
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('ঘুড়ি কাটাকাটি', 62, 48);
+    h.text('Kite Fight', 62, 48);
     if (this.phase === 'over') {
       h.text('Cuts ' + this.score + '   Best ' + this.best, 140, 44, '#8dff9d');
-      h.text('আবার খেলতে মেনুতে যাও', 215, 30, '#cdb99a');
+      h.text('Returning to the menu...', 215, 30, '#cdb99a');
     } else {
       h.text(
         'Cuts ' + this.score + '   Lives ' + this.lives + '   ' + Math.ceil(this.time) + 's',
@@ -388,8 +388,8 @@ export class KiteSystem extends createSystem({}) {
       );
       h.text(
         this.score === 0 && this.time > ROUND_SECONDS - 12
-          ? 'চিমটি দিয়ে হাত নাড়াও • জোরে ছুঁয়ে সুতো কাটো'
-          : 'দ্রুত গিয়ে অন্য ঘুড়ি কাটো, ধীরে থাকলে ওরা কাটবে',
+          ? 'Pinch and move your hand • Touch kites fast to cut'
+          : 'Hit fast to cut them, go slow and they cut you',
         215,
         28,
         '#cdb99a',

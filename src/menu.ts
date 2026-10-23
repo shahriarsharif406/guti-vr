@@ -66,21 +66,21 @@ export class MenuSystem extends createSystem({
       color: string,
     ) => {
       p.card('rgba(40,24,12,0.88)', color);
-      p.text(bn, p.h * 0.42, 110, color);
-      p.text(en, p.h * 0.62, 44, '#ffe9c4');
+      p.text(bn, p.h * 0.42, 80, color);
+      p.text(en, p.h * 0.62, 50, '#ffe9c4');
       p.text(sub, p.h * 0.82, 30, '#cdb99a');
       p.commit();
     };
-    card(this.buttons[0].panel, 'গুলি', 'Marbles', 'Flick them out of the ring', '#7fd8ff');
-    card(this.buttons[1].panel, 'ঘুড়ি', 'Kite Fight', 'Cut the other kites', '#ffb56b');
+    card(this.buttons[0].panel, 'Marbles', 'গুলি', 'Flick them out of the ring', '#7fd8ff');
+    card(this.buttons[1].panel, 'Kite Fight', 'ঘুড়ি', 'Cut the other kites', '#ffb56b');
     const b = this.back.panel;
     b.card('rgba(40,24,12,0.88)', '#ffd9a0');
-    b.text('← মেনু', b.h * 0.62, 70, '#ffe9c4');
+    b.text('← Menu', b.h * 0.62, 70, '#ffe9c4');
     b.commit();
     const t = this.title;
     t.card('rgba(30,18,10,0.0)', 'rgba(0,0,0,0)');
-    t.text('গুটি', t.h * 0.55, 130, '#ffd9a0');
-    t.text('GUTI  •  hands-only village games', t.h * 0.9, 34, '#ffe9c4');
+    t.text('GUTI', t.h * 0.5, 120, '#ffd9a0');
+    t.text('গুটি  •  hands-only village games', t.h * 0.9, 34, '#ffe9c4');
     t.commit();
   }
 
