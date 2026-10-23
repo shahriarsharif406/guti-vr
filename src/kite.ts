@@ -12,6 +12,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
+import { emitBurst } from './fx.js';
 import { modeState, setMode } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
 
@@ -347,6 +348,7 @@ export class KiteSystem extends createSystem({}) {
         e.vy = 0;
         this.score += 1;
         sfx.cut();
+        emitBurst(e.kite.pos.x, e.kite.pos.y, e.kite.pos.z, e.kite.mat.color.r, e.kite.mat.color.g, e.kite.mat.color.b, 30, 0.8);
         this.hudDirty = true;
       } else if (e.lungeT > 0 && this.hurtCooldown <= 0) {
         this.lives -= 1;

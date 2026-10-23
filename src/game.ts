@@ -22,6 +22,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
+import { emitBurst } from './fx.js';
 import { Marble, MarbleKinds } from './marble-component.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -81,6 +82,9 @@ export class GameSystem extends createSystem({}) {
   private noHands = false;
   private elapsed = 0;
   private prevSpeeds: number[] = [];
+  private wasOut: boolean[] = [];
+  private stars = 0;
+  private bestStars: number[] = [];
   private modeObjects: Mesh[] = [];
   private ringMesh!: Mesh;
 
@@ -112,6 +116,11 @@ export class GameSystem extends createSystem({}) {
   private mouseY = 0;
 
   init(): void {
+    try {
+      this.bestStars = JSON.parse(localStorage.getItem('guti-stars') ?? '[]');
+    } catch {
+      this.bestStars = [];
+    }
     this.buildStage();
     this.buildArrow();
     this.buildHud();
@@ -309,8 +318,39 @@ export class GameSystem extends createSystem({}) {
       hint = this.firedOnce
         ? 'Pinch • Pull back • Release'
         : 'Pinch the white marble, pull back, release';
-    h.text(hint, 220, 30, '#cdb99a');
+    if (this.phase === 'message' && this.won) {
+      for (let i = 0; i < 3; i++) {
+        this.drawStar(h.ctx, 320 + (i - 1) * 70, 205, 26, i < this.stars);
+      }
+    } else {
+      h.text(hint, 220, 30, '#cdb99a');
+    }
     h.commit();
+  }
+
+  private drawStar(c: CanvasRenderingContext2D, x: number, y: number, r: number, filled: boolean): void {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const rad = i % 2 === 0 ? r : r * 0.45;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const px = x + Math.cos(a) * rad;
+      const py = y + Math.sin(a) * rad;
+      if (i === 0) c.moveTo(px, py);
+      else c.lineTo(px, py);
+    }
+    c.closePath();
+    c.fillStyle = filled ? '#ffd23f' : 'rgba(255,255,255,0.15)';
+    c.fill();
+  }
+
+  private saveStars(): void {
+    const prev = this.bestStars[this.level - 1] ?? 0;
+    if (this.stars > prev) this.bestStars[this.level - 1] = this.stars;
+    try {
+      localStorage.setItem('guti-stars', JSON.stringify(this.bestStars));
+    } catch {
+      /* ignore */
+    }
   }
 
   private setModeVisible(on: boolean): void {
@@ -329,6 +369,7 @@ export class GameSystem extends createSystem({}) {
     for (const t of this.targets) t.dispose();
     this.targets.length = 0;
     this.prevSpeeds.length = 0;
+    this.wasOut.length = 0;
 
     // cluster targets inside the ring in a tight, slightly jittered spiral
     const n = def.targets;
@@ -348,6 +389,8 @@ export class GameSystem extends createSystem({}) {
     }
     this.prevSpeeds.length = n;
     this.prevSpeeds.fill(0);
+    this.wasOut.length = n;
+    this.wasOut.fill(false);
     this.resetShooter();
     this.phase = 'aim';
     this.hudDirty = true;
@@ -536,6 +579,9 @@ export class GameSystem extends createSystem({}) {
     }
     if (out >= this.totalTargets) {
       this.won = true;
+      this.stars = this.shotsLeft >= 2 ? 3 : this.shotsLeft === 1 ? 2 : 1;
+      this.saveStars();
+      emitBurst(0, TABLE_Y + 0.12, TABLE_CENTER_Z, 1, 0.85, 0.35, 70, 0.9);
       this.messageText =
         this.level >= MAX_LEVEL ? 'You are the champion!' : 'Level clear!';
       sfx.win();
@@ -633,7 +679,18 @@ export class GameSystem extends createSystem({}) {
 
     if (this.phase === 'rolling') {
       let out = 0;
-      for (const t of this.targets) if (this.isOut(t)) out++;
+      for (let i = 0; i < this.targets.length; i++) {
+        const t = this.targets[i];
+        const o = this.isOut(t);
+        if (o) out++;
+        if (o && !this.wasOut[i] && t.object3D) {
+          const pos = t.object3D.position;
+          const c = (t.object3D as Mesh).material as MeshStandardMaterial;
+          emitBurst(pos.x, Math.max(pos.y, TABLE_Y), pos.z, c.color.r, c.color.g, c.color.b, 18, 0.55);
+          sfx.select();
+        }
+        this.wasOut[i] = o;
+      }
       if (out !== this.outCount) {
         this.outCount = out;
         this.hudDirty = true;
