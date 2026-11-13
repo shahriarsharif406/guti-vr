@@ -44,3 +44,4 @@ Record from the Quest (Meta Quest app -> Cast/Record) or the IWER emulator windo
 - Generous grab radius, and either hand works (one-handed play).
 - Collect stars to unlock marble skins: Pearl, Jade, Ruby, Gold, Galaxy.
 - Gameplay freezes automatically when the headset is removed or the system menu opens.
+- Level map: tap a tile to replay any unlocked level; each shows its saved stars.

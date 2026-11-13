@@ -10,3 +10,8 @@ export const MenuButton = createComponent('MenuButton', {
     enum: MenuTargets,
   },
 });
+
+/** A pressable tile on the level map. */
+export const LevelTile = createComponent('LevelTile', {
+  level: { type: Types.Int8, default: 1 },
+});

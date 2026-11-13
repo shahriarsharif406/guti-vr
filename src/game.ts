@@ -19,6 +19,8 @@ import {
   PhysicsShapeType,
   PhysicsState,
   PhysicsSystem,
+  Pressed,
+  RayInteractable,
   RingGeometry,
   Quaternion,
   SphereGeometry,
@@ -27,6 +29,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
+import { LevelTile } from './ui-components.js';
 import { readPinchPoint } from './hand.js';
 import { emitBurst } from './fx.js';
 import { Marble, MarbleKinds } from './marble-component.js';
@@ -152,7 +155,11 @@ function swirlTexture(hex: number): CanvasTexture {
 
 const MAX_LEVEL = LEVELS.length;
 
-export class GameSystem extends createSystem({}) {
+export class GameSystem extends createSystem({
+  tilePressed: { required: [LevelTile, Pressed] },
+}) {
+  private tiles: { entity: Entity; panel: TextPanel }[] = [];
+  private tileCooldown = 0;
   private phase: Phase = 'aim';
   private level = 1;
   private shotsLeft = 0;
@@ -263,6 +270,7 @@ export class GameSystem extends createSystem({}) {
     this.buildStage();
     this.buildArrow();
     this.buildHud();
+    this.buildLevelMap();
     this.modeObjects.push(
       this.hud.mesh,
       this.hintRing,
@@ -467,6 +475,46 @@ export class GameSystem extends createSystem({}) {
     );
     this.world.createTransformEntity(this.ghost);
     this.modeObjects.push(this.ghost);
+  }
+
+  private buildLevelMap(): void {
+    const cols = 5;
+    for (let i = 0; i < LEVELS.length; i++) {
+      const panel = new TextPanel(0.06, 0.06, 128);
+      const c = i % cols;
+      const r = Math.floor(i / cols);
+      panel.mesh.position.set(-0.46 + c * 0.07, TABLE_Y + 0.2 - r * 0.07, TABLE_CENTER_Z - 0.05);
+      panel.mesh.rotation.x = -0.5;
+      const e = this.world.createTransformEntity(panel.mesh);
+      e.addComponent(RayInteractable);
+      e.addComponent(LevelTile, { level: i + 1 });
+      this.tiles.push({ entity: e, panel });
+      this.modeObjects.push(panel.mesh);
+    }
+    this.cleanupFuncs.push(
+      this.queries.tilePressed.subscribe('qualify', (e) => {
+        if (this.tileCooldown > 0 || modeState.mode !== 'guti') return;
+        const lv = e.getValue(LevelTile, 'level') as number;
+        if (lv > 1 && (this.bestStars[lv - 2] ?? 0) <= 0) return; // locked
+        if (lv === this.level && this.phase === 'aim') return;
+        this.tileCooldown = 0.5;
+        sfx.select();
+        this.startLevel(lv);
+      }),
+    );
+  }
+
+  private drawTiles(): void {
+    for (let i = 0; i < this.tiles.length; i++) {
+      const p = this.tiles[i].panel;
+      const locked = i > 0 && (this.bestStars[i - 1] ?? 0) <= 0;
+      const cur = i + 1 === this.level;
+      p.card(locked ? 'rgba(20,14,10,0.7)' : 'rgba(40,24,12,0.9)', cur ? '#7fd8ff' : locked ? '#6b5a48' : '#ffd9a0');
+      p.text(locked ? '🔒' : String(i + 1), 62, 52, locked ? '#8a7860' : '#ffe9c4');
+      const st = this.bestStars[i] ?? 0;
+      p.text('★'.repeat(st) + '·'.repeat(3 - st), 108, 26, '#ffd23f');
+      p.commit();
+    }
   }
 
   private totalStars(): number {
@@ -1050,8 +1098,10 @@ export class GameSystem extends createSystem({}) {
       if (this.flashTimer <= 0) this.hudDirty = true;
     }
 
+    this.tileCooldown = Math.max(0, this.tileCooldown - delta);
     if (this.hudDirty) {
       this.hudDirty = false;
+      this.drawTiles();
       this.drawHud();
     }
   }
