@@ -12,6 +12,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
+import { readPinchPoint } from './hand.js';
 import { emitBurst } from './fx.js';
 import { SphereGeometry } from '@iwsdk/core';
 import { modeState, setMode } from './mode.js';
@@ -328,6 +329,7 @@ export class KiteSystem extends createSystem({}) {
 
   private readHandPos(hand: HandName, out: Vector3): boolean {
     const ad = this.input.xr.visualAdapters.hand[hand];
+    if (readPinchPoint(ad as never, out)) return true;
     const space =
       (ad.connected ? ad.gripSpace : undefined) ?? this.player.gripSpaces[hand];
     if (!space) return false;

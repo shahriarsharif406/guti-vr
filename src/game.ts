@@ -27,10 +27,12 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
+import { readPinchPoint } from './hand.js';
 import { emitBurst } from './fx.js';
 import { Marble, MarbleKinds } from './marble-component.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
+import { WORLDS, WorldId, worldState } from './worlds.js';
 
 // ---- Layout (meters). Everything sits within arm's reach of a seated player.
 const TABLE_Y = 0.72;
@@ -54,6 +56,7 @@ type HandName = 'left' | 'right';
 type Formation = 'cluster' | 'line' | 'ring' | 'cross';
 
 interface LevelDef {
+  world: WorldId;
   targets: number;
   shots: number;
   ring: number;
@@ -65,16 +68,23 @@ interface LevelDef {
 }
 
 const LEVELS: LevelDef[] = [
-  { targets: 3, shots: 5, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Pinch the white marble, pull back, release' },
-  { targets: 4, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Aim dots show where your shot will go' },
-  { targets: 5, shots: 6, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[-0.07, 0.16], [0.07, 0.16]], tip: 'Rocks block the way: thread the gap' },
-  { targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [], tip: 'Knock out the golden marble for a bonus shot' },
-  { targets: 6, shots: 7, ring: 0.115, formation: 'ring', heavy: 0, gold: 0, rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is getting smaller' },
-  { targets: 6, shots: 7, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy grey marbles need a strong hit' },
-  { targets: 7, shots: 8, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[0, 0.17], [-0.09, 0.1], [0.09, 0.1]], tip: 'Blocked in the middle: try an angle' },
-  { targets: 8, shots: 8, ring: 0.1, formation: 'ring', heavy: 0, gold: 1, rocks: [], tip: 'Tight ring, golden bonus inside' },
-  { targets: 8, shots: 8, ring: 0.12, formation: 'cluster', heavy: 2, gold: 1, rocks: [[-0.05, 0.16], [0.05, 0.16]], tip: 'Heavy, golden and rocks together' },
-  { targets: 10, shots: 9, ring: 0.095, formation: 'ring', heavy: 3, gold: 1, rocks: [[0, 0.17], [-0.1, 0.1], [0.1, 0.1]], tip: 'Final level. Clear the ring!' },
+  // ---- Village (Earth gravity)
+  { world: 'earth', targets: 3, shots: 5, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Pinch the white marble, pull back, release' },
+  { world: 'earth', targets: 4, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Aim dots show where your shot will go' },
+  { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[-0.07, 0.16], [0.07, 0.16]], tip: 'Rocks block the way: thread the gap' },
+  { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [], tip: 'Knock out the golden marble for a bonus shot' },
+  // ---- Moon (gravity 1.62)
+  { world: 'moon', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Low gravity: marbles slide far. Pull gently' },
+  { world: 'moon', targets: 6, shots: 7, ring: 0.115, formation: 'ring', heavy: 0, gold: 0, rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is smaller. Soft taps are enough' },
+  { world: 'moon', targets: 6, shots: 7, ring: 0.125, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.06, 0.16], [0.06, 0.16]], tip: 'Golden marble: bonus shot' },
+  // ---- Mars (gravity 3.71)
+  { world: 'mars', targets: 6, shots: 7, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy grey marbles need a strong hit' },
+  { world: 'mars', targets: 7, shots: 8, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[0, 0.17], [-0.09, 0.1], [0.09, 0.1]], tip: 'Blocked in the middle: try an angle' },
+  { world: 'mars', targets: 8, shots: 8, ring: 0.1, formation: 'ring', heavy: 0, gold: 1, rocks: [], tip: 'Tight ring, golden bonus inside' },
+  // ---- Space Station (zero gravity)
+  { world: 'station', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Zero gravity: no friction. Marbles keep drifting' },
+  { world: 'station', targets: 8, shots: 8, ring: 0.12, formation: 'cluster', heavy: 2, gold: 1, rocks: [[-0.05, 0.16], [0.05, 0.16]], tip: 'Heavy, golden and rocks together' },
+  { world: 'station', targets: 10, shots: 9, ring: 0.095, formation: 'ring', heavy: 3, gold: 1, rocks: [[0, 0.17], [-0.1, 0.1], [0.1, 0.1]], tip: 'Final level. Clear the ring!' },
 ];
 
 type MarbleType = 'normal' | 'heavy' | 'gold';
@@ -133,7 +143,7 @@ function swirlTexture(hex: number): CanvasTexture {
   return new CanvasTexture(c);
 }
 
-const MAX_LEVEL = 10;
+const MAX_LEVEL = LEVELS.length;
 
 export class GameSystem extends createSystem({}) {
   private phase: Phase = 'aim';
@@ -177,6 +187,10 @@ export class GameSystem extends createSystem({}) {
   private heavyMat!: MeshStandardMaterial;
   private rockMat!: MeshStandardMaterial;
   private rockGeo!: CylinderGeometry;
+  private sun!: DirectionalLight;
+  private floorMat!: MeshStandardMaterial;
+  private tableMat!: MeshStandardMaterial;
+  private curWorld: WorldId = 'earth';
   private dots!: Points;
   private dotPos = new Float32Array(16 * 3);
 
@@ -209,7 +223,7 @@ export class GameSystem extends createSystem({}) {
 
   init(): void {
     try {
-      this.bestStars = JSON.parse(localStorage.getItem('guti-stars') ?? '[]');
+      this.bestStars = JSON.parse(localStorage.getItem('guti-stars-v2') ?? '[]');
     } catch {
       this.bestStars = [];
     }
@@ -218,6 +232,25 @@ export class GameSystem extends createSystem({}) {
     } catch {
       this.bestScore = 0;
     }
+    // read-only probe for automated tests; allocates only when called
+    (window as unknown as { __guti?: () => unknown }).__guti = () => {
+      const p = this.shooter.object3D?.position;
+      return {
+        world: this.curWorld,
+        phase: this.phase,
+        level: this.level,
+        shots: this.shotsLeft,
+        out: this.outCount,
+        shooter: p ? [p.x, p.y, p.z] : null,
+        speed: this.speedOf(this.shooter),
+        ringR: this.ringR,
+        won: this.won,
+        score: this.score,
+        targets: this.targets
+          .filter((t, i) => t.object3D && !this.wasOut[i])
+          .map((t) => [t.object3D!.position.x, t.object3D!.position.z + 0.55]),
+      };
+    };
     this.buildStage();
     this.buildArrow();
     this.buildHud();
@@ -260,20 +293,17 @@ export class GameSystem extends createSystem({}) {
     const sun = new DirectionalLight(0xffc288, 2.2);
     sun.position.set(-1.5, 2.5, 1);
     world.createTransformEntity(sun);
+    this.sun = sun;
 
     // earthen courtyard floor (visual only)
-    const floor = new Mesh(
-      new CylinderGeometry(6, 6, 0.02, 48),
-      new MeshStandardMaterial({ color: 0x6b4a33, roughness: 1 }),
-    );
+    this.floorMat = new MeshStandardMaterial({ color: 0x6b4a33, roughness: 1 });
+    const floor = new Mesh(new CylinderGeometry(6, 6, 0.02, 48), this.floorMat);
     floor.position.set(0, -0.01, TABLE_CENTER_Z);
     world.createTransformEntity(floor);
 
     // the playing ground: a round disc of packed clay at hand height
-    const table = new Mesh(
-      new CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.04, 64),
-      new MeshStandardMaterial({ color: 0xb98a5e, roughness: 0.95 }),
-    );
+    this.tableMat = new MeshStandardMaterial({ color: 0xb98a5e, roughness: 0.95 });
+    const table = new Mesh(new CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.04, 64), this.tableMat);
     table.position.set(0, TABLE_Y - 0.02, TABLE_CENTER_Z);
     this.tableEntity = world.createTransformEntity(table);
     this.tableEntity.addComponent(PhysicsShape, {
@@ -371,7 +401,7 @@ export class GameSystem extends createSystem({}) {
     });
     e.addComponent(PhysicsBody, {
       state: PhysicsState.Dynamic,
-      linearDamping: 0.9,
+      linearDamping: WORLDS[this.curWorld].damping,
       angularDamping: 0.6,
     });
     return e;
@@ -426,7 +456,7 @@ export class GameSystem extends createSystem({}) {
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('GUTI  •  Level ' + this.level + '/' + LEVELS.length, 70, 52);
+    h.text('GUTI  •  ' + WORLDS[this.curWorld].name + '  •  Level ' + this.level + '/' + LEVELS.length, 70, 40);
     if (this.phase === 'message') {
       h.text(this.messageText, 150, 44, this.won ? '#8dff9d' : '#ff9d8d');
     } else {
@@ -473,7 +503,7 @@ export class GameSystem extends createSystem({}) {
     const prev = this.bestStars[this.level - 1] ?? 0;
     if (this.stars > prev) this.bestStars[this.level - 1] = this.stars;
     try {
-      localStorage.setItem('guti-stars', JSON.stringify(this.bestStars));
+      localStorage.setItem('guti-stars-v2', JSON.stringify(this.bestStars));
     } catch {
       /* ignore */
     }
@@ -483,10 +513,31 @@ export class GameSystem extends createSystem({}) {
     for (const m of this.modeObjects) m.visible = on;
   }
 
+  // ------------------------------------------------------------------ worlds
+  private applyWorld(id: WorldId, announce: boolean): void {
+    const w = WORLDS[id];
+    const changed = worldState.id !== id;
+    this.curWorld = id;
+    worldState.id = id;
+    const physics = this.world.getSystem(PhysicsSystem);
+    if (physics) physics.config.gravity.value = [0, -w.gravity, 0];
+    this.sun.color.setHex(w.sunColor);
+    this.sun.intensity = w.sunIntensity;
+    this.floorMat.color.setHex(w.floorColor);
+    this.tableMat.color.setHex(w.tableColor);
+    this.shooter.setValue(PhysicsBody, 'linearDamping', w.damping);
+    sfx.setSpace(w.space);
+    if (changed && announce) {
+      sfx.warp();
+      this.flash(w.intro, 3.4);
+    }
+  }
+
   // ------------------------------------------------------------------ levels
   private startLevel(level: number): void {
     this.level = level;
     const def = levelDef(level);
+    this.applyWorld(def.world, true);
     this.shotsLeft = def.shots;
     this.totalTargets = def.targets;
     this.outCount = 0;
@@ -574,6 +625,8 @@ export class GameSystem extends createSystem({}) {
 
   private readHandPos(hand: HandName, out: Vector3): boolean {
     const hand3d = this.input.xr.visualAdapters.hand[hand];
+    // true pinch point: midpoint of thumb tip and index tip
+    if (readPinchPoint(hand3d as never, out)) return true;
     const space =
       (hand3d.connected ? hand3d.gripSpace : undefined) ??
       this.player.gripSpaces[hand];
@@ -716,6 +769,15 @@ export class GameSystem extends createSystem({}) {
     );
   }
 
+  private offTable(e: Entity): boolean {
+    const o = e.object3D;
+    if (!o) return true;
+    const dx = o.position.x;
+    const dz = o.position.z - TABLE_CENTER_Z;
+    const lim = TABLE_RADIUS + 0.12;
+    return dx * dx + dz * dz > lim * lim;
+  }
+
   private speedOf(e: Entity): number {
     const v = e.getVectorView(PhysicsBody, '_linearVelocity');
     return Math.hypot(v[0], v[1], v[2]);
@@ -724,18 +786,20 @@ export class GameSystem extends createSystem({}) {
   private updateRolling(delta: number): void {
     this.rollTimer += delta;
     let moving = false;
-    if (this.speedOf(this.shooter) > 0.04) moving = true;
+    // in zero gravity a marble can float off the table for good: stop waiting for it
+    if (this.speedOf(this.shooter) > 0.04 && !this.offTable(this.shooter)) moving = true;
     for (let i = 0; i < this.targets.length; i++) {
       const t = this.targets[i];
       if (!t.object3D) continue;
       const sp = this.speedOf(t);
-      if (sp > 0.04) moving = true;
+      if (sp > 0.04 && !this.offTable(t)) moving = true;
       if (sp - this.prevSpeeds[i] > 0.12) sfx.clack((sp - this.prevSpeeds[i]) / 1.5);
       this.prevSpeeds[i] = sp;
     }
     this.restTimer = moving ? 0 : this.restTimer + delta;
     const shooterFell =
-      (this.shooter.object3D?.position.y ?? 0) < TABLE_Y - 0.1;
+      (this.shooter.object3D?.position.y ?? 0) < TABLE_Y - 0.1 ||
+      this.offTable(this.shooter);
     if (this.restTimer > 0.5 || this.rollTimer > 9 || shooterFell) {
       this.resolveShot();
     }
@@ -806,12 +870,16 @@ export class GameSystem extends createSystem({}) {
       this.stars = this.shotsLeft >= 2 ? 3 : this.shotsLeft === 1 ? 2 : 1;
       this.saveStars();
       emitBurst(0, TABLE_Y + 0.12, TABLE_CENTER_Z, 1, 0.85, 0.35, 70, 0.9);
+      const nextWorldDiffers =
+        this.level < MAX_LEVEL && levelDef(this.level + 1).world !== levelDef(this.level).world;
       this.messageText =
         this.level >= MAX_LEVEL
           ? 'Champion! Score ' + this.score
-          : 'Level clear!  Best ' + this.bestScore;
+          : nextWorldDiffers || this.level === 1
+            ? WORLDS[this.curWorld].fact
+            : 'Level clear!  Best ' + this.bestScore;
       sfx.win();
-      this.beginMessage(1.8);
+      this.beginMessage(nextWorldDiffers ? 2.6 : 1.8);
     } else if (this.shotsLeft <= 0) {
       this.won = false;
       this.messageText = 'Out of shots — try again';
@@ -843,6 +911,13 @@ export class GameSystem extends createSystem({}) {
         this.score = 0;
         let first = 1;
         while (first < LEVELS.length && (this.bestStars[first - 1] ?? 0) > 0) first++;
+        // deep link: ?level=5 jumps straight to a level (handy for demos and testing)
+        try {
+          const q = Number(new URLSearchParams(window.location.search).get('level'));
+          if (q >= 1 && q <= LEVELS.length) first = Math.floor(q);
+        } catch {
+          /* ignore */
+        }
         this.startLevel(first);
       } else if (wasGuti || this.lastMode !== 'guti') {
         this.setModeVisible(false);
@@ -853,6 +928,7 @@ export class GameSystem extends createSystem({}) {
         for (const r of this.rocks) if (r.object3D) r.object3D.visible = false;
         this.dragging = false;
         this.dragHand = null;
+        this.applyWorld('earth', false);
       }
     }
     if (modeState.mode !== 'guti') return;

@@ -3,7 +3,7 @@
 Hands-only VR village games from Bangladesh, built for the **Meta VR Start Developer Competition 2026**.
 No controllers. Seated. Everything within arm's reach.
 
-* **গুলি (Marbles)** – pinch the white marble, pull back, release. Flick the coloured marbles out of the *goalla* ring. 10 levels.
+* **গুলি (Marbles)** – pinch the white marble, pull back, release. Flick the coloured marbles out of the *goalla* ring. 13 levels across four worlds with real gravity: the village, the Moon, Mars and a zero-gravity space station.
 * **ঘুড়ি কাটাকাটি (Kite Fight)** – pinch and move your hand to fly your kite. Touch the other kites **fast** to cut their strings; touch slowly and they cut you. 60-second rounds.
 
 Built with the Immersive Web SDK (IWSDK, WebXR), TypeScript, Three.js, Havok physics and Vite.
@@ -13,6 +13,7 @@ Built with the Immersive Web SDK (IWSDK, WebXR), TypeScript, Three.js, Havok phy
 **Live:** https://shahriarsharif406.github.io/guti-vr/
 
 Open the deployed link in the Meta Quest Browser, tap **Enter XR**, put your hands in front of you.
+Add `?level=5` (Moon), `?level=8` (Mars) or `?level=11` (Space Station) to the link to jump to a world.
 On a laptop you can try it with the mouse: click a card, then click-and-drag (drag down/back = pull; in kite mode drag to steer).
 
 ## Run locally

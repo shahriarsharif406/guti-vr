@@ -72,6 +72,7 @@ function burst(dur: number, vol: number, freq: number, q = 1): void {
 }
 
 let ambientOn = false;
+let inSpace = false;
 
 /** Evening ambience: soft drone, crickets and the odd bird. Starts once. */
 function startAmbience(): void {
@@ -89,13 +90,13 @@ function startAmbience(): void {
     o.start();
   }
   window.setInterval(() => {
-    if (Math.random() < 0.6) {
+    if (!inSpace && Math.random() < 0.6) {
       const base = 4000 + Math.random() * 600;
       for (let i = 0; i < 3; i++) tone(base, 0.035, 0.008, 'sine', undefined, i * 0.05);
     }
   }, 240);
   window.setInterval(() => {
-    if (Math.random() < 0.5) {
+    if (!inSpace && Math.random() < 0.5) {
       tone(1500 + Math.random() * 400, 0.18, 0.02, 'sine', 2300);
       tone(1800, 0.12, 0.015, 'sine', 2600, 0.22);
     }
@@ -104,6 +105,16 @@ function startAmbience(): void {
 
 export const sfx = {
   ambience: startAmbience,
+  /** crickets and birds are for the village only */
+  setSpace(on: boolean): void {
+    inSpace = on;
+  },
+  /** travelling to another world */
+  warp(): void {
+    tone(180, 0.9, 0.12, 'sine', 900);
+    tone(360, 0.9, 0.08, 'triangle', 1400, 0.1);
+    burst(0.7, 0.07, 1200, 0.4);
+  },
   /** glass-marble click; strength 0..1 */
   clack(strength: number): void {
     const v = 0.08 + 0.25 * Math.min(1, strength);

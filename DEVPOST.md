@@ -1,7 +1,7 @@
 # Devpost submission texts (final, matches the real game)
 
 **Project name:** Guti
-**Elevator pitch (<=140 chars):** Guti: hands-only VR village games from Bangladesh. Flick marbles out of the ring and cut rival kites. No controllers, seated.
+**Elevator pitch (<=140 chars):** Guti: a Bangladeshi village marble game that travels to the Moon, Mars and a space station. Hands only, seated, no controllers.
 **Playable link (Try it out):** https://shahriarsharif406.github.io/guti-vr/
 **GitHub:** https://github.com/shahriarsharif406/guti-vr
 **Track:** Gaming  **Division:** New Experience  **Build path:** IWSDK (WebXR)
@@ -10,11 +10,11 @@
 Every Bangladeshi kid knows two games: গুলি (marbles) and ঘুড়ি কাটাকাটি (kite fighting). Both are played with bare hands, in a courtyard or on a rooftop, and both fit a short, social, seated-friendly VR session. Guti brings them into VR with nothing but your hands.
 
 ## What it does
-* **Marbles (গুলি):** a clay disc sits at hand height. Pinch the white marble, pull back to see the aim arrow, power colour and aim dots, release. Knock every coloured marble out of the গোল্লা ring. 10 hand-designed levels add rocks to bank around, heavy steel marbles, golden bonus marbles (extra shot), shrinking rings, combos, a score and 1-3 star ratings that are saved.
-* **Kite Fight (ঘুড়ি কাটাকাটি):** pinch and move your hand to steer your kite. Touch another kite fast to cut its string; touch slowly and you get cut. Four rival kite types (normal, fast, armored, golden +5 s), wind gusts, combo multipliers, a "sharp string" pickup and rising waves in 60-second rounds.
+* **Marbles (গুলি) across four worlds:** pinch the white marble, pull back, release, and knock every coloured marble out of the গোল্লা ring. The same shot behaves differently in each world because we use real gravity: the village (9.81 m/s²), the Moon (1.62), Mars (3.71) and a space station (zero gravity, no friction, marbles float away). 13 levels with rocks, heavy and golden marbles, combos, scores and saved star ratings. Clearing a world shows one real space fact.
+* **Kite Fight (ঘুড়ি কাটাকাটি):** pinch and move your hand to steer your kite. Touch a rival kite fast to cut its string; touch slowly and you get cut. Four kite types, wind gusts, combos, a "sharp string" pickup and rising waves in 60-second rounds.
 
 ## Hand interaction
-Everything is *pinch, move, release*. Hand tracking drops out during fast motion, so shots use a slow pull-back (slingshot) instead of a fling, and the kite follows the hand with a little lag like a real kite. Menus are big cards you point at and pinch. The whole play space is within about two feet in front of a seated player. Controllers work as a fallback (trigger = pinch) but are never required.
+Everything is *pinch, move, release*, and the pinch point is the real midpoint between thumb tip and index tip, not the wrist. Hand tracking drops out during fast motion, so shots use a slow pull-back (slingshot) instead of a fling, and the kite follows the hand with a little lag like a real kite. Menus are big cards you point at and pinch. The whole play space is within about two feet in front of a seated player. Controllers work as a fallback (trigger = pinch) but are never required.
 
 ## How we built it
 IWSDK (WebXR) with TypeScript, Three.js, Havok physics (marbles) and Vite. All sounds are synthesised at runtime and all visuals are procedural, so the build is tiny and loads fast. Hosted as a PWA-ready web app on GitHub Pages.
@@ -23,15 +23,15 @@ IWSDK (WebXR) with TypeScript, Three.js, Havok physics (marbles) and Vite. All s
 Hand tracking jitter and dropouts, tuning marble friction so shots feel good, making the kite-cut rule readable (fast = cut, slow = get cut), and rendering Bengali text in-headset (bundled font).
 
 ## What's next
-More marble games (target shooting, guti pyramid), two-player pass-and-play, more kite sky scenes, and Horizon Store packaging.
+More worlds (Jupiter, an asteroid), two-player pass-and-play, more kite sky scenes, and Horizon Store packaging.
 
 ## Built with
 WebXR, IWSDK, TypeScript, Three.js, Havok Physics, Vite, Meta Quest, Hand Tracking
 
 ## Demo video script (< 3 min)
 1. 0:00 Title card "Guti – hands-only VR village games". Show the headset view of the menu (10 s).
-2. 0:10 Marbles: first-shot hint ring, pinch, pull (arrow turns green→red), release, marbles scatter (40 s).
-3. 0:50 Clear level 1, quick cut to level 5 (15 s).
+2. 0:10 Village marbles: first-shot hint ring, pinch, pull, release, marbles scatter (25 s).
+3. 0:35 Open ?level=5 (Moon): slow, long slides, then ?level=11 (Station): marbles float off the table in zero gravity (30 s).
 4. 1:05 Back to menu with the pinch-pressed card, open Kite Fight (10 s).
 5. 1:15 Steer the kite, slice two strings, get hit once, show final score (50 s).
 6. 2:05 Closing: "No controllers. Seated. Made in Bangladesh." (10 s).
