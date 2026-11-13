@@ -71,20 +71,20 @@ const LEVELS: LevelDef[] = [
   // ---- Village (Earth gravity)
   { world: 'earth', targets: 3, shots: 5, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Pinch the white marble, pull back, release' },
   { world: 'earth', targets: 4, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Aim dots show where your shot will go' },
-  { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[-0.07, 0.16], [0.07, 0.16]], tip: 'Rocks block the way: thread the gap' },
+  { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Rocks block the way: thread the gap' },
   { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [], tip: 'Knock out the golden marble for a bonus shot' },
   // ---- Moon (gravity 1.62)
   { world: 'moon', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Low gravity: marbles slide far. Pull gently' },
   { world: 'moon', targets: 6, shots: 7, ring: 0.115, formation: 'ring', heavy: 0, gold: 0, rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is smaller. Soft taps are enough' },
-  { world: 'moon', targets: 6, shots: 7, ring: 0.125, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.06, 0.16], [0.06, 0.16]], tip: 'Golden marble: bonus shot' },
+  { world: 'moon', targets: 6, shots: 7, ring: 0.125, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Golden marble: bonus shot' },
   // ---- Mars (gravity 3.71)
   { world: 'mars', targets: 6, shots: 7, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy grey marbles need a strong hit' },
-  { world: 'mars', targets: 7, shots: 8, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[0, 0.17], [-0.09, 0.1], [0.09, 0.1]], tip: 'Blocked in the middle: try an angle' },
+  { world: 'mars', targets: 7, shots: 8, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[-0.09, 0.16], [0.09, 0.16]], tip: 'Rocks guard the sides: use the centre lane' },
   { world: 'mars', targets: 8, shots: 8, ring: 0.1, formation: 'ring', heavy: 0, gold: 1, rocks: [], tip: 'Tight ring, golden bonus inside' },
   // ---- Space Station (zero gravity)
   { world: 'station', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Zero gravity: no friction. Marbles keep drifting' },
-  { world: 'station', targets: 8, shots: 8, ring: 0.12, formation: 'cluster', heavy: 2, gold: 1, rocks: [[-0.05, 0.16], [0.05, 0.16]], tip: 'Heavy, golden and rocks together' },
-  { world: 'station', targets: 10, shots: 9, ring: 0.095, formation: 'ring', heavy: 3, gold: 1, rocks: [[0, 0.17], [-0.1, 0.1], [0.1, 0.1]], tip: 'Final level. Clear the ring!' },
+  { world: 'station', targets: 8, shots: 8, ring: 0.12, formation: 'cluster', heavy: 2, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Heavy, golden and rocks together' },
+  { world: 'station', targets: 10, shots: 9, ring: 0.095, formation: 'ring', heavy: 3, gold: 1, rocks: [[-0.09, 0.17], [0.09, 0.17]], tip: 'Final level. Clear the ring!' },
 ];
 
 type MarbleType = 'normal' | 'heavy' | 'gold';
