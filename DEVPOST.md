@@ -36,3 +36,11 @@ WebXR, IWSDK, TypeScript, Three.js, Havok Physics, Vite, Meta Quest, Hand Tracki
 5. 1:15 Steer the kite, slice two strings, get hit once, show final score (50 s).
 6. 2:05 Closing: "No controllers. Seated. Made in Bangladesh." (10 s).
 Record from the Quest (Meta Quest app -> Cast/Record) or the IWER emulator window. Upload to YouTube as Public.
+
+
+## Accessibility & polish
+- Wordless onboarding: a ghost fingertip demonstrates pinch, pull and release on level 1.
+- Look-to-select: gaze at a menu card for about 1.5 s to choose it, no hand press needed.
+- Generous grab radius, and either hand works (one-handed play).
+- Collect stars to unlock marble skins: Pearl, Jade, Ruby, Gold, Galaxy.
+- Gameplay freezes automatically when the headset is removed or the system menu opens.

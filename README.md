@@ -33,3 +33,11 @@ Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 * Input is *pinch → move → release* instead of fast gestures, because hand tracking drops out on quick motion.
 * Controllers still work as a fallback (trigger = pinch), but the whole game is playable with bare hands, including the menu (point + pinch).
 * All sound effects are synthesised at runtime; no audio files.
+
+
+## Accessibility & polish
+- Wordless onboarding: a ghost fingertip demonstrates pinch, pull and release on level 1.
+- Look-to-select: gaze at a menu card for about 1.5 s to choose it, no hand press needed.
+- Generous grab radius, and either hand works (one-handed play).
+- Collect stars to unlock marble skins: Pearl, Jade, Ruby, Gold, Galaxy.
+- Gameplay freezes automatically when the headset is removed or the system menu opens.

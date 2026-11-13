@@ -5,6 +5,7 @@ import {
   MeshBasicMaterial,
   Pressed,
   RayInteractable,
+  Vector3,
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
@@ -36,6 +37,11 @@ export class MenuSystem extends createSystem({
   private lastMode = '';
   private fontWasReady = false;
   private cooldown = 0;
+  private dwell = 0;
+  private dwellIdx = -1;
+  private head = new Vector3();
+  private fwd = new Vector3();
+  private to = new Vector3();
 
   private makeButton(
     target: (typeof MenuTargets)[keyof typeof MenuTargets],
@@ -135,13 +141,37 @@ export class MenuSystem extends createSystem({
       this.fontWasReady = isFontReady();
       this.drawButtons();
     }
+    // accessibility: look at a card for ~1.5 s to choose it (no hand press needed)
+    if (modeState.mode === 'menu' && this.cooldown <= 0 && this.world.visibilityState.value === 'visible') {
+      const cam = this.world.camera;
+      cam.getWorldPosition(this.head);
+      cam.getWorldDirection(this.fwd);
+      let hit = -1;
+      for (let i = 0; i < this.buttons.length; i++) {
+        this.buttons[i].mesh.getWorldPosition(this.to).sub(this.head).normalize();
+        if (this.to.dot(this.fwd) > 0.985) hit = i;
+      }
+      if (hit === this.dwellIdx && hit >= 0) this.dwell += delta;
+      else {
+        this.dwellIdx = hit;
+        this.dwell = 0;
+      }
+      if (this.dwell > 1.5) {
+        this.dwell = 0;
+        this.cooldown = 0.4;
+        sfx.ambience();
+        sfx.select();
+        setMode(hit === 0 ? 'guti' : 'kite');
+      }
+    }
     // hover feedback: buttons lift a little
     for (const b of this.buttons) {
       let hov = false;
       for (const e of this.queries.hovered.entities) {
         if (e === b.entity) hov = true;
       }
-      const target = b.home + (hov ? 0.025 : 0);
+      const gazed = this.dwellIdx >= 0 && this.buttons[this.dwellIdx] === b;
+      const target = b.home + (hov || gazed ? 0.025 : 0);
       b.mesh.position.y += (target - b.mesh.position.y) * Math.min(1, delta * 12);
       (b.mesh.material as MeshBasicMaterial).opacity = hov ? 1 : 0.92;
     }

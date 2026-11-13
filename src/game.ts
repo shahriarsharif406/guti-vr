@@ -42,7 +42,14 @@ const RING_RADIUS = 0.13; // the "গোল্লা" circle
 const MARBLE_R = 0.02;
 const SHOOTER_START_Z = TABLE_CENTER_Z + 0.27;
 // ---- Slingshot tuning
-const GRAB_RADIUS = 0.16;
+const GRAB_RADIUS = 0.2; // generous: hand-tracking jitter must not cost a shot
+const SKINS: { name: string; color: number; emissive: number; at: number }[] = [
+  { name: 'Pearl', color: 0xfafafa, emissive: 0xffffff, at: 0 },
+  { name: 'Jade', color: 0x5fe0a0, emissive: 0x2fbf80, at: 6 },
+  { name: 'Ruby', color: 0xff5a6a, emissive: 0xd02040, at: 14 },
+  { name: 'Gold', color: 0xffd23f, emissive: 0xc89a10, at: 24 },
+  { name: 'Galaxy', color: 0x8f7bff, emissive: 0x5a3fe0, at: 33 },
+];
 const MAX_PULL = 0.18;
 const MIN_PULL = 0.03;
 const MAX_SPEED = 3.2;
@@ -165,6 +172,8 @@ export class GameSystem extends createSystem({}) {
   private lastMode = '';
   private fontWasReady = false;
   private hintRing!: Mesh;
+  private ghost!: Mesh;
+  private skinIdx = 0;
   private firedOnce = false;
   private noHands = false;
   private elapsed = 0;
@@ -451,6 +460,31 @@ export class GameSystem extends createSystem({}) {
     );
     this.hintRing.rotation.x = -Math.PI / 2;
     this.world.createTransformEntity(this.hintRing);
+    // ghost fingertip that demonstrates pinch -> pull -> release on the first level
+    this.ghost = new Mesh(
+      new SphereGeometry(0.014, 16, 12),
+      new MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.75 }),
+    );
+    this.world.createTransformEntity(this.ghost);
+    this.modeObjects.push(this.ghost);
+  }
+
+  private totalStars(): number {
+    let t = 0;
+    for (const v of this.bestStars) t += v ?? 0;
+    return t;
+  }
+
+  private skinFor(total: number): number {
+    let k = 0;
+    for (let i = 0; i < SKINS.length; i++) if (total >= SKINS[i].at) k = i;
+    return k;
+  }
+
+  private applySkin(i: number): void {
+    this.skinIdx = i;
+    this.shooterMat.color.setHex(SKINS[i].color);
+    this.shooterMat.emissive.setHex(SKINS[i].emissive);
   }
 
   private drawHud(): void {
@@ -461,7 +495,7 @@ export class GameSystem extends createSystem({}) {
       h.text(this.messageText, 150, 44, this.won ? '#8dff9d' : '#ff9d8d');
     } else {
       h.text(
-        'Out ' + this.outCount + '/' + this.totalTargets + '   Shots ' + this.shotsLeft + '   Score ' + this.score,
+        'Out ' + this.outCount + '/' + this.totalTargets + '   Shots ' + this.shotsLeft + '   ★ ' + this.totalStars() + '/' + LEVELS.length * 3,
         148,
         36,
       );
@@ -595,6 +629,7 @@ export class GameSystem extends createSystem({}) {
     this.prevSpeeds.fill(0);
     this.wasOut.length = n;
     this.wasOut.fill(false);
+    this.applySkin(this.skinFor(this.totalStars()));
     this.resetShooter();
     this.phase = 'aim';
     this.hudDirty = true;
@@ -868,7 +903,9 @@ export class GameSystem extends createSystem({}) {
         }
       }
       this.stars = this.shotsLeft >= 2 ? 3 : this.shotsLeft === 1 ? 2 : 1;
+      const oldSkin = this.skinIdx;
       this.saveStars();
+      const newSkin = this.skinFor(this.totalStars());
       emitBurst(0, TABLE_Y + 0.12, TABLE_CENTER_Z, 1, 0.85, 0.35, 70, 0.9);
       const nextWorldDiffers =
         this.level < MAX_LEVEL && levelDef(this.level + 1).world !== levelDef(this.level).world;
@@ -878,8 +915,12 @@ export class GameSystem extends createSystem({}) {
           : nextWorldDiffers || this.level === 1
             ? WORLDS[this.curWorld].fact
             : 'Level clear!  Best ' + this.bestScore;
+      if (newSkin > oldSkin) {
+        this.messageText = 'New marble unlocked: ' + SKINS[newSkin].name + '!';
+        this.applySkin(newSkin);
+      }
       sfx.win();
-      this.beginMessage(nextWorldDiffers ? 2.6 : 1.8);
+      this.beginMessage(nextWorldDiffers || newSkin > oldSkin ? 2.6 : 1.8);
     } else if (this.shotsLeft <= 0) {
       this.won = false;
       this.messageText = 'Out of shots — try again';
@@ -932,6 +973,8 @@ export class GameSystem extends createSystem({}) {
       }
     }
     if (modeState.mode !== 'guti') return;
+    // headset removed or system menu open: freeze timers and input
+    if (this.world.visibilityState.value === 'visible-blurred') return;
 
     if (isFontReady() !== this.fontWasReady) {
       this.fontWasReady = isFontReady();
@@ -971,6 +1014,20 @@ export class GameSystem extends createSystem({}) {
       );
       const k = 1 + 0.35 * Math.sin(this.elapsed * 5);
       this.hintRing.scale.set(k, k, k);
+    }
+
+    // ghost hand: a looping wordless demo until the first shot is fired
+    this.ghost.visible = showHint;
+    if (showHint) {
+      const k = (this.elapsed % 3) / 3; // 0..1 loop
+      const pull = k < 0.25 ? 0 : k < 0.7 ? (k - 0.25) / 0.45 : 0;
+      this.ghost.position.set(
+        this.shooterPos.x,
+        TABLE_Y + 0.03,
+        this.shooterPos.z + 0.02 + pull * 0.18,
+      );
+      const sc = k < 0.25 ? 1 + 0.2 * Math.sin(k * 40) : k < 0.7 ? 0.7 : 1.2;
+      this.ghost.scale.set(sc, sc, sc);
     }
 
     if (this.phase === 'rolling') {
