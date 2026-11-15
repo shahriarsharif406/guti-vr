@@ -212,6 +212,10 @@ export class GameSystem extends createSystem({
   private hintRing!: Mesh;
   private ghost!: Mesh;
   private shadows: Mesh[] = [];
+  private showFps = new URLSearchParams(location.search).has('fps');
+  private fpsAcc = 0;
+  private fpsN = 0;
+  private fpsText = '';
   private skinIdx = 0;
   private firedOnce = false;
   private noHands = false;
@@ -602,7 +606,7 @@ export class GameSystem extends createSystem({
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('GUTI  •  ' + WORLDS[this.curWorld].name + '  •  Level ' + this.level + '/' + LEVELS.length, 70, 40);
+    h.text('GUTI  •  ' + WORLDS[this.curWorld].name + '  •  Level ' + this.level + '/' + LEVELS.length + this.fpsText, 70, 40);
     if (this.phase === 'message') {
       h.text(this.messageText, 150, 44, this.won ? '#8dff9d' : '#ff9d8d');
     } else {
@@ -1061,6 +1065,17 @@ export class GameSystem extends createSystem({
 
   // ------------------------------------------------------------------ frame
   update(delta: number): void {
+    // optional on-device frame-rate readout: open the game with ?fps in the URL
+    if (this.showFps && delta > 0) {
+      this.fpsAcc += delta;
+      this.fpsN++;
+      if (this.fpsAcc >= 1) {
+        this.fpsText = '  •  ' + Math.round(this.fpsN / this.fpsAcc) + ' fps';
+        this.fpsAcc = 0;
+        this.fpsN = 0;
+        this.hudDirty = true;
+      }
+    }
     this.elapsed += delta;
     if (modeState.mode !== this.lastMode) {
       const wasGuti = this.lastMode === 'guti';
