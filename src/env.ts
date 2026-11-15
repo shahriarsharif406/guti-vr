@@ -15,6 +15,7 @@ import {
   PointsMaterial,
   RepeatWrapping,
   SphereGeometry,
+  AssetManager,
   createSystem,
 } from '@iwsdk/core';
 import { WorldId, worldState } from './worlds.js';
@@ -44,6 +45,18 @@ export class EnvSystem extends createSystem({}) {
     this.world.createTransformEntity(m);
     this.groups[this.building].push(m);
     return m;
+  }
+
+  /** Places a Kenney model in the village (earth group). Silently skipped if it failed to load. */
+  private place(key: string, x: number, z: number, scale: number, rotY = 0, y = 0): void {
+    const gltf = AssetManager.getGLTF(key);
+    if (!gltf) return;
+    const o = gltf.scene;
+    o.position.set(x, y, z);
+    o.scale.setScalar(scale);
+    o.rotation.y = rotY;
+    this.world.createTransformEntity(o);
+    this.groups[this.building].push(o);
   }
 
   private groundTexture(): CanvasTexture {
@@ -95,26 +108,18 @@ export class EnvSystem extends createSystem({}) {
       );
     }
 
-    // mud hut with thatched roof
-    this.add(
-      new Mesh(new BoxGeometry(2.6, 1.7, 2.2), new MeshStandardMaterial({ color: 0xb98a63, roughness: 1 })),
-      3.2, 0.85, -4.2,
-    );
-    const roof = new Mesh(
-      new ConeGeometry(2.3, 1.2, 4),
-      new MeshStandardMaterial({ color: 0xc9a24a, roughness: 1 }),
-    );
-    roof.rotation.y = Math.PI / 4;
-    this.add(roof, 3.2, 2.3, -4.2);
-    this.add(
-      new Mesh(new BoxGeometry(0.6, 1.1, 0.06), new MeshStandardMaterial({ color: 0x3a2417 })),
-      3.2, 0.55, -3.08,
-    );
-    // warm window glow
-    this.add(
-      new Mesh(new BoxGeometry(0.4, 0.4, 0.05), new MeshBasicMaterial({ color: 0xffc766 })),
-      2.3, 1.0, -3.08,
-    );
+    // village houses and trees (Kenney models), arranged in a loose ring behind the courtyard
+    this.place('houseA', 4.2, -8.6, 1.5, -0.25);
+    this.place('houseB', 8.2, -5.0, 1.5, -1.1);
+    this.place('houseC', -7.8, -5.2, 1.5, 1.1);
+    this.place('houseD', 0.2, -11.5, 1.6, 0);
+    this.place('houseA', -5.0, -10.5, 1.4, 0.4);
+    this.place('houseB', 9.0, -9.5, 1.5, -0.8);
+    this.place('treesTall', -5.2, -3.2, 1.6, 0.3);
+    this.place('trees', 5.6, -1.5, 1.4, 0.5);
+    this.place('trees', -6.2, 0.4, 1.4, 2.0);
+    this.place('treesTall', 2.6, -9.6, 1.8, 1.0);
+    this.place('lamps', -3.2, -7.4, 1.2, Math.PI / 2);
 
     // clay jars (matka) near the player
     const clay = new MeshStandardMaterial({ color: 0xb4532a, roughness: 0.85 });

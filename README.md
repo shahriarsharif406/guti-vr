@@ -42,3 +42,6 @@ Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 - Collect stars to unlock marble skins: Pearl, Jade, Ruby, Gold, Galaxy.
 - Gameplay freezes automatically when the headset is removed or the system menu opens.
 - Level map: tap a tile to replay any unlocked level; each shows its saved stars.
+
+## Credits
+Village 3D models by [Kenney](https://kenney.nl) (Starter Kit City Builder, MIT).
