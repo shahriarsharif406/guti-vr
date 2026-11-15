@@ -24,6 +24,8 @@ import {
   RingGeometry,
   Quaternion,
   SphereGeometry,
+  CircleGeometry,
+  SRGBColorSpace,
   TorusGeometry,
   Vector3,
   createSystem,
@@ -153,6 +155,35 @@ function swirlTexture(hex: number): CanvasTexture {
   return new CanvasTexture(c);
 }
 
+function clayTexture(): CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  g.fillStyle = '#f0e8e0';
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 2600; i++) {
+    const v = 150 + Math.random() * 100;
+    g.fillStyle = 'rgba(' + v + ',' + (v - 10) + ',' + (v - 25) + ',' + (0.15 + Math.random() * 0.35) + ')';
+    g.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 3, 1 + Math.random() * 3);
+  }
+  // scuffs from thousands of earlier games
+  g.lineCap = 'round';
+  for (let i = 0; i < 70; i++) {
+    g.strokeStyle = 'rgba(90,60,40,' + (0.05 + Math.random() * 0.1) + ')';
+    g.lineWidth = 1 + Math.random() * 2;
+    g.beginPath();
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    g.moveTo(x, y);
+    g.lineTo(x + (Math.random() - 0.5) * 60, y + (Math.random() - 0.5) * 60);
+    g.stroke();
+  }
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return t;
+}
+
 const MAX_LEVEL = LEVELS.length;
 
 export class GameSystem extends createSystem({
@@ -180,6 +211,7 @@ export class GameSystem extends createSystem({
   private fontWasReady = false;
   private hintRing!: Mesh;
   private ghost!: Mesh;
+  private shadows: Mesh[] = [];
   private skinIdx = 0;
   private firedOnce = false;
   private noHands = false;
@@ -319,7 +351,7 @@ export class GameSystem extends createSystem({
     world.createTransformEntity(floor);
 
     // the playing ground: a round disc of packed clay at hand height
-    this.tableMat = new MeshStandardMaterial({ color: 0xb98a5e, roughness: 0.95 });
+    this.tableMat = new MeshStandardMaterial({ color: 0xb98a5e, roughness: 0.95, map: clayTexture() });
     const table = new Mesh(new CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.04, 64), this.tableMat);
     table.position.set(0, TABLE_Y - 0.02, TABLE_CENTER_Z);
     this.tableEntity = world.createTransformEntity(table);
@@ -475,6 +507,38 @@ export class GameSystem extends createSystem({
     );
     this.world.createTransformEntity(this.ghost);
     this.modeObjects.push(this.ghost);
+    // soft contact shadows under every marble: they ground the marbles on the clay
+    const sg = new CircleGeometry(MARBLE_R * 1.35, 20);
+    const sm = new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
+    for (let i = 0; i < 24; i++) {
+      const m = new Mesh(sg, sm);
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      this.world.createTransformEntity(m);
+      this.shadows.push(m);
+      this.modeObjects.push(m);
+    }
+  }
+
+  private updateShadows(): void {
+    let k = 0;
+    const put = (e: Entity, gone: boolean): void => {
+      const o = e.object3D;
+      const m = this.shadows[k++];
+      if (!m) return;
+      if (!o || gone || o.position.y > TABLE_Y + 0.12 || this.offTable(e)) {
+        m.visible = false;
+        return;
+      }
+      m.visible = true;
+      m.position.set(o.position.x, TABLE_Y + 0.0015, o.position.z);
+      const lift = Math.max(0, o.position.y - (TABLE_Y + MARBLE_R));
+      const sc = 1 + lift * 6;
+      m.scale.set(sc, sc, sc);
+    };
+    put(this.shooter, false);
+    for (let i = 0; i < this.targets.length; i++) put(this.targets[i], this.wasOut[i]);
+    for (; k < this.shadows.length; k++) this.shadows[k].visible = false;
   }
 
   private buildLevelMap(): void {
@@ -832,6 +896,7 @@ export class GameSystem extends createSystem({
       this.shotOut = 0;
       this.firedOnce = true;
       sfx.shot(power);
+      emitBurst(this.shooterPos.x, TABLE_Y + 0.01, this.shooterPos.z, 0.85, 0.7, 0.5, 10, 0.12);
       this.phase = 'rolling';
       this.rollTimer = 0;
       this.restTimer = 0;
@@ -876,8 +941,16 @@ export class GameSystem extends createSystem({
       if (!t.object3D) continue;
       const sp = this.speedOf(t);
       if (sp > 0.04 && !this.offTable(t)) moving = true;
-      if (sp - this.prevSpeeds[i] > 0.12) sfx.clack((sp - this.prevSpeeds[i]) / 1.5);
+      if (sp - this.prevSpeeds[i] > 0.12) {
+        sfx.clack((sp - this.prevSpeeds[i]) / 1.5);
+        const q = t.object3D.position;
+        emitBurst(q.x, q.y, q.z, 1, 0.96, 0.85, 5, 0.25);
+      }
       this.prevSpeeds[i] = sp;
+    }
+    const sh = this.shooter.object3D;
+    if (sh && this.speedOf(this.shooter) > 0.7) {
+      emitBurst(sh.position.x, TABLE_Y + 0.008, sh.position.z, 0.8, 0.68, 0.5, 1, 0.05);
     }
     this.restTimer = moving ? 0 : this.restTimer + delta;
     const shooterFell =
@@ -1039,6 +1112,8 @@ export class GameSystem extends createSystem({
       this.noHands = nh;
       this.hudDirty = true;
     }
+
+    this.updateShadows();
 
     if (this.phase === 'aim') {
       this.updateInput();
