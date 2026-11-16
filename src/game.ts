@@ -25,6 +25,9 @@ import {
   Quaternion,
   SphereGeometry,
   CircleGeometry,
+  PMREMGenerator,
+  Scene,
+  BackSide,
   SRGBColorSpace,
   TorusGeometry,
   Vector3,
@@ -427,6 +430,7 @@ export class GameSystem extends createSystem({
       emissive: 0xffffff,
       emissiveIntensity: 0.1,
     });
+    this.applyReflections();
     this.shooter = this.spawnMarble(
       new Vector3(0, TABLE_Y + MARBLE_R + 0.001, SHOOTER_START_Z),
       MarbleKinds.Shooter,
@@ -458,6 +462,46 @@ export class GameSystem extends createSystem({
       angularDamping: 0.6,
     });
     return e;
+  }
+
+  /**
+   * Gives glass and metal marbles something to reflect: a small sunset-sky
+   * environment (warm horizon, bright sun, dark ground) baked once into a PMREM map.
+   */
+  private applyReflections(): void {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 256;
+      const g = c.getContext('2d') as CanvasRenderingContext2D;
+      const grad = g.createLinearGradient(0, 0, 0, 256);
+      grad.addColorStop(0, '#5b86c9');
+      grad.addColorStop(0.45, '#ffb27a');
+      grad.addColorStop(0.5, '#ffd9a8');
+      grad.addColorStop(0.52, '#4a3224');
+      grad.addColorStop(1, '#2a1c14');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 512, 256);
+      const sun = g.createRadialGradient(130, 100, 2, 130, 100, 40);
+      sun.addColorStop(0, 'rgba(255,250,230,1)');
+      sun.addColorStop(1, 'rgba(255,200,120,0)');
+      g.fillStyle = sun;
+      g.fillRect(60, 40, 140, 120);
+      const tex = new CanvasTexture(c);
+      tex.colorSpace = SRGBColorSpace;
+      const sc = new Scene();
+      sc.add(new Mesh(new SphereGeometry(10, 32, 16), new MeshBasicMaterial({ map: tex, side: BackSide })));
+      const pm = new PMREMGenerator(this.world.renderer);
+      const env = pm.fromScene(sc, 0, 0.1, 50).texture;
+      pm.dispose();
+      for (const m of [...this.targetMats, this.goldMat, this.heavyMat, this.shooterMat]) {
+        m.envMap = env;
+        m.envMapIntensity = m === this.heavyMat || m === this.goldMat ? 1.2 : 0.9;
+        m.needsUpdate = true;
+      }
+    } catch {
+      // reflections are a nicety; the marbles still render without them
+    }
   }
 
   private buildArrow(): void {
