@@ -27,6 +27,9 @@ import {
   CircleGeometry,
   PMREMGenerator,
   Scene,
+  Texture,
+  EquirectangularReflectionMapping,
+  AssetManager,
   BackSide,
   SRGBColorSpace,
   TorusGeometry,
@@ -214,6 +217,7 @@ export class GameSystem extends createSystem({
   private fontWasReady = false;
   private hintRing!: Mesh;
   private ghost!: Mesh;
+  private earthEnv: Texture | null = null;
   private shadows: Mesh[] = [];
   private showFps = new URLSearchParams(location.search).has('fps');
   private fpsAcc = 0;
@@ -470,6 +474,24 @@ export class GameSystem extends createSystem({
    */
   private applyReflections(): void {
     try {
+      let env = null as Texture | null;
+      const hdr = AssetManager.getAsset('sunsetHdr') as Texture | undefined;
+      if (hdr) {
+        hdr.mapping = EquirectangularReflectionMapping;
+        const pm0 = new PMREMGenerator(this.world.renderer);
+        env = pm0.fromEquirectangular(hdr).texture;
+        pm0.dispose();
+        this.earthEnv = env;
+      }
+      if (!env) env = this.gradientEnv();
+      this.finishReflections(env);
+    } catch {
+      // reflections are a nicety; the marbles still render without them
+    }
+  }
+
+  private gradientEnv(): Texture {
+    {
       const c = document.createElement('canvas');
       c.width = 512;
       c.height = 256;
@@ -494,14 +516,19 @@ export class GameSystem extends createSystem({
       const pm = new PMREMGenerator(this.world.renderer);
       const env = pm.fromScene(sc, 0, 0.1, 50).texture;
       pm.dispose();
-      for (const m of [...this.targetMats, this.goldMat, this.heavyMat, this.shooterMat]) {
-        m.envMap = env;
-        m.envMapIntensity = m === this.heavyMat || m === this.goldMat ? 1.2 : 0.9;
-        m.needsUpdate = true;
-      }
-    } catch {
-      // reflections are a nicety; the marbles still render without them
+      return env;
     }
+  }
+
+  private finishReflections(env: Texture): void {
+    for (const m of [...this.targetMats, this.goldMat, this.heavyMat, this.shooterMat]) {
+      m.envMap = env;
+      m.envMapIntensity = m === this.heavyMat || m === this.goldMat ? 1.2 : 0.9;
+      m.needsUpdate = true;
+    }
+    // the village (houses, trees, clay) is lit by the same sky
+    this.world.scene.environmentIntensity = 0.55;
+    if (this.earthEnv && worldState.id === 'earth') this.world.scene.environment = this.earthEnv;
   }
 
   private buildArrow(): void {
@@ -717,6 +744,8 @@ export class GameSystem extends createSystem({
     if (physics) physics.config.gravity.value = [0, -w.gravity, 0];
     this.sun.color.setHex(w.sunColor);
     this.sun.intensity = w.sunIntensity;
+    // the real-sky lighting only belongs to the village
+    this.world.scene.environment = id === 'earth' ? this.earthEnv : null;
     this.floorMat.color.setHex(w.floorColor);
     this.tableMat.color.setHex(w.tableColor);
     this.shooter.setValue(PhysicsBody, 'linearDamping', w.damping);

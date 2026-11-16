@@ -17,4 +17,9 @@ export default defineAssets({
   treesTall: model('grass-trees-tall.glb'),
   lamps: model('road-straight-lightposts.glb'),
   fountain: model('pavement-fountain.glb'),
+  sunsetHdr: {
+    url: import.meta.env.BASE_URL + 'hdri/sunset.exr',
+    type: AssetType.HDRTexture,
+    priority: 'critical' as const,
+  },
 });
