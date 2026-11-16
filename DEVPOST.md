@@ -23,7 +23,7 @@ IWSDK (WebXR) with TypeScript, Three.js, Havok physics (marbles) and Vite. All s
 Hand tracking jitter and dropouts, tuning marble friction so shots feel good, making the kite-cut rule readable (fast = cut, slow = get cut), and rendering Bengali text in-headset (bundled font).
 
 ## What's next
-More worlds (Jupiter, an asteroid), two-player pass-and-play, more kite sky scenes, and Horizon Store packaging.
+Guti is the first step of a Bangla folk-games arcade: next come lattim (spinning tops), dang-guli, and sat-chara, plus more worlds (Jupiter, an asteroid), two-player pass-and-play, more kite sky scenes, and Horizon Store packaging.
 
 ## Built with
 WebXR, IWSDK, TypeScript, Three.js, Havok Physics, Vite, Meta Quest, Hand Tracking
