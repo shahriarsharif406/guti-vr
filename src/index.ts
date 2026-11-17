@@ -31,4 +31,9 @@ World.create(
   world.registerSystem(DominoSystem);
   world.registerSystem(BrickSystem);
   world.registerSystem(PaperPlaneSystem);
+  const boot = document.getElementById('boot');
+  if (boot) {
+    boot.style.opacity = '0';
+    setTimeout(() => boot.remove(), 600);
+  }
 });

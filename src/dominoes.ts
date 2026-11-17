@@ -27,10 +27,10 @@ const DH = 0.06; // height
 const DT = 0.012; // thickness
 const MAX = 40;
 const TRAY = new Vector3(-0.3, TOP, -0.27);
-const PICK_R = 0.045;
-const TRAY_R = 0.1;
-const PINCH_START = 0.92;
-const PINCH_HOLD = 0.6;
+const PICK_R = 0.06;
+const TRAY_R = 0.13;
+const PINCH_START = 0.85;
+const PINCH_HOLD = 0.5;
 const LINK = 0.11; // max distance for auto-orienting a chain
 const HAND_PLANE_Y = 0.8;
 

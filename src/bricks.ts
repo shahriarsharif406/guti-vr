@@ -30,8 +30,8 @@ const OX = CX - (N * C) / 2;
 const OZ = CZ - 0.07 - (N * C) / 2;
 const MAXL = 18;
 const MAXB = 60;
-const PINCH_START = 0.92;
-const PINCH_HOLD = 0.6;
+const PINCH_START = 0.85;
+const PINCH_HOLD = 0.5;
 const HAND_PLANE_Y = 0.85;
 
 type HandName = 'left' | 'right';
@@ -56,7 +56,7 @@ const SLOT: [number, number][] = [
   [0, -0.2],
   [0.19, -0.2],
 ];
-const SLOT_R = 0.075;
+const SLOT_R = 0.095;
 
 interface Brick {
   g: Group;
@@ -485,7 +485,7 @@ export class BrickSystem extends createSystem({
         }
       } else {
         let best: Brick | null = null;
-        let bd = 0.05;
+        let bd = 0.07;
         for (const b of this.placedOrder) {
           if (!this.isTop(b)) continue;
           const { w, d } = DEFS[b.type];

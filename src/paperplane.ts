@@ -31,10 +31,10 @@ const TOP = 0.74;
 const SY = TOP + 0.004; // sheet height
 const W = 0.2;
 const L = 0.28;
-const PINCH_START = 0.92;
-const PINCH_HOLD = 0.6;
+const PINCH_START = 0.85;
+const PINCH_HOLD = 0.5;
 const HAND_PLANE_Y = 0.85;
-const GRAB_R = 0.075;
+const GRAB_R = 0.095;
 const FLAP_Y = 0.0016;
 const WING = 0.5;
 

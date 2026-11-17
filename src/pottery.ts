@@ -41,8 +41,8 @@ const R_MIN = 0.022;
 const R_MAX = 0.13;
 const H_MIN = 0.06;
 const H_MAX = 0.27;
-const PINCH_START = 0.92;
-const PINCH_HOLD = 0.6;
+const PINCH_START = 0.85;
+const PINCH_HOLD = 0.5;
 const BAND = 0.032;
 const SPIN = 4.2;
 
