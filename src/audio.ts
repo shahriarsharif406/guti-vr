@@ -433,6 +433,16 @@ export const sfx = {
     tone(1150 + Math.random() * 120, 0.05, v * 0.6, 'sine', 800);
     burst(0.025, v * 0.5, 2500, 1.5);
   },
+  /** wet clay squelch while sculpting */
+  clay(): void {
+    burst(0.05, 0.035, 420 + Math.random() * 120, 0.7);
+  },
+  /** kiln roar, then a soft chime */
+  kiln(): void {
+    burst(0.9, 0.09, 260, 0.4);
+    tone(660, 0.5, 0.12, 'sine', 990, 0.7);
+    tone(880, 0.6, 0.1, 'sine', undefined, 0.9);
+  },
   /** the guli landing on packed earth */
   thud(strength: number): void {
     const v = 0.06 + 0.16 * Math.min(1, strength);

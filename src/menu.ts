@@ -79,15 +79,7 @@ export class MenuSystem extends createSystem({
     };
     card(this.buttons[0].panel, 'Marbles', 'গুলি', 'Flick them out of the ring', '#7fd8ff');
     card(this.buttons[1].panel, 'Kite Alive', 'ঘুড়ি', 'Cut kites, dodge crows', '#ffb56b');
-    const soon = (p: TextPanel, bn: string, en: string) => {
-      p.card('rgba(30,24,18,0.6)', '#7a6a55');
-      p.text(bn, p.h * 0.34, 64, '#8a7a65');
-      p.text(en, p.h * 0.58, 40, '#9a8a75');
-      p.text('Coming soon', p.h * 0.82, 34, '#cdb99a');
-      p.commit();
-    };
-    soon(this.buttons[2].panel, 'লাটিম', 'Lattim');
-    soon(this.buttons[3].panel, 'ডাংগুলি', 'Danguli');
+    card(this.buttons[2].panel, 'Pottery', 'কুমোরের চাকা', 'Shape clay with your hands', '#e8a06a');
     const b = this.back.panel;
     b.card('rgba(40,24,12,0.88)', '#ffd9a0');
     b.text('← Menu', b.h * 0.62, 70, '#ffe9c4');
@@ -103,10 +95,9 @@ export class MenuSystem extends createSystem({
     const y = TABLE_Y + 0.2;
     const z = TABLE_CENTER_Z + 0.02;
     this.buttons.push(
-      this.makeButton(MenuTargets.Guti, 0.24, 0.24, -0.15, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Kite, 0.24, 0.24, 0.15, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Lattim, 0.13, 0.13, -0.37, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Danguli, 0.13, 0.13, 0.37, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Guti, 0.21, 0.21, -0.25, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Kite, 0.21, 0.21, 0.0, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Pottery, 0.21, 0.21, 0.25, y, z, -0.5, () => {}),
     );
     this.back = this.makeButton(
       MenuTargets.Menu,
@@ -127,14 +118,14 @@ export class MenuSystem extends createSystem({
     const onPress = (entity: Entity) => {
       if (this.cooldown > 0) return;
       const target = entity.getValue(MenuButton, 'target');
-      if (!target || target === MenuTargets.Lattim || target === MenuTargets.Danguli) return;
+      if (!target) return;
       // only act on buttons that are visible in the current mode
       const o = entity.object3D;
       if (!o || !o.visible) return;
       sfx.ambience();
       sfx.select();
       this.cooldown = 0.4;
-      setMode(target as 'menu' | 'guti' | 'kite' | 'lattim' | 'danguli');
+      setMode(target as 'menu' | 'guti' | 'kite' | 'pottery');
     };
     this.cleanupFuncs.push(this.queries.pressed.subscribe('qualify', onPress));
   }
@@ -158,7 +149,7 @@ export class MenuSystem extends createSystem({
       cam.getWorldPosition(this.head);
       cam.getWorldDirection(this.fwd);
       let hit = -1;
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < 3; i++) {
         this.buttons[i].mesh.getWorldPosition(this.to).sub(this.head).normalize();
         if (this.to.dot(this.fwd) > 0.985) hit = i;
       }
@@ -172,7 +163,7 @@ export class MenuSystem extends createSystem({
         this.cooldown = 0.4;
         sfx.ambience();
         sfx.select();
-        setMode(hit === 0 ? 'guti' : hit === 1 ? 'kite' : hit === 2 ? 'lattim' : 'danguli');
+        setMode(hit === 0 ? 'guti' : hit === 1 ? 'kite' : 'pottery');
       }
     }
     // hover feedback: buttons lift a little

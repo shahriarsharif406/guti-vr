@@ -1,6 +1,6 @@
 import { createComponent, Types } from '@iwsdk/core';
 
-export const MenuTargets = { Guti: 'guti', Kite: 'kite', Lattim: 'lattim', Danguli: 'danguli', Menu: 'menu' } as const;
+export const MenuTargets = { Guti: 'guti', Kite: 'kite', Lattim: 'lattim', Danguli: 'danguli', Pottery: 'pottery', Menu: 'menu' } as const;
 
 /** A big pressable panel that switches the game mode. */
 export const MenuButton = createComponent('MenuButton', {
@@ -28,5 +28,10 @@ export const DanOpt = createComponent('DanOpt', {
 
 /** A pressable option on the Lattim table (mode, top design). */
 export const LatOpt = createComponent('LatOpt', {
+  id: { type: Types.Int8, default: 0 },
+});
+
+/** A pressable option at the pottery wheel (glaze, fire, new clay). */
+export const PotOpt = createComponent('PotOpt', {
   id: { type: Types.Int8, default: 0 },
 });
