@@ -1,19 +1,26 @@
 # Pocket Workshop
 
+**Build something with your hands, then play with it. Hands only, seated, no controllers.**
+
 ## Inspiration
-The best moments in VR are when your hands make something. Pocket Workshop is a tiny workshop on your table where you build first, then play with what you built.
+The best moments in VR are when your hands make something. Pocket Workshop is a cozy workshop on your table: you build first, then play with what you built.
 
 ## What it does
-Three hand-made stations, seated and hands-only: shape clay on a pottery wheel and fire it in a kiln; snap bricks into a tower and smash it with a wrecking ball; line up dominoes and start the chain.
+Three stations, all driven by hand-tracking pinch:
+- **Pottery:** shape spinning clay into a pot, glaze it, fire it in a kiln and keep it on your shelf.
+- **Brick Builder:** snap bricks into a tower, then smash it with a wrecking ball.
+- **Domino Run:** stand dominoes in a chain and watch it fall.
+
+A small **AI Workshop Mentor** sets a fair challenge (the game verifies the goal) and comments on what you made in one friendly line. No personal data is sent, and it falls back to built-in lines when offline.
 
 ## How we built it
-IWSDK + TypeScript on WebXR. Hand-tracking pinch input, a custom lathe mesh for clay, custom 2D marble physics with a solver that verifies every level is winnable, procedural audio and scenery.
+IWSDK + TypeScript on WebXR. A custom lathe mesh for clay, a stud-grid brick system with support and collapse simulation, a domino toppling simulation, procedural scenery, and real sound effects.
 
 ## Challenges
-Making hand input reliable and readable for first-time players, and keeping performance Quest-friendly.
+Making hand input forgiving for first-time players and keeping scenes light for Quest.
 
 ## What's next
-More workshop stations, more materials and shareable creations.
+More stations, more materials and shareable creations.
 
 ## Credits
-SFX: "Oculus Audio Pack 01" by Oculus VR, LLC (CC BY 4.0). Props: Free Apartment Props by Vuena (CC0). HDRI: Poly Haven (CC0).
+SFX: "Oculus Audio Pack 01" by Oculus VR, LLC (CC BY 4.0). 3D props: Free Apartment Props by Vuena (CC0). AI mentor text: Pollinations.

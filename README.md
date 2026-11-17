@@ -16,7 +16,6 @@ Built with IWSDK (WebXR), TypeScript, Three.js. All visuals and sounds are proce
 
 - Sound effects: "Oculus Audio Pack 01" by Oculus VR, LLC (https://developers.meta.com/vr/downloads/package/oculus-audio-pack-1/), licensed under CC BY 4.0. Files renamed to the UCS naming convention; OGG previews transcoded from the original WAVs.
 - 3D props (lamps, plants, side table, books, mug, basket): "Free Apartment Props" by Vuena, CC0 (https://github.com/Vuena/free-apartment-props-cc0).
-- Sunset HDRI: Poly Haven, CC0.
 
 ## Workshop Mentor (AI)
 When you finish a creation, a small language model (free, key-less Pollinations text endpoint) reads a one-line description of what you made (e.g. "a tower 10 bricks high") and replies with one friendly sentence. No personal data is sent; if the network is slow or blocked, a built-in line is used so the game never waits.
