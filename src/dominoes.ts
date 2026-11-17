@@ -169,6 +169,13 @@ export class DominoSystem extends createSystem({
     w.__domPlace = (pts: [number, number][]) => {
       for (const p of pts) this.dropAt(this.spawn(), p[0], p[1]);
     };
+    w.__domPtr = () =>
+      (['left', 'right'] as HandName[]).map((h) => {
+        const ad = this.input.xr.visualAdapters.hand[h];
+        const q = new Vector3();
+        const ok = readPinchPoint(ad as never, q);
+        return { h, connected: ad.connected, strength: ad.connected ? ad.getPinchStrength() : -1, pt: ok ? q.toArray() : null };
+      });
     w.__domTopple = () => this.press(0);
 
     const down = (e: PointerEvent) => {
