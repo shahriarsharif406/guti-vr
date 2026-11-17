@@ -39,6 +39,11 @@ import {
   hazeDisc,
   hut,
   mudTexture,
+  moonTexture,
+  marsTexture,
+  metalTexture,
+  planet,
+  boulder,
   paddyTexture,
   paintedSky,
   palm,
@@ -75,6 +80,9 @@ export class EnvSystem extends createSystem({}) {
     moon: [],
     mars: [],
     station: [],
+    luna: [],
+    ares: [],
+    orbit: [],
     field: [],
   };
   private shownWorld: SceneKey | '' = '';
@@ -318,6 +326,57 @@ export class EnvSystem extends createSystem({}) {
     rain.frustumCulled = false;
     this.put(rain, 0, 0);
     this.rain = rain;
+  }
+
+  // ------------------------------------------------------------ Fantasy worlds (optional)
+  private buildLuna(): void {
+    this.put(paintedSky({ top: '#000004', mid: '#04050a', horizon: '#14151c', stars: 900, clouds: 0 }), 0, -0.5, 1, 0, 1.3);
+    this.put(hazeDisc(70, moonTexture(), 0x14151c), 0, -1, 1, 0, -0.012);
+    const earth = planet(3.2, 'earth');
+    this.put(earth, -14, -40, 1, 0, 16);
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 4 + Math.random() * 30;
+      this.put(boulder(rnd(0.2, 1.1), 0x8a898f), Math.sin(a) * r, -Math.cos(a) * r - 2, 1, Math.random() * 6);
+    }
+    // a lander leg-and-body silhouette far away
+    const lander = new Mesh(new CylinderGeometry(0.9, 1.3, 1.1, 8), new MeshStandardMaterial({ color: 0xd9b45a, metalness: 0.6, roughness: 0.4 }));
+    this.put(lander, 9, -16, 1, 0, 1.3);
+    for (const dx of [-1.2, 1.2]) for (const dz of [-0.8, 0.8]) {
+      const leg = new Mesh(new CylinderGeometry(0.06, 0.06, 1.4, 5), new MeshStandardMaterial({ color: 0xbfc3c8 }));
+      leg.rotation.z = -dx * 0.35;
+      this.put(leg, 9 + dx, -16 + dz, 1, 0, 0.7);
+    }
+  }
+
+  private buildAres(): void {
+    this.put(paintedSky({ top: '#7a4630', mid: '#c98a62', horizon: '#ecc49a', sunU: 0.7, sunV: 0.4, sunColor: '#fff1d8', clouds: 10, cloudColor: '255,220,190', cloudAlpha: 0.35 }), 0, -0.5, 1, 0, 1.3);
+    this.put(hazeDisc(70, marsTexture(), 0xe0a67e), 0, -1, 1, 0, -0.012);
+    for (let i = 0; i < 34; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 4 + Math.random() * 34;
+      this.put(boulder(rnd(0.2, 1.3), 0x8a4a34), Math.sin(a) * r, -Math.cos(a) * r - 2, 1, Math.random() * 6);
+    }
+    // big mesa and a small moon in the sky
+    this.put(new Mesh(new CylinderGeometry(5, 8, 5, 7), new MeshStandardMaterial({ color: 0x9a5a3c, roughness: 1, flatShading: true })), -22, -34, 1, 0, 2.5);
+    this.put(planet(0.9, 'moon'), 20, -38, 1, 0, 14);
+  }
+
+  private buildOrbit(): void {
+    this.put(paintedSky({ top: '#000006', mid: '#02030a', horizon: '#05060e', stars: 1100, clouds: 0 }), 0, -0.5, 1, 0, 1.3);
+    this.put(hazeDisc(40, metalTexture(), 0x05060e), 0, -1, 1, 0, -0.012);
+    // Earth hanging below the horizon
+    this.put(planet(30, 'earth'), 10, -60, 1, 0, -34);
+    // solar panel wings and truss
+    const panel = new MeshStandardMaterial({ color: 0x1c3a78, metalness: 0.7, roughness: 0.3 });
+    const truss = new MeshStandardMaterial({ color: 0xbfc3c8, metalness: 0.8, roughness: 0.4 });
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        this.put(new Mesh(new BoxGeometry(4, 0.08, 1.6), panel), side * (6 + i * 4.3), -9, 1, 0, 3 + i * 0.4);
+      }
+    }
+    this.put(new Mesh(new CylinderGeometry(0.25, 0.25, 22, 8), truss), 0, -9, 1, 0, 3.3).rotation.z = Math.PI / 2;
+    this.put(new Mesh(new CylinderGeometry(1.4, 1.4, 5, 14), truss), -2.5, -8, 1, 0, 3.3).rotation.z = Math.PI / 2;
   }
 
   // ------------------------------------------------------------ Dhaka rooftop (levels 11-13)

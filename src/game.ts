@@ -69,47 +69,110 @@ const PINCH_START = 0.92;
 const PINCH_HOLD = 0.6;
 const MOUSE_METERS_PER_PX = 0.0006;
 
-type Phase = 'aim' | 'rolling' | 'message';
+type Phase = 'aim' | 'rolling' | 'message' | 'ai';
 type HandName = 'left' | 'right';
 
 type Formation = 'cluster' | 'line' | 'ring' | 'cross';
 
+type Kind = 'ring' | 'pit' | 'race' | 'duel';
+type Grp = 'classic' | 'gorto' | 'tip' | 'race' | 'duel' | 'fantasy';
+
 interface LevelDef {
   world: WorldId;
+  grp: Grp;
+  kind: Kind;
   targets: number;
   shots: number;
   ring: number;
+  rc?: [number, number]; // ring centre offset from the table centre
   formation: Formation;
   heavy: number;
   gold: number;
-  rocks: [number, number][]; // x, z offsets from the ring center
-  pit?: { x: number; z: number; r: number }; // গর্ত: roll marbles into this hole
+  rocks: [number, number][]; // x, z offsets from the table centre
+  pit?: { x: number; z: number; r: number }; // গর্ত: the hole (marbles in 'pit', your marble in 'race')
+  ai?: number; // duel: aiming error of the opponent, degrees
   tip: string;
 }
 
-const LEVELS: LevelDef[] = [
-  // ---- Village (Earth gravity)
-  { world: 'earth', targets: 3, shots: 5, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Pinch the white marble, pull back, release' },
-  { world: 'earth', targets: 4, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Aim dots show where your shot will go' },
-  { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Rocks block the way: thread the gap' },
-  { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [], tip: 'Knock out the golden marble for a bonus shot' },
-  // ---- Gorto (গর্ত): the village hole game. Roll the marbles into the hole.
-  { world: 'earth', targets: 3, shots: 7, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [], pit: { x: 0, z: -0.2, r: 0.05 }, tip: 'Gorto: roll every marble into the hole' },
-  { world: 'earth', targets: 4, shots: 8, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[0.02, -0.1]], pit: { x: 0.12, z: -0.22, r: 0.045 }, tip: 'Gorto: go around the rock. Gentle taps drop in' },
-  { world: 'earth', targets: 5, shots: 9, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.04, -0.12], [0.07, -0.1]], pit: { x: -0.1, z: -0.22, r: 0.04 }, tip: 'Gorto: smaller hole, golden bonus shot' },
-  // ---- Harvest field (dry, slides far)
-  { world: 'moon', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Dry ground: marbles slide far. Pull gently' },
-  { world: 'moon', targets: 6, shots: 7, ring: 0.115, formation: 'ring', heavy: 0, gold: 0, rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is smaller. Soft taps are enough' },
-  { world: 'moon', targets: 6, shots: 7, ring: 0.125, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Golden marble: bonus shot' },
-  // ---- Monsoon mud
-  { world: 'mars', targets: 6, shots: 9, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy stone marbles need a strong hit' },
-  { world: 'mars', targets: 7, shots: 9, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[-0.09, 0.16], [0.09, 0.16]], tip: 'Rocks guard the sides: use the centre lane' },
-  { world: 'mars', targets: 8, shots: 9, ring: 0.1, formation: 'ring', heavy: 0, gold: 1, rocks: [], tip: 'Tight ring, golden bonus inside' },
-  // ---- Dhaka rooftop (slippery)
-  { world: 'station', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Slippery cement: marbles keep sliding' },
-  { world: 'station', targets: 8, shots: 8, ring: 0.12, formation: 'cluster', heavy: 2, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Heavy, golden and rocks together' },
-  { world: 'station', targets: 10, shots: 9, ring: 0.095, formation: 'ring', heavy: 3, gold: 1, rocks: [[-0.09, 0.17], [0.09, 0.17]], tip: 'Final level. Clear the ring!' },
+const GROUPS: { id: Grp; label: string }[] = [
+  { id: 'classic', label: 'Classic • গোল্লা' },
+  { id: 'gorto', label: 'Hole • গর্ত' },
+  { id: 'tip', label: 'Precision • টিপ' },
+  { id: 'race', label: 'Race' },
+  { id: 'duel', label: 'Duel • 1v1' },
+  { id: 'fantasy', label: 'Fantasy' },
 ];
+
+const L = (o: Partial<LevelDef> & Pick<LevelDef, 'world' | 'targets' | 'shots' | 'tip'>): LevelDef => ({
+  grp: 'classic',
+  kind: 'ring',
+  ring: 0.13,
+  formation: 'cluster',
+  heavy: 0,
+  gold: 0,
+  rocks: [],
+  ...o,
+});
+const TWO_ROCKS: [number, number][] = [[-0.085, 0.16], [0.085, 0.16]];
+
+const LEVELS: LevelDef[] = [
+  // ================= Classic: knock the marbles out of the goalla ring
+  // ---- Village (Earth gravity)
+  L({ world: 'earth', targets: 3, shots: 5, tip: 'Pinch the white marble, pull back, release' }),
+  L({ world: 'earth', targets: 4, shots: 6, tip: 'Aim dots show where your shot will go' }),
+  L({ world: 'earth', targets: 5, shots: 6, formation: 'line', rocks: TWO_ROCKS, tip: 'Rocks block the way: thread the gap' }),
+  L({ world: 'earth', targets: 5, shots: 6, gold: 1, tip: 'Knock out the golden marble for a bonus shot' }),
+  // ---- Harvest field (dry, slides far)
+  L({ world: 'moon', targets: 5, shots: 6, tip: 'Dry ground: marbles slide far. Pull gently' }),
+  L({ world: 'moon', targets: 6, shots: 7, ring: 0.115, formation: 'ring', rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is smaller. Soft taps are enough' }),
+  L({ world: 'moon', targets: 6, shots: 7, ring: 0.125, gold: 1, rocks: TWO_ROCKS, tip: 'Golden marble: bonus shot' }),
+  // ---- Monsoon mud
+  L({ world: 'mars', targets: 6, shots: 9, heavy: 2, tip: 'Heavy stone marbles need a strong hit' }),
+  L({ world: 'mars', targets: 7, shots: 9, formation: 'cross', rocks: [[-0.09, 0.16], [0.09, 0.16]], tip: 'Rocks guard the sides: use the centre lane' }),
+  L({ world: 'mars', targets: 8, shots: 9, ring: 0.1, formation: 'ring', gold: 1, tip: 'Tight ring, golden bonus inside' }),
+  // ---- Dhaka rooftop (slippery)
+  L({ world: 'station', targets: 5, shots: 6, tip: 'Slippery cement: marbles keep sliding' }),
+  L({ world: 'station', targets: 8, shots: 8, ring: 0.12, heavy: 2, gold: 1, rocks: TWO_ROCKS, tip: 'Heavy, golden and rocks together' }),
+  L({ world: 'station', targets: 10, shots: 9, ring: 0.095, formation: 'ring', heavy: 3, gold: 1, rocks: [[-0.09, 0.17], [0.09, 0.17]], tip: 'Final level. Clear the ring!' }),
+
+  // ================= Hole (গর্ত): roll the marbles into the hole
+  L({ grp: 'gorto', kind: 'pit', world: 'earth', targets: 3, shots: 7, formation: 'line', pit: { x: 0, z: -0.2, r: 0.05 }, tip: 'Gorto: roll every marble into the hole' }),
+  L({ grp: 'gorto', kind: 'pit', world: 'earth', targets: 4, shots: 8, formation: 'line', rocks: [[0.02, -0.1]], pit: { x: 0.12, z: -0.22, r: 0.045 }, tip: 'Gorto: go around the rock. Gentle taps drop in' }),
+  L({ grp: 'gorto', kind: 'pit', world: 'earth', targets: 5, shots: 9, gold: 1, rocks: [[-0.04, -0.12], [0.07, -0.1]], pit: { x: -0.1, z: -0.22, r: 0.04 }, tip: 'Gorto: smaller hole, golden bonus shot' }),
+  L({ grp: 'gorto', kind: 'pit', world: 'earth', targets: 6, shots: 10, heavy: 1, rocks: [[-0.1, -0.06], [0.1, -0.06], [0, -0.14]], pit: { x: 0, z: -0.25, r: 0.04 }, tip: 'Gorto: guarded hole, one heavy stone' }),
+
+  // ================= Precision (টিপ): knock a marble out of a small, far ring
+  L({ grp: 'tip', world: 'earth', targets: 1, shots: 3, ring: 0.05, rc: [0, -0.2], formation: 'line', tip: 'Tip: hit the marble out of the small ring' }),
+  L({ grp: 'tip', world: 'earth', targets: 1, shots: 3, ring: 0.05, rc: [0.14, -0.2], formation: 'line', tip: 'Tip: angle shot, three tries' }),
+  L({ grp: 'tip', world: 'earth', targets: 2, shots: 4, ring: 0.06, rc: [-0.13, -0.18], formation: 'line', rocks: [[-0.04, -0.02]], tip: 'Tip: two marbles, one rock in the way' }),
+  L({ grp: 'tip', world: 'earth', targets: 1, shots: 3, ring: 0.045, rc: [0, -0.25], formation: 'line', rocks: [[-0.075, -0.1], [0.075, -0.1]], tip: 'Tip: shoot straight through the gate' }),
+  L({ grp: 'tip', world: 'earth', targets: 3, shots: 5, ring: 0.075, rc: [0.1, -0.2], heavy: 1, rocks: [[-0.04, -0.05]], tip: 'Tip: a heavy stone among three' }),
+
+  // ================= Race: roll YOUR marble into the hole in as few shots as possible
+  L({ grp: 'race', kind: 'race', world: 'earth', targets: 0, shots: 6, pit: { x: 0, z: -0.22, r: 0.05 }, tip: 'Race: your marble stays where it stops' }),
+  L({ grp: 'race', kind: 'race', world: 'earth', targets: 0, shots: 6, rocks: [[0, -0.06]], pit: { x: 0.1, z: -0.22, r: 0.045 }, tip: 'Race: curve around the rock' }),
+  L({ grp: 'race', kind: 'race', world: 'earth', targets: 0, shots: 6, rocks: [[-0.06, -0.05], [0.07, -0.05]], pit: { x: -0.12, z: -0.2, r: 0.045 }, tip: 'Race: through the gate, then left' }),
+  L({ grp: 'race', kind: 'race', world: 'moon', targets: 0, shots: 7, rocks: [[-0.08, 0.1], [0.08, 0.0], [-0.08, -0.1], [0.04, -0.17]], pit: { x: 0.14, z: -0.2, r: 0.04 }, tip: 'Race: zig-zag on dry ground, go gently' }),
+  L({ grp: 'race', kind: 'race', world: 'mars', targets: 0, shots: 7, rocks: [[-0.2, -0.1], [-0.14, -0.1], [-0.08, -0.1], [-0.02, -0.1], [0.1, 0.05]], pit: { x: 0, z: -0.26, r: 0.04 }, tip: 'Race: find the gap in the wall' }),
+
+  // ================= Duel: you against Rafiq, take turns, most marbles out wins
+  L({ grp: 'duel', kind: 'duel', world: 'earth', targets: 5, shots: 3, ai: 12, tip: 'Duel: Rafiq is a beginner. Out more marbles to win' }),
+  L({ grp: 'duel', kind: 'duel', world: 'earth', targets: 6, shots: 4, ring: 0.12, ai: 7, tip: 'Duel: Rafiq knows the village' }),
+  L({ grp: 'duel', kind: 'duel', world: 'moon', targets: 6, shots: 4, ring: 0.12, formation: 'ring', ai: 4, tip: 'Duel: dry ground, Rafiq is good' }),
+  L({ grp: 'duel', kind: 'duel', world: 'station', targets: 7, shots: 5, ring: 0.115, ai: 2, tip: 'Duel: the champion of the rooftop' }),
+
+  // ================= Fantasy (optional): real space gravity
+  L({ grp: 'fantasy', world: 'luna', targets: 4, shots: 6, tip: 'Moon: low gravity, marbles glide far' }),
+  L({ grp: 'fantasy', world: 'luna', targets: 6, shots: 7, ring: 0.115, formation: 'ring', rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'Moon: tight ring, soft taps' }),
+  L({ grp: 'fantasy', world: 'ares', targets: 5, shots: 7, tip: 'Mars: a third of Earth gravity' }),
+  L({ grp: 'fantasy', world: 'ares', targets: 7, shots: 9, heavy: 2, formation: 'cross', tip: 'Mars: heavy stones in a cross' }),
+  L({ grp: 'fantasy', world: 'orbit', targets: 4, shots: 6, tip: 'Space station: zero gravity, nothing falls' }),
+  L({ grp: 'fantasy', world: 'orbit', targets: 7, shots: 9, ring: 0.1, formation: 'ring', gold: 1, tip: 'Space station: final fantasy level' }),
+];
+
+/** Global (1-based) level numbers belonging to each group, in order. */
+const GROUP_LEVELS: number[][] = GROUPS.map((g) => LEVELS.map((d, i) => (d.grp === g.id ? i + 1 : 0)).filter((n) => n > 0));
+const groupOf = (level: number): number => GROUPS.findIndex((g) => g.id === LEVELS[level - 1].grp);
 
 type MarbleType = 'normal' | 'heavy' | 'gold';
 
@@ -241,6 +304,21 @@ export class GameSystem extends createSystem({
   private ringMesh!: Mesh;
   private pitMesh!: Group;
   private pit: LevelDef['pit'] = undefined;
+  private kind: Kind = 'ring';
+  private group = 0;
+  private rc: [number, number] = [0, 0];
+  private tabs: { entity: Entity; panel: TextPanel }[] = [];
+  private shooterIn = false;
+  private sawMotion = false;
+  private raceT = 0;
+  private raceSec = -1;
+  private lastRest: [number, number] = [0, SHOOTER_START_Z];
+  private duelTurn: 'me' | 'ai' = 'me';
+  private aiLeft = 0;
+  private meScore = 0;
+  private aiScore = 0;
+  private aiTimer = 0;
+  private aiVel = new Vector3();
   private potted: boolean[] = [];
   private homes: [number, number][] = [];
   private ringR = RING_RADIUS;
@@ -294,7 +372,7 @@ export class GameSystem extends createSystem({
 
   init(): void {
     try {
-      this.bestStars = JSON.parse(localStorage.getItem('guti-stars-v2') ?? '[]');
+      this.bestStars = JSON.parse(localStorage.getItem('guti-stars-v3') ?? '[]');
     } catch {
       this.bestStars = [];
     }
@@ -317,6 +395,11 @@ export class GameSystem extends createSystem({
         ringR: this.ringR,
         won: this.won,
         score: this.score,
+        kind: this.kind,
+        group: this.group,
+        shooterIn: this.shooterIn,
+        duel: [this.meScore, this.aiScore, this.aiLeft, this.duelTurn],
+        potted: this.potted.filter(Boolean).length,
         calls: this.world.renderer.info.render.calls,
         tris: this.world.renderer.info.render.triangles,
         targets: this.targets
@@ -646,9 +729,16 @@ export class GameSystem extends createSystem({
     for (; k < this.shadows.length; k++) this.shadows[k].visible = false;
   }
 
+  private isLocked(lv: number): boolean {
+    const list = GROUP_LEVELS[groupOf(lv)];
+    const pos = list.indexOf(lv);
+    return pos > 0 && (this.bestStars[list[pos - 1] - 1] ?? 0) <= 0;
+  }
+
   private buildLevelMap(): void {
-    const cols = 6;
-    for (let i = 0; i < LEVELS.length; i++) {
+    const cols = 5;
+    const maxN = Math.max(...GROUP_LEVELS.map((g) => g.length));
+    for (let i = 0; i < maxN; i++) {
       const panel = new TextPanel(0.06, 0.06, 128);
       const c = i % cols;
       const r = Math.floor(i / cols);
@@ -660,11 +750,32 @@ export class GameSystem extends createSystem({
       this.tiles.push({ entity: e, panel });
       this.modeObjects.push(panel.mesh);
     }
+    // one tab per way of playing marbles
+    for (let g = 0; g < GROUPS.length; g++) {
+      const panel = new TextPanel(0.2, 0.052, 400);
+      panel.mesh.position.set(0.57, TABLE_Y + 0.3 - g * 0.056, TABLE_CENTER_Z - 0.05);
+      panel.mesh.rotation.x = -0.5;
+      panel.mesh.rotation.y = -0.3;
+      const e = this.world.createTransformEntity(panel.mesh);
+      e.addComponent(RayInteractable);
+      e.addComponent(LevelTile, { level: -(g + 1) });
+      this.tabs.push({ entity: e, panel });
+      this.modeObjects.push(panel.mesh);
+    }
     this.cleanupFuncs.push(
       this.queries.tilePressed.subscribe('qualify', (e) => {
         if (this.tileCooldown > 0 || modeState.mode !== 'guti') return;
         const lv = e.getValue(LevelTile, 'level') as number;
-        if (lv > 1 && (this.bestStars[lv - 2] ?? 0) <= 0) return; // locked
+        if (lv < 0) {
+          const g = -lv - 1;
+          if (g === this.group) return;
+          this.tileCooldown = 0.5;
+          sfx.select();
+          const list = GROUP_LEVELS[g];
+          this.startLevel(list.find((n) => (this.bestStars[n - 1] ?? 0) <= 0 && !this.isLocked(n)) ?? list[0]);
+          return;
+        }
+        if (this.isLocked(lv)) return;
         if (lv === this.level && this.phase === 'aim') return;
         this.tileCooldown = 0.5;
         sfx.select();
@@ -673,15 +784,33 @@ export class GameSystem extends createSystem({
     );
   }
 
-  private drawTiles(): void {
+  /** Point the level tiles at the levels of the current group. */
+  private refreshTiles(): void {
+    const list = GROUP_LEVELS[this.group];
     for (let i = 0; i < this.tiles.length; i++) {
+      if (i < list.length) this.tiles[i].entity.setValue(LevelTile, 'level', list[i]);
+      this.tiles[i].panel.mesh.visible = modeState.mode === 'guti' && i < list.length;
+    }
+  }
+
+  private drawTiles(): void {
+    const list = GROUP_LEVELS[this.group];
+    for (let i = 0; i < list.length; i++) {
       const p = this.tiles[i].panel;
-      const locked = i > 0 && (this.bestStars[i - 1] ?? 0) <= 0;
-      const cur = i + 1 === this.level;
+      const lv = list[i];
+      const locked = this.isLocked(lv);
+      const cur = lv === this.level;
       p.card(locked ? 'rgba(20,14,10,0.7)' : 'rgba(40,24,12,0.9)', cur ? '#7fd8ff' : locked ? '#6b5a48' : '#ffd9a0');
       p.text(locked ? '🔒' : String(i + 1), 62, 52, locked ? '#8a7860' : '#ffe9c4');
-      const st = this.bestStars[i] ?? 0;
+      const st = this.bestStars[lv - 1] ?? 0;
       p.text('★'.repeat(st) + '·'.repeat(3 - st), 108, 26, '#ffd23f');
+      p.commit();
+    }
+    for (let g = 0; g < this.tabs.length; g++) {
+      const p = this.tabs[g].panel;
+      const cur = g === this.group;
+      p.card(cur ? 'rgba(60,40,18,0.95)' : 'rgba(30,18,10,0.85)', cur ? '#7fd8ff' : '#8a7a60');
+      p.text(GROUPS[g].label, 60, 36, cur ? '#ffffff' : '#cdb99a');
       p.commit();
     }
   }
@@ -707,15 +836,22 @@ export class GameSystem extends createSystem({
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('GUTI  •  ' + WORLDS[this.curWorld].name + '  •  Level ' + this.level + '/' + LEVELS.length + this.fpsText, 70, 40);
+    const gl = GROUP_LEVELS[this.group];
+    h.text('GUTI  •  ' + WORLDS[this.curWorld].name + '  •  Level ' + (gl.indexOf(this.level) + 1) + '/' + gl.length + this.fpsText, 70, 40);
     if (this.phase === 'message') {
       h.text(this.messageText, 150, 44, this.won ? '#8dff9d' : '#ff9d8d');
     } else {
-      h.text(
-        (this.pit ? 'In hole ' : 'Out ') + this.outCount + '/' + this.totalTargets + '   Shots ' + this.shotsLeft + '   ★ ' + this.totalStars() + '/' + LEVELS.length * 3,
-        148,
-        36,
-      );
+      const stars = '   ★ ' + this.totalStars() + '/' + LEVELS.length * 3;
+      let line: string;
+      if (this.kind === 'race') {
+        const t = Math.floor(this.raceT);
+        line = 'Shots ' + this.shotsLeft + '   Time ' + Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') + stars;
+      } else if (this.kind === 'duel') {
+        line = 'You ' + this.meScore + '   Rafiq ' + this.aiScore + '   Shots ' + this.shotsLeft;
+      } else {
+        line = (this.kind === 'pit' ? 'In hole ' : 'Out ') + this.outCount + '/' + this.totalTargets + '   Shots ' + this.shotsLeft + stars;
+      }
+      h.text(line, 148, 36);
     }
     let hint = '';
     let hintColor = '#cdb99a';
@@ -754,7 +890,7 @@ export class GameSystem extends createSystem({
     const prev = this.bestStars[this.level - 1] ?? 0;
     if (this.stars > prev) this.bestStars[this.level - 1] = this.stars;
     try {
-      localStorage.setItem('guti-stars-v2', JSON.stringify(this.bestStars));
+      localStorage.setItem('guti-stars-v3', JSON.stringify(this.bestStars));
     } catch {
       /* ignore */
     }
@@ -764,6 +900,7 @@ export class GameSystem extends createSystem({
     for (const m of this.modeObjects) m.visible = on;
     this.ringMesh.visible = on && !this.pit;
     this.pitMesh.visible = on && !!this.pit;
+    this.refreshTiles();
   }
 
   // ------------------------------------------------------------------ worlds
@@ -779,7 +916,7 @@ export class GameSystem extends createSystem({
     // the real-sky lighting only belongs to the village
     this.world.scene.environment = this.earthEnv;
     this.floorMat.color.setHex(w.floorColor);
-    const fs = id === 'station' ? 1 : 0.4;
+    const fs = id === 'station' || id === 'orbit' ? 1 : 0.4;
     this.floorMesh.scale.set(fs, 1, fs);
     this.tableMat.color.setHex(w.tableColor);
     this.shooter.setValue(PhysicsBody, 'linearDamping', w.damping);
@@ -805,6 +942,19 @@ export class GameSystem extends createSystem({
     const rs = def.ring / RING_RADIUS;
     this.ringMesh.scale.set(rs, rs, rs);
     this.pit = def.pit;
+    this.kind = def.kind;
+    this.group = groupOf(level);
+    this.rc = def.rc ?? [0, 0];
+    this.ringMesh.position.set(this.rc[0], TABLE_Y + 0.002, TABLE_CENTER_Z + this.rc[1]);
+    this.shooterIn = false;
+    this.raceT = 0;
+    this.raceSec = -1;
+    this.lastRest = [0, SHOOTER_START_Z];
+    this.duelTurn = 'me';
+    this.aiLeft = def.shots;
+    this.meScore = 0;
+    this.aiScore = 0;
+    this.refreshTiles();
     this.ringMesh.visible = !def.pit;
     this.pitMesh.visible = !!def.pit;
     if (def.pit) {
@@ -832,9 +982,9 @@ export class GameSystem extends createSystem({
       this.kinds.push(type);
     }
     for (let i = 0; i < n; i++) {
-      this.homes.push([offs[i][0], offs[i][1]]);
+      this.homes.push([this.rc[0] + offs[i][0], this.rc[1] + offs[i][1]]);
       this.potted.push(false);
-      this.tmp.set(offs[i][0], TABLE_Y + MARBLE_R + 0.001, TABLE_CENTER_Z + offs[i][1]);
+      this.tmp.set(this.rc[0] + offs[i][0], TABLE_Y + MARBLE_R + 0.001, TABLE_CENTER_Z + this.rc[1] + offs[i][1]);
       const type = this.kinds[i];
       const mat =
         type === 'heavy'
@@ -869,6 +1019,15 @@ export class GameSystem extends createSystem({
     this.hudDirty = true;
   }
 
+  /** Teleport a marble onto the table with all motion cleared (no tunnelling through the clay). */
+  private place(e: Entity, x: number, z: number): void {
+    const physics = this.world.getSystem(PhysicsSystem);
+    if (!physics) return;
+    this.tmp.set(x, TABLE_Y + MARBLE_R + 0.001, z);
+    physics.setBodyTransform(e, { position: this.tmp, quaternion: this.identityQuat });
+    e.addComponent(PhysicsManipulation, { linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0] });
+  }
+
   private resetShooter(): void {
     const physics = this.world.getSystem(PhysicsSystem);
     if (!physics) return;
@@ -877,6 +1036,7 @@ export class GameSystem extends createSystem({
       position: this.tmp,
       quaternion: this.identityQuat,
     });
+    this.shooter.addComponent(PhysicsManipulation, { linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0] });
   }
 
   // ------------------------------------------------------------------ input
@@ -1022,6 +1182,7 @@ export class GameSystem extends createSystem({
       this.phase = 'rolling';
       this.rollTimer = 0;
       this.restTimer = 0;
+      this.sawMotion = false;
       this.hudDirty = true;
     }
     this.pullLen = 0;
@@ -1031,8 +1192,8 @@ export class GameSystem extends createSystem({
   private isOut(e: Entity): boolean {
     const o = e.object3D;
     if (!o) return true;
-    const dx = o.position.x;
-    const dz = o.position.z - TABLE_CENTER_Z;
+    const dx = o.position.x - this.rc[0];
+    const dz = o.position.z - TABLE_CENTER_Z - this.rc[1];
     return (
       o.position.y < TABLE_Y - 0.1 ||
       Math.sqrt(dx * dx + dz * dz) > this.ringR + MARBLE_R * 0.5
@@ -1076,7 +1237,13 @@ export class GameSystem extends createSystem({
     if (sh && this.speedOf(this.shooter) > 0.7) {
       emitBurst(sh.position.x, TABLE_Y + 0.008, sh.position.z, 0.8, 0.68, 0.5, 1, 0.05);
     }
-    this.restTimer = moving ? 0 : this.restTimer + delta;
+    if (this.kind === 'race' && !this.shooterIn && this.checkShooterPot()) {
+      this.resolveShot();
+      return;
+    }
+    if (moving) this.sawMotion = true;
+    // the launch velocity is applied on the next physics step: do not call a shot finished before it moved
+    this.restTimer = moving || (!this.sawMotion && this.rollTimer < 1.2) ? 0 : this.restTimer + delta;
     const shooterFell =
       (this.shooter.object3D?.position.y ?? 0) < TABLE_Y - 0.1 ||
       this.offTable(this.shooter);
@@ -1112,9 +1279,38 @@ export class GameSystem extends createSystem({
       const t = this.targets[i];
       if (this.potted[i] || !t.object3D) continue;
       if (this.offTable(t) || t.object3D.position.y < TABLE_Y - 0.1) {
-        this.tmp.set(this.homes[i][0], TABLE_Y + MARBLE_R + 0.001, TABLE_CENTER_Z + this.homes[i][1]);
-        physics.setBodyTransform(t, { position: this.tmp, quaternion: this.identityQuat });
+        this.place(t, this.homes[i][0], TABLE_CENTER_Z + this.homes[i][1]);
       }
+    }
+  }
+
+  /** Race: your own marble drops into the hole. */
+  private checkShooterPot(): boolean {
+    const pit = this.pit;
+    const o = this.shooter.object3D;
+    if (!pit || !o) return false;
+    const d = Math.hypot(o.position.x - pit.x, o.position.z - (TABLE_CENTER_Z + pit.z));
+    if (d > pit.r - 0.004 || this.speedOf(this.shooter) > 0.8) return false;
+    this.shooterIn = true;
+    const physics = this.world.getSystem(PhysicsSystem);
+    if (physics) {
+      this.tmp.set(pit.x, TABLE_Y - 0.3, TABLE_CENTER_Z + pit.z);
+      physics.setBodyTransform(this.shooter, { position: this.tmp, quaternion: this.identityQuat });
+    }
+    sfx.plop();
+    emitBurst(pit.x, TABLE_Y + 0.01, TABLE_CENTER_Z + pit.z, 0.9, 0.7, 0.4, 14, 0.35);
+    return true;
+  }
+
+  /** Race: the marble stays where it stopped; one that left the table goes back. */
+  private keepShooter(): void {
+    const o = this.shooter.object3D;
+    const physics = this.world.getSystem(PhysicsSystem);
+    if (!o || !physics) return;
+    if (o.position.y < TABLE_Y - 0.1 || this.offTable(this.shooter)) {
+      this.place(this.shooter, this.lastRest[0], this.lastRest[1]);
+    } else {
+      this.lastRest = [o.position.x, o.position.z];
     }
   }
 
@@ -1131,24 +1327,29 @@ export class GameSystem extends createSystem({
         const c = ((t.object3D as Mesh).material as MeshStandardMaterial).emissive;
         emitBurst(pos.x, Math.max(pos.y, TABLE_Y), pos.z, c.r + 0.3, c.g + 0.3, c.b + 0.3, 18, 0.55);
         this.shotOut += 1;
-        this.score += 100 * this.shotOut;
-        if (kind === 'gold') {
-          this.shotsLeft += 1;
-          this.score += 300;
-          this.flash('Golden marble! Bonus shot', 1.6);
-          sfx.win();
-          emitBurst(pos.x, TABLE_Y + 0.03, pos.z, 1, 0.8, 0.2, 40, 0.8);
-        } else if (this.shotOut === 2) {
-          this.flash('Double!', 1.2);
-          sfx.select();
-        } else if (this.shotOut === 3) {
-          this.flash('Triple!', 1.2);
-          sfx.select();
-        } else if (this.shotOut > 3) {
-          this.flash('Combo x' + this.shotOut + '!', 1.2);
+        if (this.kind === 'duel') {
+          this.flash(this.duelTurn === 'me' ? 'You knocked one out!' : 'Rafiq knocked one out', 1.2);
           sfx.select();
         } else {
-          sfx.select();
+          this.score += 100 * this.shotOut;
+          if (kind === 'gold') {
+            this.shotsLeft += 1;
+            this.score += 300;
+            this.flash('Golden marble! Bonus shot', 1.6);
+            sfx.win();
+            emitBurst(pos.x, TABLE_Y + 0.03, pos.z, 1, 0.8, 0.2, 40, 0.8);
+          } else if (this.shotOut === 2) {
+            this.flash('Double!', 1.2);
+            sfx.select();
+          } else if (this.shotOut === 3) {
+            this.flash('Triple!', 1.2);
+            sfx.select();
+          } else if (this.shotOut > 3) {
+            this.flash('Combo x' + this.shotOut + '!', 1.2);
+            sfx.select();
+          } else {
+            sfx.select();
+          }
         }
         this.hudDirty = true;
       }
@@ -1167,48 +1368,165 @@ export class GameSystem extends createSystem({
     this.hudDirty = true;
   }
 
+  private nextInGroup(): number {
+    const list = GROUP_LEVELS[this.group];
+    const pos = list.indexOf(this.level);
+    return pos + 1 < list.length ? list[pos + 1] : 0;
+  }
+
   private resolveShot(): void {
-    if (this.pit) this.returnStrays();
+    if (this.kind === 'pit') this.returnStrays();
     const out = this.scanOut();
-    if (out >= this.totalTargets) {
-      this.won = true;
+    if (this.kind === 'duel') {
+      this.resolveDuel(out);
+      return;
+    }
+    const solved = this.kind === 'race' ? this.shooterIn : out >= this.totalTargets;
+    if (solved) {
       this.score += this.shotsLeft * 150;
-      if (this.score > this.bestScore) {
-        this.bestScore = this.score;
-        try {
-          localStorage.setItem('guti-best', String(this.bestScore));
-        } catch {
-          /* ignore */
-        }
-      }
-      this.stars = this.shotsLeft >= 2 ? 3 : this.shotsLeft === 1 ? 2 : 1;
-      const oldSkin = this.skinIdx;
-      this.saveStars();
-      const newSkin = this.skinFor(this.totalStars());
-      emitBurst(0, TABLE_Y + 0.12, TABLE_CENTER_Z, 1, 0.85, 0.35, 70, 0.9);
-      const nextWorldDiffers =
-        this.level < MAX_LEVEL && levelDef(this.level + 1).world !== levelDef(this.level).world;
-      this.messageText =
-        this.level >= MAX_LEVEL
-          ? 'Champion! Score ' + this.score
-          : nextWorldDiffers || this.level === 1
-            ? WORLDS[this.curWorld].fact
-            : 'Level clear!  Best ' + this.bestScore;
-      if (newSkin > oldSkin) {
-        this.messageText = 'New marble unlocked: ' + SKINS[newSkin].name + '!';
-        this.applySkin(newSkin);
-      }
-      sfx.win();
-      this.beginMessage(nextWorldDiffers || newSkin > oldSkin ? 2.6 : 1.8);
+      this.winLevel(this.shotsLeft >= 2 ? 3 : this.shotsLeft === 1 ? 2 : 1);
     } else if (this.shotsLeft <= 0) {
       this.won = false;
       this.messageText = 'Out of shots — try again';
       sfx.lose();
       this.beginMessage(2);
     } else {
-      this.resetShooter();
+      if (this.kind === 'race') this.keepShooter();
+      else this.resetShooter();
       this.phase = 'aim';
     }
+    this.hudDirty = true;
+  }
+
+  private winLevel(stars: number, customMsg?: string): void {
+    this.won = true;
+    if (this.score > this.bestScore) {
+      this.bestScore = this.score;
+      try {
+        localStorage.setItem('guti-best', String(this.bestScore));
+      } catch {
+        /* ignore */
+      }
+    }
+    this.stars = stars;
+    const oldSkin = this.skinIdx;
+    this.saveStars();
+    const newSkin = this.skinFor(this.totalStars());
+    emitBurst(0, TABLE_Y + 0.12, TABLE_CENTER_Z, 1, 0.85, 0.35, 70, 0.9);
+    const next = this.nextInGroup();
+    const nextWorldDiffers = next > 0 && levelDef(next).world !== levelDef(this.level).world;
+    this.messageText =
+      customMsg ??
+      (next === 0
+        ? 'Set complete! Score ' + this.score
+        : nextWorldDiffers || this.level === 1
+          ? WORLDS[this.curWorld].fact
+          : 'Level clear!  Best ' + this.bestScore);
+    if (newSkin > oldSkin) {
+      this.messageText = 'New marble unlocked: ' + SKINS[newSkin].name + '!';
+      this.applySkin(newSkin);
+    }
+    sfx.win();
+    this.beginMessage(nextWorldDiffers || newSkin > oldSkin ? 2.6 : 1.8);
+    this.hudDirty = true;
+  }
+
+  // ------------------------------------------------------------------ duel (you vs Rafiq)
+  private resolveDuel(out: number): void {
+    const mine = this.duelTurn === 'me';
+    if (mine) this.meScore += this.shotOut;
+    else this.aiScore += this.shotOut;
+    this.shotOut = 0;
+    const done = out >= this.totalTargets || (this.shotsLeft <= 0 && this.aiLeft <= 0);
+    if (done) {
+      const margin = this.meScore - this.aiScore;
+      const tally = this.meScore + ' - ' + this.aiScore;
+      if (margin > 0) {
+        this.score += margin * 300;
+        this.winLevel(margin >= 3 ? 3 : margin >= 2 ? 2 : 1, 'You win ' + tally + '!');
+      } else {
+        this.won = false;
+        this.messageText = margin === 0 ? 'Draw ' + tally + ' — rematch' : 'Rafiq wins ' + tally + ' — rematch';
+        sfx.lose();
+        this.beginMessage(2.4);
+      }
+    } else if (mine) {
+      this.duelTurn = 'ai';
+      this.startAi();
+    } else {
+      this.duelTurn = 'me';
+      this.applySkin(this.skinIdx);
+      this.resetShooter();
+      this.phase = 'aim';
+      this.flash('Your turn', 1.2);
+    }
+    this.hudDirty = true;
+  }
+
+  /** Rafiq lines up the marble nearest to the ring edge and fires after a short pause. */
+  private startAi(): void {
+    const def = levelDef(this.level);
+    let best = -1;
+    let bd = -1;
+    for (let i = 0; i < this.targets.length; i++) {
+      const o = this.targets[i].object3D;
+      if (!o || this.wasOut[i]) continue;
+      const d = Math.hypot(o.position.x - this.rc[0], o.position.z - TABLE_CENTER_Z - this.rc[1]);
+      if (d > bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    const tp = best >= 0 ? this.targets[best].object3D!.position : null;
+    if (!tp) {
+      this.resolveDuel(this.totalTargets);
+      return;
+    }
+    let ux = tp.x - this.rc[0];
+    let uz = tp.z - TABLE_CENTER_Z - this.rc[1];
+    const len = Math.hypot(ux, uz);
+    if (len < 0.01) {
+      ux = 0;
+      uz = -1;
+    } else {
+      ux /= len;
+      uz /= len;
+    }
+    let sx = tp.x + ux * 0.2;
+    let sz = tp.z + uz * 0.2;
+    const rr = Math.hypot(sx, sz - TABLE_CENTER_Z);
+    if (rr > 0.32) {
+      sx *= 0.32 / rr;
+      sz = TABLE_CENTER_Z + (sz - TABLE_CENTER_Z) * (0.32 / rr);
+    }
+    this.place(this.shooter, sx, sz);
+    const ang = ((Math.random() * 2 - 1) * (def.ai ?? 8) * Math.PI) / 180;
+    const dx = tp.x - sx;
+    const dz = tp.z - sz;
+    const dl = Math.hypot(dx, dz) || 1;
+    const c = Math.cos(ang);
+    const sn = Math.sin(ang);
+    const speed = 1.3 + Math.random() * 0.8;
+    this.aiVel.set(((dx / dl) * c - (dz / dl) * sn) * speed, 0, ((dx / dl) * sn + (dz / dl) * c) * speed);
+    this.shooterMat.color.setHex(0xff5a5a);
+    this.shooterMat.emissive.setHex(0xd02040);
+    this.phase = 'ai';
+    this.aiTimer = 1.4;
+    this.flash("Rafiq's turn", 1.4);
+    this.hudDirty = true;
+  }
+
+  private updateAi(delta: number): void {
+    this.aiTimer -= delta;
+    if (this.aiTimer > 0) return;
+    this.shooter.addComponent(PhysicsManipulation, { linearVelocity: [this.aiVel.x, 0, this.aiVel.z] });
+    this.aiLeft -= 1;
+    this.shotOut = 0;
+    sfx.shot(0.6);
+    this.phase = 'rolling';
+    this.rollTimer = 0;
+    this.restTimer = 0;
+    this.sawMotion = false;
     this.hudDirty = true;
   }
 
@@ -1247,8 +1565,8 @@ export class GameSystem extends createSystem({
         for (const r of this.rocks) if (r.object3D) r.object3D.visible = true;
         this.firedOnce = false;
         this.score = 0;
-        let first = 1;
-        while (first < LEVELS.length && (this.bestStars[first - 1] ?? 0) > 0) first++;
+        const classic = GROUP_LEVELS[0];
+        let first = classic.find((n) => (this.bestStars[n - 1] ?? 0) <= 0) ?? classic[0];
         // deep link: ?level=5 jumps straight to a level (handy for demos and testing)
         try {
           const q = Number(new URLSearchParams(window.location.search).get('level'));
@@ -1329,13 +1647,22 @@ export class GameSystem extends createSystem({
       this.ghost.scale.set(sc, sc, sc);
     }
 
+    if (this.kind === 'race' && (this.phase === 'aim' || this.phase === 'rolling')) {
+      this.raceT += delta;
+      const rs = Math.floor(this.raceT);
+      if (rs !== this.raceSec) {
+        this.raceSec = rs;
+        this.hudDirty = true;
+      }
+    }
+    if (this.phase === 'ai') this.updateAi(delta);
     if (this.phase === 'rolling') {
       this.updateRolling(delta);
     } else if (this.phase === 'message') {
       this.messageTimer -= delta;
       if (this.messageTimer <= 0) {
         if (this.won) {
-          this.startLevel(this.level >= MAX_LEVEL ? 1 : this.level + 1);
+          this.startLevel(this.nextInGroup() || GROUP_LEVELS[this.group][0]);
         } else {
           this.startLevel(this.level);
         }

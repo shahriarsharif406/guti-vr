@@ -692,3 +692,122 @@ export function mistBank(w: number, h: number, color = '255,236,205', alpha = 0.
   mesh.renderOrder = -4;
   return mesh;
 }
+
+
+// ------------------------------------------------------------------ fantasy worlds (optional)
+export function moonTexture(): CanvasTexture {
+  const [c, g] = canvas(512, 512);
+  g.fillStyle = '#85848a';
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 5000; i++) {
+    const v = 90 + Math.random() * 90;
+    g.fillStyle = 'rgba(' + v + ',' + v + ',' + (v + 6) + ',0.3)';
+    g.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 3, 1 + Math.random() * 3);
+  }
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    const r = 6 + Math.random() * 40;
+    g.fillStyle = 'rgba(40,40,46,0.35)';
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(200,200,205,0.35)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(x - r * 0.1, y - r * 0.1, r, 0, Math.PI * 2);
+    g.stroke();
+  }
+  return tex(c, 1, 1);
+}
+
+export function marsTexture(): CanvasTexture {
+  const [c, g] = canvas(512, 512);
+  g.fillStyle = '#a4553a';
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 6000; i++) {
+    const v = Math.random();
+    g.fillStyle = 'rgba(' + (150 + v * 70) + ',' + (70 + v * 40) + ',' + (40 + v * 20) + ',0.35)';
+    g.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 4, 1 + Math.random() * 2);
+  }
+  for (let i = 0; i < 18; i++) {
+    g.strokeStyle = 'rgba(80,36,24,0.25)';
+    g.lineWidth = 2 + Math.random() * 6;
+    g.beginPath();
+    const y = Math.random() * 512;
+    g.moveTo(0, y);
+    g.bezierCurveTo(150, y + Math.random() * 60 - 30, 350, y + Math.random() * 60 - 30, 512, y);
+    g.stroke();
+  }
+  return tex(c, 1, 1);
+}
+
+export function metalTexture(): CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = '#3a404a';
+  g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = 'rgba(160,175,195,0.5)';
+  g.lineWidth = 3;
+  for (let i = 0; i <= 256; i += 64) {
+    g.beginPath();
+    g.moveTo(i, 0);
+    g.lineTo(i, 256);
+    g.moveTo(0, i);
+    g.lineTo(256, i);
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(255,200,60,0.55)';
+  for (let i = 0; i < 4; i++) g.fillRect(8 + i * 64, 28, 16, 6);
+  for (let i = 0; i < 400; i++) {
+    g.fillStyle = 'rgba(255,255,255,0.05)';
+    g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  return tex(c, 10, 10);
+}
+
+/** A little planet drawn on a canvas (blue ocean, white clouds, green land). */
+export function planet(radius: number, kind: 'earth' | 'moon'): Mesh {
+  const [c, g] = canvas(512, 256);
+  if (kind === 'earth') {
+    g.fillStyle = '#1f5fb0';
+    g.fillRect(0, 0, 512, 256);
+    for (let i = 0; i < 26; i++) {
+      g.fillStyle = 'rgba(70,140,70,0.9)';
+      g.beginPath();
+      g.ellipse(Math.random() * 512, 40 + Math.random() * 176, rnd(14, 52), rnd(8, 26), Math.random() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    for (let i = 0; i < 50; i++) {
+      g.fillStyle = 'rgba(255,255,255,0.5)';
+      g.beginPath();
+      g.ellipse(Math.random() * 512, Math.random() * 256, rnd(20, 70), rnd(4, 12), Math.random() * 0.6, 0, Math.PI * 2);
+      g.fill();
+    }
+  } else {
+    g.fillStyle = '#9d9ca2';
+    g.fillRect(0, 0, 512, 256);
+    for (let i = 0; i < 60; i++) {
+      g.fillStyle = 'rgba(60,60,66,0.4)';
+      g.beginPath();
+      g.arc(Math.random() * 512, Math.random() * 256, rnd(3, 22), 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  const m = new Mesh(new SphereGeometry(radius, 40, 24), new MeshBasicMaterial({ map: t, fog: false }));
+  m.renderOrder = -9;
+  return m;
+}
+
+/** A boulder: lumpy grey/red rock. */
+export function boulder(r: number, color: number): Mesh {
+  const geo = new SphereGeometry(r, 9, 7);
+  const p = geo.getAttribute('position');
+  for (let i = 0; i < p.count; i++) {
+    const k = 0.78 + Math.random() * 0.4;
+    p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.7, p.getZ(i) * k);
+  }
+  geo.computeVertexNormals();
+  return new Mesh(geo, new MeshStandardMaterial({ color, roughness: 1, flatShading: true }));
+}

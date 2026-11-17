@@ -1,5 +1,5 @@
-/** The four places a marble can be shot (ids kept; scenery is Bangladeshi): shared by game, environment and sound. */
-export type WorldId = 'earth' | 'moon' | 'mars' | 'station';
+/** Places a marble can be shot: four Bangladeshi ones (ids moon/mars/station are legacy names) plus three optional Fantasy worlds. */
+export type WorldId = 'earth' | 'moon' | 'mars' | 'station' | 'luna' | 'ares' | 'orbit';
 
 export interface WorldDef {
   id: WorldId;
@@ -70,6 +70,46 @@ export const WORLDS: Record<WorldId, WorldDef> = {
     floorColor: 0x8d8a84,
     tableColor: 0xa09a90,
     space: false,
+  },
+  // ---- Fantasy (optional): real gravity values
+  luna: {
+    id: 'luna',
+    name: 'Fantasy: Moon',
+    gravity: 1.62,
+    damping: 0.45,
+    fact: 'Moon gravity: 1.62 m/s²',
+    intro: 'Fantasy: the Moon. Low gravity, marbles bounce and glide',
+    sunColor: 0xfff4e0,
+    sunIntensity: 3.0,
+    floorColor: 0x77767a,
+    tableColor: 0x9a9aa0,
+    space: true,
+  },
+  ares: {
+    id: 'ares',
+    name: 'Fantasy: Mars',
+    gravity: 3.71,
+    damping: 0.7,
+    fact: 'Mars gravity: 3.71 m/s²',
+    intro: 'Fantasy: Mars. Red dust, a third of Earth gravity',
+    sunColor: 0xffc79a,
+    sunIntensity: 2.2,
+    floorColor: 0x8a4a2e,
+    tableColor: 0xb06a48,
+    space: true,
+  },
+  orbit: {
+    id: 'orbit',
+    name: 'Fantasy: Space Station',
+    gravity: 0,
+    damping: 0.55,
+    fact: 'Zero gravity: nothing falls',
+    intro: 'Fantasy: space station. Zero gravity, marbles never settle by themselves',
+    sunColor: 0xe8f0ff,
+    sunIntensity: 3.0,
+    floorColor: 0x30343c,
+    tableColor: 0x8d96a3,
+    space: true,
   },
 };
 
