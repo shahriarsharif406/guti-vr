@@ -13,6 +13,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
+import { askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -135,6 +136,7 @@ export class BrickSystem extends createSystem({
   private ball!: Group;
   private rope!: Mesh;
   private smashT = -1;
+  private smashH = 0;
   private smashY = 0.8;
   private smashZ = CZ;
   private tmp = new Vector3();
@@ -372,6 +374,7 @@ export class BrickSystem extends createSystem({
     if (id === 0) {
       if (this.smashT >= 0 || this.placedOrder.length === 0) return;
       this.smashT = 0;
+      this.smashH = this.maxH();
       this.smashY = PLATE_Y + Math.max(1, this.maxH() * 0.55) * H;
       this.smashZ = OZ + (N * C) / 2 + (Math.random() - 0.5) * 0.06;
       this.ball.visible = true;
@@ -588,6 +591,11 @@ export class BrickSystem extends createSystem({
     if (this.smashT > T + 0.4) {
       this.smashT = -1;
       celebrate(OX + (N * C) / 2, PLATE_Y + 0.1, OZ + (N * C) / 2, 2);
+      askMentor('bricks', 'a toy-brick tower ' + this.smashH + ' bricks high was just smashed with a wrecking ball', (t) => {
+        this.msg = t;
+        this.msgT = 9;
+        this.hudDirty = true;
+      });
       this.ball.visible = false;
       this.rope.visible = false;
       this.msg = 'Boom!  Build again.';

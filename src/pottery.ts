@@ -21,6 +21,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
+import { askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -484,6 +485,7 @@ export class PotterySystem extends createSystem({
     }
     this.refreshShelf();
     this.say(this.match >= 80 ? 'Beautiful! On your shelf' : 'Fired! On your shelf', 4);
+    askMentor('pottery', 'a clay pot ' + Math.round(this.pot.h * 100) + ' cm tall, glaze ' + g.name + ', ' + Math.round(this.match) + '% match to the target shape', (t) => this.say(t, 8));
     this.drawBtns();
   }
 

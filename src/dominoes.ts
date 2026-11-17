@@ -12,6 +12,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
+import { askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -475,6 +476,11 @@ export class DominoSystem extends createSystem({
         this.msg = 'The chain broke at ' + this.fell + ' of ' + this.total + '. Close the gap!';
       }
       this.msgT = 6;
+      askMentor('dominoes', this.fell + ' of ' + this.total + ' dominoes fell' + (all ? ' in one chain' : ', the chain broke early'), (t) => {
+        this.msg = t;
+        this.msgT = 9;
+        this.hudDirty = true;
+      });
       this.hudDirty = true;
     }
   }
