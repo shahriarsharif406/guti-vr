@@ -1,7 +1,7 @@
 # Devpost submission texts (final, matches the real game)
 
 **Project name:** Guti
-**Elevator pitch (<=140 chars):** Guti: four Bangladeshi village games in VR (marbles, kites, lattim, danguli). Hands only, seated, no controllers.
+**Elevator pitch (<=140 chars):** Guti: Bangladeshi village games in VR, starting with marbles and kites. Hands only, seated, no controllers.
 **Playable link (Try it out):** https://shahriarsharif406.github.io/guti-vr/
 **GitHub:** https://github.com/shahriarsharif406/guti-vr
 **Track:** Gaming  **Division:** New Experience  **Build path:** IWSDK (WebXR)
@@ -12,8 +12,8 @@ Every Bangladeshi kid grew up on গুলি (marbles), ঘুড়ি (kites 
 ## What it does
 * **Marbles (গুলি):** pinch the white marble, pull back, release. Six ways to play across 37 levels: Classic goalla ring, গর্ত hole game, Precision, Race (hole-in-one), turn-based Duel vs Rafiq (AI), and an optional Fantasy set (Moon, Mars, orbit). The default is rural Bangladesh: village courtyard, harvest field, monsoon mud, Dhaka rooftop at dusk. Surfaces change how far marbles slide. Rocks, heavy and golden marbles, combos, saved stars and unlockable skins.
 * **Kite Alive (ঘুড়ি):** five ways to play (rival-kite festival, free flight, wind master, sky rings, rescue a snagged kite), four places (village paddy, monsoon beel, winter mustard field, river char), five skies from golden evening to storm, and a kite designer. Golden wind streams, a gust forecast, string tension, manjha, an eagle, power wires and trees that snag your kite.
-* **Danguli (ডাংগুলি):** a two-strike hands-only game: flick the guli up, then hit it in mid-air as far as you can. Real ballistic flight with drag and bounce; three tries per round.
-* **Lattim (লাটিম):** pinch the top, swing, release. A faster flick gives more spin. Knock the other tops out of the chalk ring before your top wobbles to a stop. 6 rounds.
+* **Coming soon, Danguli (ডাংগুলি):** a two-strike hands-only game: flick the guli up, then hit it in mid-air as far as you can. Real ballistic flight with drag and bounce; three tries per round.
+* **Coming soon, Lattim (লাটিম):** pinch the top, swing, release. A faster flick gives more spin. Knock the other tops out of the chalk ring before your top wobbles to a stop. 6 rounds.
 
 ## Hand interaction
 Everything is *pinch, move, release*, and the pinch point is the real midpoint between thumb tip and index tip, not the wrist. Hand tracking drops out during fast motion, so shots use a slow pull-back (slingshot) instead of a fling, and the kite follows the hand with a little lag like a real kite. Menus are big cards you point at and pinch. The whole play space is within about two feet in front of a seated player. Controllers work as a fallback (trigger = pinch) but are never required.
@@ -31,7 +31,7 @@ Guti is the first step of a Bangla folk-games arcade: dang-guli, sat-chara and b
 WebXR, IWSDK, TypeScript, Three.js, Havok Physics, Vite, Meta Quest, Hand Tracking
 
 ## Demo video script (< 3 min)
-1. 0:00 Title "Guti: hands-only VR village games". Menu with four cards (10 s).
+1. 0:00 Title "Guti: hands-only VR village games". Menu with Marbles and Kite cards (10 s).
 2. 0:10 Marbles in the village: ghost-hand hint, pinch, pull, release, marbles scatter (25 s).
 3. 0:35 Jump with ?level=8 (monsoon rain) then ?level=11 (Dhaka rooftop): different surfaces, different slides (25 s).
 4. 1:00 Menu, open Kite Alive: steer, slice two strings, dodge a crow, a gust, final survival time (50 s).
