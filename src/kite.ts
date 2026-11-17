@@ -54,6 +54,12 @@ const GUST_DUR = 3;
 const GUST_PEAK = 0.35;
 const FORECAST_S = 24; // seconds of wind shown in the forecast graph
 const STREAMS = 2;
+const WIRE_Y = 1.1; // top power wire; flying lower than this snags the kite
+const TREE_X = 0.64; // trees at both sides reach in this far
+const TREE_TOP = 1.7;
+const POLE_X = 1.22;
+const SNAG_MAX = 2.4;
+const SNAG_SHAKE = 1.1;
 const STREAM_HALF = 0.13;
 const TENSION_BAR_W = 0.38;
 const TENSION_BAR_X = 0.05;
@@ -333,6 +339,14 @@ export class KiteSystem extends createSystem({}) {
   private eagleT = 0;
   private nextEagle = 22;
   private eagleVel = new Vector3();
+  // snagging: power wires at the bottom, trees at the sides
+  private snagT = 0;
+  private snagShake = 0;
+  private snagPos = new Vector3();
+  private warnedWire = false;
+  private warnedTree = false;
+  private lastTx = 0;
+  private lastTy = 0;
   private flashText = '';
   private flashTimer = 0;
   private overTimer = 0;
@@ -423,6 +437,7 @@ export class KiteSystem extends createSystem({}) {
     this.world.createTransformEntity(this.eagle.group);
     this.root.push(this.eagle.group);
 
+    this.buildObstacles();
     this.hud = new TextPanel(0.56, 0.3);
     this.hud.mesh.position.set(0, TABLE_Y + 0.2, TABLE_CENTER_Z - 0.15);
     this.hud.mesh.rotation.x = -0.45;
@@ -487,6 +502,15 @@ export class KiteSystem extends createSystem({}) {
       this.best = 0;
     }
 
+    (window as unknown as { __kite?: () => unknown }).__kite = () => ({
+      phase: this.phase,
+      lives: this.lives,
+      snag: this.snagT,
+      x: this.mine.pos.x,
+      y: this.mine.pos.y,
+      tension: this.tension,
+      t: this.roundT,
+    });
     const down = (e: PointerEvent) => {
       this.mouseDown = true;
       this.mouseX = e.clientX;
@@ -526,6 +550,71 @@ export class KiteSystem extends createSystem({}) {
     });
   }
 
+  /** Power poles + wires along the bottom, leafy trees at both sides: classic kite killers. */
+  private buildObstacles(): void {
+    const wood = new MeshStandardMaterial({ color: 0x6b5a48, roughness: 0.9 });
+    const bark = new MeshStandardMaterial({ color: 0x5a3f28, roughness: 1 });
+    const leaf = new MeshStandardMaterial({ color: 0x3f7a2c, roughness: 1 });
+    const leaf2 = new MeshStandardMaterial({ color: 0x5c9a3a, roughness: 1 });
+    const z = SKY_Z - 0.02;
+    for (const side of [-1, 1]) {
+      // pole
+      const pole = new Group();
+      const post = new Mesh(new CylinderGeometry(0.018, 0.026, 1.5, 8), wood);
+      post.position.y = 0.75;
+      const arm = new Mesh(new CylinderGeometry(0.01, 0.01, 0.34, 6), wood);
+      arm.rotation.z = Math.PI / 2;
+      arm.position.y = 1.2;
+      pole.add(post, arm);
+      for (const ix of [-0.12, 0, 0.12]) {
+        const ins = new Mesh(new CylinderGeometry(0.01, 0.01, 0.03, 6), new MeshStandardMaterial({ color: 0xcfd6d8 }));
+        ins.position.set(ix, 1.23, 0);
+        pole.add(ins);
+      }
+      pole.position.set(side * POLE_X, 0, z);
+      this.world.createTransformEntity(pole);
+      this.root.push(pole);
+      // tree
+      const tree = new Group();
+      const trunk = new Mesh(new CylinderGeometry(0.035, 0.05, 1.15, 8), bark);
+      trunk.position.y = 0.58;
+      tree.add(trunk);
+      const blobs: [number, number, number, number][] = [
+        [-side * 0.05, 1.3, 0, 0.3],
+        [-side * 0.18, 1.12, 0.03, 0.22],
+        [side * 0.12, 1.2, -0.02, 0.2],
+        [-side * 0.02, 1.5, 0.02, 0.2],
+        [-side * 0.28, 1.35, 0, 0.14],
+      ];
+      blobs.forEach(([x, y, zz, r], i) => {
+        const b = new Mesh(new SphereGeometry(r, 10, 8), i % 2 ? leaf2 : leaf);
+        b.position.set(x, y, zz);
+        b.scale.y = 0.85;
+        tree.add(b);
+      });
+      tree.scale.setScalar(0.78);
+      tree.position.set(side * (TREE_X + 0.25), 0, z);
+      this.world.createTransformEntity(tree);
+      this.root.push(tree);
+    }
+    // three wires with a gentle sag between the poles
+    for (const [dy, col] of [[0, 0x2a2a2a], [-0.06, 0x2a2a2a], [0.08, 0x2a2a2a]] as [number, number][]) {
+      const pts = new Float32Array(14 * 3);
+      for (let i = 0; i < 14; i++) {
+        const t = i / 13;
+        pts[i * 3] = -POLE_X + t * POLE_X * 2;
+        pts[i * 3 + 1] = WIRE_Y + dy - Math.sin(t * Math.PI) * 0.035;
+        pts[i * 3 + 2] = z;
+      }
+      const g = new BufferGeometry();
+      g.setAttribute('position', new BufferAttribute(pts, 3));
+      const ln = new Line(g, new LineBasicMaterial({ color: col }));
+      ln.frustumCulled = false;
+      this.world.createTransformEntity(ln);
+      this.root.push(ln);
+    }
+  }
+
   private setVisible(on: boolean): void {
     for (const o of this.root) o.visible = on;
   }
@@ -558,6 +647,9 @@ export class KiteSystem extends createSystem({}) {
       this.gusts.push({ t0: gt, dir: Math.random() < 0.5 ? -1 : 1 });
       gt += 13 + Math.random() * 5;
     }
+    this.snagT = 0;
+    this.warnedWire = false;
+    this.warnedTree = false;
     this.manjhaOn = false;
     this.manjha.visible = false;
     this.nextManjha = 15;
@@ -984,6 +1076,54 @@ export class KiteSystem extends createSystem({}) {
     if (this.lives <= 0) this.endRound();
   }
 
+  /** Power wires and trees: touching them tangles the kite. Shake your hand to free it. */
+  private updateSnag(delta: number): void {
+    if (this.phase !== 'play') {
+      this.snagT = 0;
+      return;
+    }
+    const px = this.mine.pos.x;
+    const py = this.mine.pos.y;
+    const dTx = this.target.x - this.lastTx;
+    const dTy = this.target.y - this.lastTy;
+    this.lastTx = this.target.x;
+    this.lastTy = this.target.y;
+    if (this.snagT > 0) {
+      this.snagT -= delta;
+      this.snagShake += Math.hypot(dTx, dTy);
+      if (this.snagShake >= SNAG_SHAKE || this.snagT <= 0) {
+        this.snagT = 0;
+        this.target.y = Math.max(this.target.y, 1.4);
+        this.target.x *= 0.5;
+        sfx.win();
+        this.flash('Free! Stay away from wires and trees', 1.5);
+      }
+      return;
+    }
+    if (!this.warnedWire && py < WIRE_Y + 0.28) {
+      this.warnedWire = true;
+      this.flash('Power wires below! Stay high', 1.6);
+    }
+    if (!this.warnedTree && Math.abs(px) > TREE_X - 0.1 && py < TREE_TOP) {
+      this.warnedTree = true;
+      this.flash('Trees at the sides! Stay in the middle', 1.6);
+    }
+    if (this.hurtCooldown > 0) return;
+    const wire = py < WIRE_Y + 0.07;
+    const tree = Math.abs(px) > TREE_X && py < TREE_TOP;
+    if (wire || tree) {
+      this.snagT = SNAG_MAX;
+      this.snagShake = 0;
+      this.snagPos.set(px, py, SKY_Z);
+      this.lastTx = this.target.x;
+      this.lastTy = this.target.y;
+      sfx.cut();
+      if (wire) emitBurst(px, py, SKY_Z, 0.5, 0.8, 1, 26, 0.6);
+      else emitBurst(px, py, SKY_Z, 0.3, 0.7, 0.2, 22, 0.6);
+      this.hurtPlayer(wire ? 'Tangled in the power wire! Shake to free it' : 'Stuck in the tree! Shake to free it');
+    }
+  }
+
   /** Enemy manjha string sweeping across, and an eagle that dives at the kite. */
   private updateHazards(delta: number): void {
     if (this.phase !== 'play') {
@@ -1247,14 +1387,19 @@ export class KiteSystem extends createSystem({}) {
     k.pos.x += (this.target.x + wind * 0.9 - k.pos.x) * f;
     k.pos.y += (this.target.y - k.pos.y) * f;
     k.pos.z = SKY_Z;
+    if (this.snagT > 0) {
+      // pinned where it caught, fluttering
+      k.pos.set(this.snagPos.x + Math.sin(this.elapsed * 30) * 0.008, this.snagPos.y + Math.sin(this.elapsed * 23) * 0.006, SKY_Z);
+    }
     const inst = delta > 0 ? this.prevPos.distanceTo(k.pos) / delta : 0;
     this.speed += (inst - this.speed) * Math.min(1, delta * 12);
-    k.group.rotation.z = Math.max(-0.5, Math.min(0.5, (this.target.x - k.pos.x) * -1.2));
+    k.group.rotation.z = this.snagT > 0 ? Math.sin(this.elapsed * 28) * 0.25 : Math.max(-0.5, Math.min(0.5, (this.target.x - k.pos.x) * -1.2));
 
     this.updateStreams(delta);
     this.updateTension(delta);
     this.updateBirds(delta);
     this.updateHazards(delta);
+    this.updateSnag(delta);
     this.updateLeaves(delta, wind);
     for (const e of this.enemies) this.enemyUpdate(e, delta, wind);
     if (this.phase === 'play') this.checkContacts();
