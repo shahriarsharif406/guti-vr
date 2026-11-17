@@ -68,7 +68,7 @@ function drawGear(c: CanvasRenderingContext2D, cx: number, cy: number, r: number
 }
 
 /** Cinematic poster card: dark leather, brass frame with rivets, a painted vignette, serif title and tagline. */
-function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'dominoes' | 'aura', title: string, tag: string, accent: string): void {
+function drawPoster(p: TextPanel, kind: 'gears' | 'aura' | 'spell', title: string, tag: string, accent: string): void {
   const c = p.ctx;
   const W = p.w;
   const H = p.h;
@@ -91,9 +91,7 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'domino
   const sky = c.createLinearGradient(0, iy, 0, iy + ih);
   const tints: Record<string, [string, string]> = {
     gears: ['#143846', '#071a22'],
-    bricks: ['#3a2a14', '#150e06'],
-    pottery: ['#3d2416', '#130a06'],
-    dominoes: ['#3a1622', '#14070b'],
+    spell: ['#3a0f1c', '#0a0410'],
     aura: ['#1b1048', '#06041a'],
   };
   sky.addColorStop(0, tints[kind][0]);
@@ -119,74 +117,6 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'domino
     c.lineTo(cx + 80, cy - 30);
     c.lineTo(cx + 50, cy + 100);
     c.stroke();
-  } else if (kind === 'bricks') {
-    const brick = (x: number, y: number, w: number, hh: number, col: string): void => {
-      const g = c.createLinearGradient(x, y, x, y + hh);
-      g.addColorStop(0, col);
-      g.addColorStop(1, 'rgba(0,0,0,0.45)');
-      c.fillStyle = col;
-      c.fillRect(x, y, w, hh);
-      c.fillStyle = g;
-      c.fillRect(x, y, w, hh);
-      c.fillStyle = 'rgba(255,255,255,0.28)';
-      c.fillRect(x, y, w, 4);
-      for (let k = 0; k < Math.round(w / 52); k++) {
-        const sx = x + 26 + k * 52;
-        c.fillStyle = col;
-        c.fillRect(sx - 15, y - 12, 30, 12);
-        c.fillStyle = 'rgba(255,255,255,0.3)';
-        c.fillRect(sx - 15, y - 12, 30, 3);
-      }
-    };
-    brick(cx - 130, cy + 70, 260, 60, '#d94a3a');
-    brick(cx - 104, cy + 10, 208, 60, '#e8b830');
-    brick(cx - 52, cy - 50, 104, 60, '#3f86d4');
-    brick(cx + 70, cy - 8, 104, 60, '#3aa860');
-  } else if (kind === 'pottery') {
-    // wheel + vase silhouette with rim light
-    c.fillStyle = '#2a1a10';
-    c.beginPath();
-    c.ellipse(cx, cy + 118, 130, 30, 0, 0, Math.PI * 2);
-    c.fill();
-    const vg = c.createLinearGradient(cx - 90, 0, cx + 90, 0);
-    vg.addColorStop(0, '#6b3a22');
-    vg.addColorStop(0.35, '#e0a070');
-    vg.addColorStop(1, '#4a2616');
-    c.fillStyle = vg;
-    c.beginPath();
-    c.moveTo(cx - 38, cy - 105);
-    c.bezierCurveTo(cx - 40, cy - 60, cx - 100, cy - 20, cx - 70, cy + 50);
-    c.bezierCurveTo(cx - 60, cy + 95, cx - 44, cy + 100, cx - 44, cy + 112);
-    c.lineTo(cx + 44, cy + 112);
-    c.bezierCurveTo(cx + 44, cy + 100, cx + 60, cy + 95, cx + 70, cy + 50);
-    c.bezierCurveTo(cx + 100, cy - 20, cx + 40, cy - 60, cx + 38, cy - 105);
-    c.closePath();
-    c.fill();
-    c.strokeStyle = 'rgba(255,220,170,0.5)';
-    c.lineWidth = 3;
-    c.beginPath();
-    c.ellipse(cx, cy - 105, 38, 9, 0, 0, Math.PI * 2);
-    c.stroke();
-  } else if (kind === 'dominoes') {
-    // dominoes mid-fall
-    for (let k = 0; k < 7; k++) {
-      c.save();
-      c.translate(cx - 150 + k * 50, cy + 110);
-      c.rotate(Math.max(0, (k - 2) * 0.17) * 1.0);
-      const g = c.createLinearGradient(-16, -150, 16, 0);
-      g.addColorStop(0, '#f6efe4');
-      g.addColorStop(1, '#b9ab98');
-      c.fillStyle = g;
-      c.fillRect(-16, -150, 32, 150);
-      c.fillStyle = '#2a1a1a';
-      c.fillRect(-16, -78, 32, 3);
-      for (const [dx, dy] of [[0, -112], [-6, -46], [6, -28]]) {
-        c.beginPath();
-        c.arc(dx, dy, 4.5, 0, Math.PI * 2);
-        c.fill();
-      }
-      c.restore();
-    }
   }
   if (kind === 'aura') {
     // a white beam enters a prism and fans into cyan, magenta and gold; a lotus wakes below
@@ -228,6 +158,64 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'domino
       c.beginPath();
       c.ellipse(cx + Math.sin(a) * 36, iy + ih - 34 + (1 - Math.cos(a)) * 26, 7, 24, a, 0, Math.PI * 2);
       c.fill();
+    }
+  }
+  if (kind === 'spell') {
+    // a colossal ember titan looms; two bare hands hold a living fireball
+    for (let i = 0; i < 60; i++) {
+      c.fillStyle = 'rgba(255,200,140,' + (0.15 + ((i * 29) % 10) / 22).toFixed(2) + ')';
+      c.fillRect(ix + ((i * 89) % iw), iy + ((i * 47) % (ih * 0.8)), 2, 2);
+    }
+    const tg = c.createLinearGradient(0, iy, 0, iy + ih);
+    tg.addColorStop(0, '#120611');
+    tg.addColorStop(1, '#2a0c14');
+    c.fillStyle = tg;
+    c.beginPath();
+    c.moveTo(cx - 120, iy + ih);
+    c.lineTo(cx - 105, iy + 70);
+    c.lineTo(cx - 70, iy + 40);
+    c.lineTo(cx - 40, iy + 18);
+    c.lineTo(cx + 40, iy + 18);
+    c.lineTo(cx + 70, iy + 40);
+    c.lineTo(cx + 105, iy + 70);
+    c.lineTo(cx + 120, iy + ih);
+    c.closePath();
+    c.fill();
+    c.fillStyle = '#ffb040';
+    c.shadowColor = '#ff6a00';
+    c.shadowBlur = 16;
+    c.fillRect(cx - 34, iy + 46, 22, 7);
+    c.fillRect(cx + 12, iy + 46, 22, 7);
+    c.shadowBlur = 0;
+    const fy = cy + 70;
+    const fg = c.createRadialGradient(cx, fy, 4, cx, fy, 80);
+    fg.addColorStop(0, 'rgba(255,250,200,1)');
+    fg.addColorStop(0.3, 'rgba(255,160,40,0.95)');
+    fg.addColorStop(1, 'rgba(255,60,0,0)');
+    c.fillStyle = fg;
+    c.beginPath();
+    c.arc(cx, fy, 80, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = 'rgba(120,230,255,0.9)';
+    c.lineWidth = 3;
+    c.shadowColor = '#40d0ff';
+    c.shadowBlur = 12;
+    c.beginPath();
+    c.moveTo(cx - 150, fy - 60);
+    c.lineTo(cx - 120, fy - 30);
+    c.lineTo(cx - 135, fy - 20);
+    c.lineTo(cx - 100, fy + 10);
+    c.stroke();
+    c.shadowBlur = 0;
+    c.fillStyle = '#c99a7a';
+    for (const sx of [-1, 1]) {
+      c.save();
+      c.translate(cx + sx * 96, fy + 36);
+      c.rotate(sx * 0.5);
+      c.beginPath();
+      c.ellipse(0, 0, 22, 44, 0, 0, Math.PI * 2);
+      c.fill();
+      c.restore();
     }
   }
   c.restore();
@@ -319,10 +307,8 @@ export class MenuSystem extends createSystem({
 
   private drawButtons(): void {
     drawPoster(this.buttons[0].panel, 'gears', 'GEARSHIFT', "The Clockmaker's Bench", '#f2d38a');
-    drawPoster(this.buttons[1].panel, 'bricks', 'BRICKWORKS', 'Build it.  Then break it.', '#ffd05a');
-    drawPoster(this.buttons[2].panel, 'pottery', 'THE WHEEL', 'Clay turns in your hands', '#f0b080');
-    drawPoster(this.buttons[3].panel, 'dominoes', 'DOMINO FALL', 'One touch.  Chain reaction.', '#ff9db8');
-    drawPoster(this.buttons[4].panel, 'aura', 'AURA WEAVER', 'Compose the light.', '#bfe6ff');
+    drawPoster(this.buttons[1].panel, 'aura', 'AURA WEAVER', 'Compose the light.', '#bfe6ff');
+    drawPoster(this.buttons[2].panel, 'spell', 'SPELLFORGE', 'Become the magic.', '#ffb070');
     const b = this.back.panel;
     b.card('rgba(24,14,8,0.92)', '#c79a46');
     b.ctx.textAlign = 'center';
@@ -348,7 +334,7 @@ export class MenuSystem extends createSystem({
     tc.fillStyle = '#e6d3b0';
     tc.font = 'italic 34px ' + SERIF;
     (tc as unknown as { letterSpacing: string }).letterSpacing = '3px';
-    tc.fillText('five benches.  your bare hands.', t.w / 2, t.h * 0.88);
+    tc.fillText('three benches.  your bare hands.', t.w / 2, t.h * 0.88);
     (tc as unknown as { letterSpacing: string }).letterSpacing = '0px';
     t.commit();
   }
@@ -357,11 +343,9 @@ export class MenuSystem extends createSystem({
     const y = TABLE_Y + 0.22;
     const z = TABLE_CENTER_Z + 0.02;
     this.buttons.push(
-      this.makeButton(MenuTargets.Gears, 0.19, 0.24, -0.44, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Bricks, 0.19, 0.24, -0.22, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Pottery, 0.19, 0.24, 0, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Dominoes, 0.19, 0.24, 0.22, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Aura, 0.19, 0.24, 0.44, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Gears, 0.23, 0.29, -0.3, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Aura, 0.23, 0.29, 0, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Spell, 0.23, 0.29, 0.3, y, z, -0.5, () => {}),
     );
     this.back = this.makeButton(
       MenuTargets.Menu,
@@ -378,6 +362,7 @@ export class MenuSystem extends createSystem({
     this.title.mesh.rotation.x = -0.35;
     this.world.createTransformEntity(this.title.mesh);
     this.drawButtons();
+    (window as unknown as Record<string, unknown>).__setMode = (m: string) => setMode(m as never);
 
     const onPress = (entity: Entity) => {
       if (this.cooldown > 0) return;
@@ -389,7 +374,7 @@ export class MenuSystem extends createSystem({
       sfx.ambience();
       sfx.select();
       this.cooldown = 0.4;
-      setMode(target === 'kite' ? 'kitecraft' : (target as 'menu' | 'guti' | 'pottery' | 'marblerun' | 'dominoes' | 'bricks' | 'paperplane' | 'gears' | 'aura'));
+      setMode(target === 'kite' ? 'kitecraft' : (target as 'menu' | 'guti' | 'marblerun' | 'paperplane' | 'gears' | 'aura' | 'spell'));
     };
     this.cleanupFuncs.push(this.queries.pressed.subscribe('qualify', onPress));
   }
@@ -413,7 +398,7 @@ export class MenuSystem extends createSystem({
       cam.getWorldPosition(this.head);
       cam.getWorldDirection(this.fwd);
       let hit = -1;
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 3; i++) {
         this.buttons[i].mesh.getWorldPosition(this.to).sub(this.head).normalize();
         if (this.to.dot(this.fwd) > 0.985) hit = i;
       }
@@ -427,7 +412,7 @@ export class MenuSystem extends createSystem({
         this.cooldown = 0.4;
         sfx.ambience();
         sfx.select();
-        setMode(hit === 0 ? 'gears' : hit === 1 ? 'bricks' : hit === 2 ? 'pottery' : hit === 3 ? 'dominoes' : 'aura');
+        setMode(hit === 0 ? 'gears' : hit === 1 ? 'aura' : 'spell');
       }
     }
     // hover feedback: buttons lift a little

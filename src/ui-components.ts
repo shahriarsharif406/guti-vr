@@ -1,6 +1,6 @@
 import { createComponent, Types } from '@iwsdk/core';
 
-export const MenuTargets = { Guti: 'guti', Kite: 'kite', Lattim: 'lattim', Danguli: 'danguli', Pottery: 'pottery', MarbleRun: 'marblerun', Dominoes: 'dominoes', Bricks: 'bricks', PaperPlane: 'paperplane', Gears: 'gears', Aura: 'aura', Menu: 'menu' } as const;
+export const MenuTargets = { Guti: 'guti', Kite: 'kite', Lattim: 'lattim', Danguli: 'danguli', Pottery: 'pottery', MarbleRun: 'marblerun', Dominoes: 'dominoes', Bricks: 'bricks', PaperPlane: 'paperplane', Gears: 'gears', Aura: 'aura', Spell: 'spell', Menu: 'menu' } as const;
 
 /** A big pressable panel that switches the game mode. */
 export const MenuButton = createComponent('MenuButton', {

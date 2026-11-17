@@ -25,9 +25,7 @@ const until = async (fn, ms) => {
 };
 await p.goto('https://127.0.0.1:4175/');
 await p.waitForTimeout(15000);
-await p.mouse.move(683, 300);
-await p.waitForTimeout(600);
-await p.mouse.click(683, 300);
+await p.evaluate(() => window.__setMode('aura'));
 await p.waitForTimeout(6000);
 await p.evaluate(() => window.__auraWipe());
 let s = await A();
@@ -49,6 +47,8 @@ check('music volume cycles', (await A()).settings.music !== 1);
 await p.evaluate(() => window.__auraPress(15));
 check('resume closes pause', (await A()).paused === false);
 // resource stability across repeated level loads
+for (let k = 0; k < 7; k++) await p.evaluate((k) => window.__auraLevel(k), k); // warm-up: first use uploads each geometry once
+await p.waitForTimeout(3000);
 const i0 = await p.evaluate(() => window.__auraInfo());
 for (let k = 0; k < 20; k++) await p.evaluate((k) => window.__auraLevel(k % 7), k);
 await p.waitForTimeout(2000);
@@ -69,9 +69,7 @@ await p.screenshot({ path: 'aura-e2e-final.png' });
 // save survives reload
 await p.reload();
 await p.waitForTimeout(15000);
-await p.mouse.move(683, 300);
-await p.waitForTimeout(600);
-await p.mouse.click(683, 300);
+await p.evaluate(() => window.__setMode('aura'));
 await p.waitForTimeout(6000);
 s = await A();
 check('progress survives reload', s.saved.filter(Boolean).length === 7, JSON.stringify(s.saved));
