@@ -23,6 +23,11 @@ function ac(): AudioContext | null {
 
 let master: GainNode | null = null;
 let masterVol = 0.9;
+export function setMasterVolume(v: number): void {
+  masterVol = Math.max(0, Math.min(1, v));
+  if (master) master.gain.value = masterVol;
+}
+export const getMasterVolume = (): number => masterVol;
 /** Single output bus: every sound goes through one master gain (volume keys). */
 function dest(c: AudioContext): AudioNode {
   if (!master) {
@@ -182,7 +187,7 @@ import { modeState } from './mode.js';
 
 // Cinematic score: warm string pad, felt-piano arpeggios, a sparse bell melody and a soft sub, in D minor.
 // Each screen gets its own colour (menu: open and gentle; gears: darker with a clockwork pulse; others: lighter).
-type Colour = 'menu' | 'gears' | 'play';
+type Colour = 'menu' | 'gears' | 'play' | 'aura';
 const midi = (n: number): number => 440 * Math.pow(2, (n - 69) / 12);
 // Dm9 - Bb - F - C : bass note + pad voicing (MIDI)
 const PROG: { bass: number; pad: number[] }[] = [
@@ -192,6 +197,14 @@ const PROG: { bass: number; pad: number[] }[] = [
   { bass: 36, pad: [48, 55, 60, 64, 67] },
 ];
 const MELODY = [62, 65, 67, 69, 72, 74, 77]; // D minor pentatonic-ish, upper register
+// Aura Weaver: open, luminous D major colours that bloom as the sanctuary is restored
+const AURA_PROG: { bass: number; pad: number[] }[] = [
+  { bass: 38, pad: [50, 54, 57, 61, 64] },
+  { bass: 35, pad: [47, 54, 57, 61, 66] },
+  { bass: 43, pad: [55, 59, 62, 66, 69] },
+  { bass: 45, pad: [57, 61, 64, 66, 69] },
+];
+const AURA_MELODY = [62, 64, 66, 69, 71, 74, 76];
 
 let musicGain: GainNode | null = null;
 let musicOn = true;
@@ -205,7 +218,7 @@ let melodyIdx = 2;
 
 function colourFor(): Colour {
   const m = modeState.mode;
-  return m === 'menu' ? 'menu' : m === 'gears' ? 'gears' : 'play';
+  return m === 'menu' ? 'menu' : m === 'gears' ? 'gears' : m === 'aura' ? 'aura' : 'play';
 }
 
 function out(c: AudioContext): AudioNode {
@@ -331,7 +344,23 @@ function schedule(): void {
   const stepDur = 60 / BPM / 2; // eighth notes; 8 per bar (4 beats)
   while (nextT < c.currentTime + 0.3) {
     const s = step % 8;
-    const chord = PROG[Math.floor(bar) % 4];
+    const chord = (col === 'aura' ? AURA_PROG : PROG)[Math.floor(bar) % 4];
+    if (col === 'aura') {
+      const sw = musicState.swell;
+      if (s === 0) {
+        for (const n of chord.pad) mNote(c, nextT, midi(n), stepDur * 8.4, 0.012 + 0.016 * sw, 'pad');
+        mNote(c, nextT, midi(chord.bass), stepDur * 8, 0.07, 'sub');
+      }
+      if (s % 2 === 1 && Math.random() < 0.3 + 0.5 * sw) mNote(c, nextT, midi(chord.pad[(s + bar) % chord.pad.length] + 24), 2.2, 0.018 + 0.02 * sw, 'bell');
+      if ((s === 0 || s === 4) && Math.random() < 0.4 + 0.4 * sw) {
+        melodyIdx = Math.max(0, Math.min(AURA_MELODY.length - 1, melodyIdx + Math.floor(Math.random() * 3) - 1));
+        mNote(c, nextT, midi(AURA_MELODY[melodyIdx] + 12), 3.6, 0.026, 'box');
+      }
+      nextT += stepDur;
+      step += 1;
+      if (step % 8 === 0) bar += 1;
+      continue;
+    }
     if (s === 0) {
       const barDur = stepDur * 8;
       for (const n of chord.pad) mNote(c, nextT, midi(n), barDur * 1.05, col === 'gears' ? 0.012 : 0.016, 'pad');
@@ -681,6 +710,81 @@ export const sfx = {
     tone(up ? 520 : 380, 0.05, 0.12, 'square', up ? 300 : 220);
     burst(0.025, 0.12, 1500, 2);
   },
+  // ---------------------------------------------------------------- Aura Weaver
+  /** Persistent colour voices: cyan = pure crystal, magenta = shimmering pair, gold = deep resonance. lv = 0..1 each. bend 0..1 shifts pitch with the selected element. */
+  auraBeams(cy: number, ma: number, go: number, bend: number): void {
+    const c = ac();
+    if (!c) return;
+    if (!auraV) {
+      if (cy + ma + go < 0.01) return;
+      const mk = (type: OscillatorType, f: number, det = 0): { o: OscillatorNode; g: GainNode } => {
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = type;
+        o.frequency.value = f;
+        o.detune.value = det;
+        g.gain.value = 0;
+        o.connect(g);
+        g.connect(dest(c));
+        o.start();
+        return { o, g };
+      };
+      auraV = {
+        cy: [mk('sine', 784), mk('sine', 1568)],
+        ma: [mk('triangle', 587, -7), mk('triangle', 587, 7)],
+        go: [mk('sine', 130.8), mk('triangle', 261.6)],
+      };
+    }
+    const t = c.currentTime;
+    const m = 1 + bend * 0.18;
+    const set = (v: { o: OscillatorNode; g: GainNode }[], base: number[], lvl: number, vol: number[]): void => {
+      v.forEach((n, i) => {
+        n.o.frequency.setTargetAtTime(base[i] * m, t, 0.08);
+        n.g.gain.setTargetAtTime(lvl * vol[i], t, 0.12);
+      });
+    };
+    set(auraV.cy, [784, 1568], cy, [0.014, 0.004]);
+    set(auraV.ma, [587, 587], ma, [0.01, 0.01]);
+    set(auraV.go, [130.8, 261.6], go, [0.03, 0.008]);
+  },
+  /** crystal tick when a dial passes a step; pitch climbs a pentatonic scale with the angle */
+  auraTick(stepIdx: number): void {
+    const sc = [0, 2, 4, 7, 9];
+    const n = sc[((stepIdx % 5) + 5) % 5] + 12 * Math.floor(stepIdx / 5 % 3);
+    tone(523.25 * Math.pow(2, n / 12), 0.35, 0.06, 'sine');
+    tone(1046.5 * Math.pow(2, n / 12), 0.2, 0.02, 'sine');
+  },
+  /** a monolith wakes: cascading chord with echo and a rising shimmer */
+  auraAwaken(idx: number, chapter: number): void {
+    const roots = [261.63, 293.66, 329.63, 392, 440];
+    const r = roots[Math.min(4, Math.max(0, chapter))] * (idx === 1 ? 1.5 : idx === 2 ? 2 : 1);
+    [1, 1.5, 2, 3, 4].forEach((m, i) => {
+      tone(r * m, 2.4, 0.07 / (1 + i * 0.4), 'sine', undefined, i * 0.11);
+      tone(r * m * 1.003, 2.0, 0.03, 'triangle', undefined, i * 0.11 + 0.01);
+      tone(r * m, 1.6, 0.025, 'sine', undefined, i * 0.11 + 0.34);
+    });
+    withPan(0, () => burst(0.9, 0.04, 3200, 0.6));
+  },
+  /** gentle wrong mix: a soft low interval, never a harsh buzz */
+  auraImpure(): void {
+    tone(196, 0.5, 0.05, 'sine', 180);
+    tone(207.7, 0.5, 0.04, 'sine', 190);
+  },
+  /** level complete: world pulse sweep + wide major chord */
+  auraPulse(): void {
+    tone(110, 1.8, 0.1, 'sine', 330);
+    [523.25, 659.25, 783.99, 987.77, 1318.5].forEach((f, i) => tone(f, 3.2, 0.06, 'sine', undefined, 0.15 + i * 0.16));
+    burst(1.6, 0.05, 1400, 0.4);
+  },
+  /** the final awakening: long layered harmonies */
+  auraFinale(): void {
+    const base = 146.83;
+    [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8].forEach((m, i) => {
+      tone(base * m, 9, 0.05 / (1 + i * 0.25), 'sine', undefined, i * 0.6);
+      tone(base * m * 1.004, 8, 0.02, 'triangle', undefined, i * 0.6 + 0.02);
+    });
+    burst(5, 0.05, 900, 0.4);
+  },
   /** finale: a swelling, cascading major-chord drone while the orrery unfolds (about 9 seconds) */
   finale(): void {
     const c = ac();
@@ -730,5 +834,6 @@ export const sfx = {
     });
   },
 };
+let auraV: { cy: { o: OscillatorNode; g: GainNode }[]; ma: { o: OscillatorNode; g: GainNode }[]; go: { o: OscillatorNode; g: GainNode }[] } | null = null;
 const meshVoices: ({ bp: BiquadFilterNode; lfo: OscillatorNode; level: GainNode; sp: StereoPannerNode | null } | undefined)[] = [];
 let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode; nf: BiquadFilterNode; ng: GainNode; lfo: OscillatorNode; lg: GainNode } | null = null;

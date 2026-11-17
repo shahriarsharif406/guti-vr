@@ -68,7 +68,7 @@ function drawGear(c: CanvasRenderingContext2D, cx: number, cy: number, r: number
 }
 
 /** Cinematic poster card: dark leather, brass frame with rivets, a painted vignette, serif title and tagline. */
-function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'dominoes', title: string, tag: string, accent: string): void {
+function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'dominoes' | 'aura', title: string, tag: string, accent: string): void {
   const c = p.ctx;
   const W = p.w;
   const H = p.h;
@@ -94,6 +94,7 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'domino
     bricks: ['#3a2a14', '#150e06'],
     pottery: ['#3d2416', '#130a06'],
     dominoes: ['#3a1622', '#14070b'],
+    aura: ['#1b1048', '#06041a'],
   };
   sky.addColorStop(0, tints[kind][0]);
   sky.addColorStop(1, tints[kind][1]);
@@ -166,7 +167,7 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'domino
     c.beginPath();
     c.ellipse(cx, cy - 105, 38, 9, 0, 0, Math.PI * 2);
     c.stroke();
-  } else {
+  } else if (kind === 'dominoes') {
     // dominoes mid-fall
     for (let k = 0; k < 7; k++) {
       c.save();
@@ -185,6 +186,48 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'bricks' | 'pottery' | 'domino
         c.fill();
       }
       c.restore();
+    }
+  }
+  if (kind === 'aura') {
+    // a white beam enters a prism and fans into cyan, magenta and gold; a lotus wakes below
+    for (let i = 0; i < 70; i++) {
+      c.fillStyle = 'rgba(255,255,255,' + (0.2 + ((i * 37) % 10) / 20).toFixed(2) + ')';
+      c.fillRect(ix + ((i * 97) % iw), iy + ((i * 53) % (ih * 0.9)), 2, 2);
+    }
+    const beam = (x1: number, y1: number, x2: number, y2: number, col: string, w: number): void => {
+      c.strokeStyle = col;
+      c.lineCap = 'round';
+      c.shadowColor = col;
+      c.shadowBlur = 18;
+      c.lineWidth = w;
+      c.beginPath();
+      c.moveTo(x1, y1);
+      c.lineTo(x2, y2);
+      c.stroke();
+      c.shadowBlur = 0;
+    };
+    const px = cx + 5;
+    const py = cy - 10;
+    beam(ix, py, px - 30, py, '#ffffff', 6);
+    beam(px + 10, py, ix + iw, py - 80, '#ffc233', 5);
+    beam(px + 12, py + 4, ix + iw, py + 4, '#ff3bd6', 5);
+    beam(px + 10, py + 8, ix + iw, py + 90, '#33f0ff', 5);
+    c.fillStyle = 'rgba(190,225,255,0.35)';
+    c.strokeStyle = '#d8efff';
+    c.lineWidth = 3;
+    c.beginPath();
+    c.moveTo(px - 36, py + 34);
+    c.lineTo(px + 2, py - 34);
+    c.lineTo(px + 40, py + 34);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    for (let k = 0; k < 9; k++) {
+      const a = -Math.PI / 2 + (k - 4) * 0.28;
+      c.fillStyle = k % 2 ? 'rgba(255,120,220,0.7)' : 'rgba(120,240,255,0.75)';
+      c.beginPath();
+      c.ellipse(cx + Math.sin(a) * 36, iy + ih - 34 + (1 - Math.cos(a)) * 26, 7, 24, a, 0, Math.PI * 2);
+      c.fill();
     }
   }
   c.restore();
@@ -279,6 +322,7 @@ export class MenuSystem extends createSystem({
     drawPoster(this.buttons[1].panel, 'bricks', 'BRICKWORKS', 'Build it.  Then break it.', '#ffd05a');
     drawPoster(this.buttons[2].panel, 'pottery', 'THE WHEEL', 'Clay turns in your hands', '#f0b080');
     drawPoster(this.buttons[3].panel, 'dominoes', 'DOMINO FALL', 'One touch.  Chain reaction.', '#ff9db8');
+    drawPoster(this.buttons[4].panel, 'aura', 'AURA WEAVER', 'Compose the light.', '#bfe6ff');
     const b = this.back.panel;
     b.card('rgba(24,14,8,0.92)', '#c79a46');
     b.ctx.textAlign = 'center';
@@ -304,7 +348,7 @@ export class MenuSystem extends createSystem({
     tc.fillStyle = '#e6d3b0';
     tc.font = 'italic 34px ' + SERIF;
     (tc as unknown as { letterSpacing: string }).letterSpacing = '3px';
-    tc.fillText('four benches.  your bare hands.', t.w / 2, t.h * 0.88);
+    tc.fillText('five benches.  your bare hands.', t.w / 2, t.h * 0.88);
     (tc as unknown as { letterSpacing: string }).letterSpacing = '0px';
     t.commit();
   }
@@ -313,10 +357,11 @@ export class MenuSystem extends createSystem({
     const y = TABLE_Y + 0.22;
     const z = TABLE_CENTER_Z + 0.02;
     this.buttons.push(
-      this.makeButton(MenuTargets.Gears, 0.2, 0.25, -0.375, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Bricks, 0.2, 0.25, -0.125, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Pottery, 0.2, 0.25, 0.125, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Dominoes, 0.2, 0.25, 0.375, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Gears, 0.19, 0.24, -0.44, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Bricks, 0.19, 0.24, -0.22, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Pottery, 0.19, 0.24, 0, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Dominoes, 0.19, 0.24, 0.22, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Aura, 0.19, 0.24, 0.44, y, z, -0.5, () => {}),
     );
     this.back = this.makeButton(
       MenuTargets.Menu,
@@ -344,7 +389,7 @@ export class MenuSystem extends createSystem({
       sfx.ambience();
       sfx.select();
       this.cooldown = 0.4;
-      setMode(target === 'kite' ? 'kitecraft' : (target as 'menu' | 'guti' | 'pottery' | 'marblerun' | 'dominoes' | 'bricks' | 'paperplane' | 'gears'));
+      setMode(target === 'kite' ? 'kitecraft' : (target as 'menu' | 'guti' | 'pottery' | 'marblerun' | 'dominoes' | 'bricks' | 'paperplane' | 'gears' | 'aura'));
     };
     this.cleanupFuncs.push(this.queries.pressed.subscribe('qualify', onPress));
   }
@@ -368,7 +413,7 @@ export class MenuSystem extends createSystem({
       cam.getWorldPosition(this.head);
       cam.getWorldDirection(this.fwd);
       let hit = -1;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 5; i++) {
         this.buttons[i].mesh.getWorldPosition(this.to).sub(this.head).normalize();
         if (this.to.dot(this.fwd) > 0.985) hit = i;
       }
@@ -382,7 +427,7 @@ export class MenuSystem extends createSystem({
         this.cooldown = 0.4;
         sfx.ambience();
         sfx.select();
-        setMode(hit === 0 ? 'gears' : hit === 1 ? 'bricks' : hit === 2 ? 'pottery' : 'dominoes');
+        setMode(hit === 0 ? 'gears' : hit === 1 ? 'bricks' : hit === 2 ? 'pottery' : hit === 3 ? 'dominoes' : 'aura');
       }
     }
     // hover feedback: buttons lift a little

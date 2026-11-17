@@ -1,4 +1,4 @@
-export type Mode = 'menu' | 'guti' | 'kite' | 'lattim' | 'danguli' | 'pottery' | 'kitecraft' | 'marblerun' | 'dominoes' | 'bricks' | 'paperplane' | 'gears';
+export type Mode = 'menu' | 'guti' | 'kite' | 'lattim' | 'danguli' | 'pottery' | 'kitecraft' | 'marblerun' | 'dominoes' | 'bricks' | 'paperplane' | 'gears' | 'aura';
 
 /** Tiny shared state: which game screen is active. */
 export const modeState: { mode: Mode } = { mode: 'menu' };
