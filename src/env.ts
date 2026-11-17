@@ -230,6 +230,12 @@ export class EnvSystem extends createSystem({}) {
     this.buildMonsoon();
     this.building = 'station';
     this.buildRooftop();
+    this.building = 'luna';
+    this.buildLuna();
+    this.building = 'ares';
+    this.buildAres();
+    this.building = 'orbit';
+    this.buildOrbit();
     this.building = 'field';
     this.buildField();
     this.building = 'bil';
