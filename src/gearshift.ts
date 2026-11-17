@@ -275,9 +275,8 @@ function dotTexture(): CanvasTexture {
   g.fillRect(0, 0, 32, 32);
   return new CanvasTexture(c);
 }
-/** which metal a gear is made of, for its impact sound */
-const kindOf = (n: number): 'brass' | 'bronze' | 'copper' | 'iron' => (n === 10 || n === 20 ? 'brass' : n === 14 ? 'copper' : n === 15 || n === 24 ? 'iron' : 'bronze');
-const gearGeo = new Map<number, BufferGeometry>();
+/** which metal a gear sounds like: chapter I horology brass, chapter II cast iron, chapter III aether bronze-glass */
+const kindOf = (n: number): 'brass' | 'bronze' | 'copper' | 'iron' => (curStyle === 0 ? 'brass' : curStyle === 1 ? (n === 14 ? 'copper' : 'iron') : 'bronze');
 const DUST = 110;
 function buzz(ms: number | number[]): void {
   try {
@@ -286,10 +285,14 @@ function buzz(ms: number | number[]): void {
     /* ignore */
   }
 }
+const gearGeo = new Map<string, BufferGeometry>();
+/** Chapter look: 0 = skeleton horology, 1 = cast iron, 2 = aether glass. Set when a level loads. */
+let curStyle = 0;
 
-/** A real toothed wheel: trapezoid teeth, a hub hole and round lightening holes, with bevelled edges. */
-function gearGeometry(n: number): BufferGeometry {
-  const hit = gearGeo.get(n);
+/** A real toothed wheel: trapezoid teeth, a hub hole and chapter-specific cutouts, with bevelled edges. */
+function gearGeometry(n: number, style = curStyle): BufferGeometry {
+  const key = style + ':' + n;
+  const hit = gearGeo.get(key);
   if (hit) return hit;
   const r = radius(n);
   const root = r - M * 1.05;
@@ -313,24 +316,102 @@ function gearGeometry(n: number): BufferGeometry {
   }
   s.closePath();
   const hub = new Path();
-  hub.absarc(0, 0, Math.max(0.006, root * 0.16), 0, Math.PI * 2, true);
+  hub.absarc(0, 0, Math.max(0.006, root * (style === 0 ? 0.2 : 0.16)), 0, Math.PI * 2, true);
   s.holes.push(hub);
-  if (n >= 14) {
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2;
-      const h = new Path();
-      h.absarc(Math.cos(a) * root * 0.58, Math.sin(a) * root * 0.58, root * 0.17, 0, Math.PI * 2, true);
-      s.holes.push(h);
-    }
+  const holes = style === 1 ? (n >= 14 ? 4 : 0) : n >= 10 ? (style === 0 ? 6 : 3) : 0;
+  const hr = style === 1 ? 0.16 : style === 0 ? 0.19 : 0.33;
+  const hd = style === 1 ? 0.6 : style === 0 ? 0.55 : 0.52;
+  for (let k = 0; k < holes; k++) {
+    const a = (k / holes) * Math.PI * 2 + 0.3;
+    const h = new Path();
+    h.absarc(Math.cos(a) * root * hd, Math.sin(a) * root * hd, root * hr, 0, Math.PI * 2, true);
+    s.holes.push(h);
   }
-  const g = new ExtrudeGeometry(s, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.0014, bevelSize: 0.0012, bevelSegments: 2, curveSegments: 6 });
-  g.translate(0, 0, -0.004);
-  gearGeo.set(n, g);
+  const depth = style === 1 ? 0.012 : style === 0 ? 0.006 : 0.007;
+  const g = new ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelThickness: 0.0014, bevelSize: 0.0012, bevelSegments: 2, curveSegments: 6 });
+  g.translate(0, 0, -depth / 2);
+  gearGeo.set(key, g);
   return g;
 }
 
 function gearMaterial(n: number): MeshStandardMaterial {
   return wornMetal(COLORS[n] ?? 0x9a6a35, n === 10 || n === 20 ? 0.28 : 0.45);
+}
+
+// ---- chapter gear families (all shared: geometry and materials are created once and never per gear)
+const n0 = (m: unknown): boolean => !!m && 'emissive' in (m as object);
+const IDLER = 8; // the smallest gear is the neutral grey idler
+const shared: Record<string, any> = {};
+function sh<T>(k: string, f: () => T): T {
+  return (shared[k] ??= f()) as T;
+}
+function romanTexture(): CanvasTexture {
+  return sh('roman', () => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    const g = c.getContext('2d') as CanvasRenderingContext2D;
+    const R = ['XII', 'I', 'II', 'III', 'IIII', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+    g.fillStyle = 'rgba(40,20,8,0.85)';
+    g.font = '700 26px serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    R.forEach((t, i) => {
+      const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+      g.save();
+      g.translate(256 + Math.cos(a) * 232, 256 + Math.sin(a) * 232);
+      g.rotate(a + Math.PI / 2);
+      g.fillText(t, 0, 0);
+      g.restore();
+    });
+    const t = new CanvasTexture(c);
+    t.colorSpace = SRGBColorSpace;
+    return t;
+  });
+}
+const orbitals: Mesh[] = [];
+/** Build one gear for the current chapter style, with its decorative children. */
+function makeGear(n: number, style = curStyle, mat?: MeshStandardMaterial): Mesh {
+  const geo = gearGeometry(n, style);
+  const idler = n === IDLER && !mat;
+  let material: MeshStandardMaterial | MeshStandardMaterial[];
+  if (mat) material = mat;
+  else if (idler) material = sh('idler', () => wornMetal(0x8c9296, 0.6));
+  else if (style === 0) material = sh('rose' + (n % 2), () => wornMetal(n % 2 ? 0xc98f6b : 0xb58a45, 0.3));
+  else if (style === 1) material = sh('cast', () => wornMetal(0x46423f, 0.62));
+  else material = [sh('glass', () => new MeshPhysicalMaterial({ color: 0x8fe3ff, transparent: true, opacity: 0.55, roughness: 0.08, metalness: 0.05, clearcoat: 1, emissive: 0x0a4a66, emissiveIntensity: 0.7, depthWrite: false })), sh('meteor', () => wornMetal(0x2b2c33, 0.4))] as unknown as MeshStandardMaterial[];
+  const m = new Mesh(geo, material as MeshStandardMaterial);
+  if (idler) return m;
+  const root = radius(n) - M * 1.05;
+  const top = style === 1 ? 0.0075 : 0.0045;
+  if (style === 0 && n >= 10) {
+    const ruby = new Mesh(sh('rubyG', () => new SphereGeometry(0.0042, 12, 8)), sh('rubyM', () => new MeshStandardMaterial({ color: 0xc01030, emissive: 0x600010, emissiveIntensity: 0.8, roughness: 0.15, metalness: 0.2 })));
+    ruby.position.z = top;
+    const ring = new Mesh(sh('roman' + n, () => new RingGeometry(root * 0.8, root * 0.97, 48)), sh('romanM', () => new MeshBasicMaterial({ map: romanTexture(), transparent: true, depthWrite: false })));
+    ring.position.z = top - 0.0004;
+    m.add(ruby, ring);
+  } else if (style === 1 && n >= 12) {
+    const bolts = Math.min(8, Math.floor(n / 2));
+    const bg = sh('boltG', () => new CylinderGeometry(0.0034, 0.0034, 0.003, 6));
+    const bm = sh('boltM', () => metal(0x6a655f, 0.5, 0.4));
+    for (let k = 0; k < bolts; k++) {
+      const b = new Mesh(bg, bm);
+      const a = (k / bolts) * Math.PI * 2;
+      b.rotation.x = Math.PI / 2;
+      b.position.set(Math.cos(a) * root * 0.8, Math.sin(a) * root * 0.8, top);
+      m.add(b);
+    }
+    const coil = new Mesh(sh('coilG' + n, () => new TorusGeometry(root * 0.42, 0.0026, 6, 28)), sh('coilM', () => new MeshStandardMaterial({ color: 0xb8662e, metalness: 0.9, roughness: 0.3, emissive: 0xff7a22, emissiveIntensity: 0 })));
+    coil.position.z = top;
+    m.add(coil);
+  } else if (style === 2 && n >= 10) {
+    const fil = new Mesh(sh('filG' + n, () => new TorusGeometry(root * 0.92, 0.0016, 6, 40)), sh('filM', () => new MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false })));
+    fil.position.z = 0.0001;
+    const orb = new Mesh(sh('orbG' + n, () => new TorusGeometry(radius(n) * 1.18, 0.0013, 6, 48)), sh('orbM', () => metal(0xd6a94a, 0.25, 0.3)));
+    orb.rotation.x = 1.05;
+    orbitals.push(orb);
+    m.add(fil, orb);
+  }
+  return m;
 }
 
 function blueprintTexture(): CanvasTexture {
@@ -496,6 +577,7 @@ export class GearShiftSystem extends createSystem({
   private hazeGroup = new Group();
   private tubeMat!: ShaderMaterial;
   private ghost!: Mesh;
+  private ripples: Mesh[] = [];
   private guideRing!: Mesh;
   private guideLabel!: Mesh;
   private guideCtx!: CanvasRenderingContext2D;
@@ -772,6 +854,15 @@ export class GearShiftSystem extends createSystem({
     this.root.add(this.guideLabel);
     this.ghost = new Mesh(gearGeometry(10), new MeshBasicMaterial({ color: 0x66d8ff, wireframe: true, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
     this.root.add(this.ghost);
+    // light ripples at each tooth contact (gold when healthy, fiery red on over-rev or jam)
+    const rg = new PlaneGeometry(0.05, 0.05);
+    const rt = dotTexture();
+    for (let k = 0; k < 4; k++) {
+      const r = new Mesh(rg, new MeshBasicMaterial({ map: rt, color: 0xffd27a, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+      r.visible = false;
+      this.ripples.push(r);
+      this.root.add(r);
+    }
     this.root.add(this.sparks.group);
     // reciprocating piston on the left (pumps with the output wheel)
     const px = -(BW / 2 + 0.1);
@@ -935,6 +1026,8 @@ export class GearShiftSystem extends createSystem({
   // ---------------------------------------------------------------- levels
   private loadLevel(i: number): void {
     this.level = Math.max(0, Math.min(LEVELS.length - 1, i));
+    curStyle = chapterOf(this.level);
+    orbitals.length = 0;
     const lv = this.lv;
     this.solved = false;
     this.power = 0;
@@ -987,7 +1080,7 @@ export class GearShiftSystem extends createSystem({
     // motor and output wheel
     const mp = lv.pegs[lv.motor.peg];
     const tp = lv.pegs[lv.target.peg];
-    const motor = new Mesh(gearGeometry(lv.motor.n), wornMetal(0x8a3a2a, 0.35));
+    const motor = makeGear(lv.motor.n, curStyle, wornMetal(0x8a3a2a, 0.35));
     motor.position.set(mp.x, BY + mp.y, BZ + Z0);
     motor.castShadow = motor.receiveShadow = true;
     this.fixedGroup.add(motor);
@@ -1013,7 +1106,7 @@ export class GearShiftSystem extends createSystem({
     this.crank.position.set(mp.x, BY + mp.y, BZ + Z0 + 0.05);
     arm.castShadow = knob.castShadow = true;
     this.fixedGroup.add(this.crank);
-    const out = new Mesh(gearGeometry(lv.target.n), wornMetal(0x2f6f86, 0.32));
+    const out = makeGear(lv.target.n, curStyle, wornMetal(0x2f6f86, 0.32));
     out.position.set(tp.x, BY + tp.y, BZ + (lv.target.layer === 0 ? Z0 : Z1));
     out.castShadow = out.receiveShadow = true;
     this.fixedGroup.add(out);
@@ -1028,7 +1121,7 @@ export class GearShiftSystem extends createSystem({
     lv.inventory.forEach((def, k) => {
       const g = new Group();
       const meshes: Mesh[] = def.parts.map((p) => {
-        const m = new Mesh(gearGeometry(p.n), gearMaterial(p.n));
+        const m = makeGear(p.n);
         m.position.z = p.layer === 0 ? Z0 : Z1;
         m.castShadow = m.receiveShadow = true;
         g.add(m);
@@ -1409,6 +1502,7 @@ export class GearShiftSystem extends createSystem({
     const jamming = this.ev.jam && this.power > 0.3 && clutchOk && parts.length > 1;
     const driven = parts.length > 1 && clutchOk && !this.ev.jam;
     const powered = driven && this.power > 0.04;
+    const over0 = powered && this.ev.ratio > this.lv.target.maxRatio;
     if (!jamming) this.angle += OMEGA * this.power * dt;
     let outPhi = this.outPhi;
     for (let i = 0; i < parts.length; i++) {
@@ -1468,6 +1562,42 @@ export class GearShiftSystem extends createSystem({
       slot++;
     }
     for (; slot < 3; slot++) sfx.mesh(slot, 0, 'bronze', 0);
+    // visual feedback on meshing: a pulse of light at every contact, red + gravity sparks when stressed
+    const stress = jamming || over0;
+    let ri = 0;
+    for (let i = 1; i < parts.length && ri < 4; i++) {
+      const s = parts[i];
+      if (s.parent < 0 || s.sibling) continue;
+      const pa = parts[s.parent];
+      const rp = this.ripples[ri++];
+      const on = (powered || jamming) && this.power > 0.1;
+      rp.visible = on;
+      if (!on) continue;
+      const d = Math.hypot(s.x - pa.x, s.y - pa.y) || 1;
+      const f = radius(pa.n) / (radius(pa.n) + radius(s.n));
+      rp.position.set(pa.x + (s.x - pa.x) * f, BY + pa.y + (s.y - pa.y) * f, BZ + (s.layer === 0 ? Z0 : Z1) + 0.012);
+      const rate = Math.min(7, s.n * Math.abs(s.omega) * this.power * 0.3);
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * rate * Math.PI * 2);
+      const m = rp.material as MeshBasicMaterial;
+      m.color.setHex(stress ? 0xff4a1c : 0xffd27a);
+      m.opacity = (stress ? 0.75 : 0.18 + 0.4 * pulse) * Math.min(1, this.power * 1.5);
+      rp.scale.setScalar(stress ? 1.5 + Math.random() * 0.6 : 0.8 + pulse * 0.5);
+      void d;
+      if (stress && Math.random() < dt * 14) this.sparks.spray(rp.position.x, rp.position.y, rp.position.z, (Math.random() - 0.5) * 2, 1, 3, 1, 0.45, 0.1, 0.8);
+    }
+    for (; ri < 4; ri++) this.ripples[ri].visible = false;
+    // chapter ornaments: independent orbital rings, copper coils that spark, plasma filaments that breathe
+    for (const o of orbitals) {
+      o.rotation.y += dt * 0.9;
+      o.rotation.z += dt * 0.4;
+    }
+    const coil = shared.coilM as MeshStandardMaterial | undefined;
+    if (coil) coil.emissiveIntensity = powered ? (0.25 + 0.75 * Math.random()) * this.power : 0;
+    const fil = shared.filM as MeshBasicMaterial | undefined;
+    if (fil) {
+      fil.opacity = 0.45 + 0.4 * Math.sin(this.time * 3) * this.power + (powered ? 0.2 : 0);
+      fil.color.setHex(stress ? 0xff5a2a : 0x38bdf8);
+    }
     if (powered && !this.wasPowered && parts.length > 1) sfx.crunch(kindOf(parts[1].n), parts[1].x / 0.6);
     this.wasPowered = powered;
     const overNow = powered && this.ev.ratio > this.lv.target.maxRatio;
@@ -1554,7 +1684,7 @@ export class GearShiftSystem extends createSystem({
     const pulse = this.solved ? 0.55 + 0.35 * Math.sin(this.time * 7) : 0;
     this.conduitMats.forEach((m) => (m.opacity = this.ev.win ? pulse : 0));
     const em = this.solved ? 0.12 + 0.1 * Math.sin(this.time * 7) : 0;
-    for (const it of this.items) for (const m of it.meshes) (m.material as MeshStandardMaterial).emissive.setRGB(0, em * 0.7, em);
+    for (const it of this.items) for (const m of it.meshes) if (!Array.isArray(m.material) && n0(m.material)) (m.material as MeshStandardMaterial).emissive.setRGB(0, em * 0.7, em);
     if (this.finaleT >= 0) {
       this.finaleT += dt;
       if (this.finaleT > 5) this.done.mesh.visible = true;
@@ -1639,11 +1769,25 @@ export class GearShiftSystem extends createSystem({
         g.lineWidth = 3;
         g.strokeRect(4, 4, 504, 120);
         g.fillStyle = '#9fe6ff';
-        g.font = '600 34px monospace';
-        g.fillText('AXLE ' + (peg + 1) + (heldIdx >= 0 ? (fits(this.lv, this.placement, peg, heldIdx) ? '  - release to seat' : '  - teeth clash') : ''), 18, 48);
+        g.font = '600 28px monospace';
+        g.fillText('AXLE ' + (peg + 1) + (heldIdx >= 0 ? (fits(this.lv, this.placement, peg, heldIdx) ? '  - release to seat' : '  - teeth clash') : ''), 18, 36);
         g.fillStyle = '#e6fbff';
-        g.font = '30px monospace';
-        g.fillText(fit.length ? 'fits: ' + fit.join('  ') : 'no free gear fits here', 18, 96);
+        g.font = '26px monospace';
+        let spin = '';
+        if (heldIdx >= 0 && fits(this.lv, this.placement, peg, heldIdx)) {
+          const pl = this.placement.slice();
+          pl[peg] = heldIdx;
+          const part = evaluate(this.lv, pl).parts.find((q) => q.peg === peg);
+          const dn = this.items[heldIdx].def.parts;
+          spin = dn.map((q) => q.n).join('/') + 'T ' + (dn.length > 1 ? 'Compound' : 'Spur') + (part && part.parent >= 0 ? (part.omega > 0 ? '  \u21bb same as motor' : '  \u21ba opposite') : '');
+        }
+        if (spin) {
+          g.fillStyle = '#ffe9a8';
+          g.font = '26px monospace';
+          g.fillText(spin, 18, 76);
+          g.fillStyle = '#e6fbff';
+        }
+        g.fillText(fit.length ? 'fits: ' + fit.join('  ') : 'no free gear fits here', 18, 114);
         this.guideTex.needsUpdate = true;
       }
     }
