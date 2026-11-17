@@ -510,4 +510,9 @@ export const sfx = {
     tone(110, 0.14, v, 'sine', 60);
     burst(0.06, v * 0.7, 500, 0.8);
   },
+  /** a soft gear tick while a machine runs */
+  tick(): void {
+    if (play('metal', 0.07, 1.7 + Math.random() * 0.4)) return;
+    burst(0.02, 0.03, 2500, 0.8);
+  },
 };

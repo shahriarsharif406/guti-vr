@@ -10,6 +10,7 @@ import { MarbleRunSystem } from './marblerun.js';
 import { DominoSystem } from './dominoes.js';
 import { BrickSystem } from './bricks.js';
 import { PaperPlaneSystem } from './paperplane.js';
+import { GearShiftSystem } from './gearshift.js';
 import { PotterySystem } from './pottery.js';
 import { LattimSystem } from './lattim.js';
 import { MenuSystem } from './menu.js';
@@ -31,6 +32,7 @@ World.create(
   world.registerSystem(DominoSystem);
   world.registerSystem(BrickSystem);
   world.registerSystem(PaperPlaneSystem);
+  world.registerSystem(GearShiftSystem);
   const boot = document.getElementById('boot');
   if (boot) {
     boot.style.opacity = '0';

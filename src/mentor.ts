@@ -7,6 +7,7 @@
 const FALLBACK: Record<string, string[]> = {
   dominoes: ['Nice rhythm. Every domino counts.', 'A tidy chain. Try a curve next time!', 'Satisfying. Add a few more for a long run.'],
   bricks: ['Solid build. That went down with a bang!', 'Bold tower. Tall ones fall best.', 'Good eye. Try mixing colours next time.'],
+  gears: ['Beautiful ratio. That machine hums.', 'Clever gearing. Every tooth earned its place.', 'You found the fit. Smooth as clockwork.'],
   pottery: ['A lovely shape. The glaze suits it.', 'Steady hands. That pot has character.', 'Nice curves. Try a narrower neck next.'],
 };
 
@@ -15,7 +16,7 @@ function pick(kind: string): string {
   return a[Math.floor(Math.random() * a.length)];
 }
 
-export function askMentor(kind: 'dominoes' | 'bricks' | 'pottery', facts: string, done: (line: string) => void): void {
+export function askMentor(kind: 'dominoes' | 'bricks' | 'pottery' | 'gears', facts: string, done: (line: string) => void): void {
   const prompt =
     'You are a warm, witty craft mentor in a tiny VR workshop. In ONE short sentence (max 14 words, no quotes, no emojis) comment on what the player just made. Facts: ' +
     facts;

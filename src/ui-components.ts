@@ -1,6 +1,6 @@
 import { createComponent, Types } from '@iwsdk/core';
 
-export const MenuTargets = { Guti: 'guti', Kite: 'kite', Lattim: 'lattim', Danguli: 'danguli', Pottery: 'pottery', MarbleRun: 'marblerun', Dominoes: 'dominoes', Bricks: 'bricks', PaperPlane: 'paperplane', Menu: 'menu' } as const;
+export const MenuTargets = { Guti: 'guti', Kite: 'kite', Lattim: 'lattim', Danguli: 'danguli', Pottery: 'pottery', MarbleRun: 'marblerun', Dominoes: 'dominoes', Bricks: 'bricks', PaperPlane: 'paperplane', Gears: 'gears', Menu: 'menu' } as const;
 
 /** A big pressable panel that switches the game mode. */
 export const MenuButton = createComponent('MenuButton', {
@@ -58,5 +58,10 @@ export const BrickOpt = createComponent('BrickOpt', {
 
 /** A pressable option at the paper plane table. */
 export const PlaneOpt = createComponent('PlaneOpt', {
+  id: { type: Types.Int8, default: 0 },
+});
+
+/** A pressable option at the GearShift bench. */
+export const GearOpt = createComponent('GearOpt', {
   id: { type: Types.Int8, default: 0 },
 });
