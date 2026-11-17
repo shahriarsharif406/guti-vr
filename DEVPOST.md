@@ -10,7 +10,7 @@
 Every Bangladeshi kid grew up on গুলি (marbles), ঘুড়ি (kites over the paddy fields) and লাটিম (spinning tops). They are played with bare hands, in a courtyard or an open field, and each fits a short, seated VR session. Guti brings them into VR with nothing but your hands.
 
 ## What it does
-* **Marbles (গুলি):** pinch the white marble, pull back, release, and knock every coloured marble out of the গোল্লা ring. 16 levels across a village courtyard (including the গর্ত hole game), a dry harvest field, the monsoon mud and a Dhaka rooftop at dusk. Surfaces change how far marbles slide. Rocks, heavy and golden marbles, combos, saved star ratings and unlockable marble skins.
+* **Marbles (গুলি):** pinch the white marble, pull back, release. Six ways to play across 37 levels: Classic goalla ring, গর্ত hole game, Precision, Race (hole-in-one), turn-based Duel vs Rafiq (AI), and an optional Fantasy set (Moon, Mars, orbit). The default is rural Bangladesh: village courtyard, harvest field, monsoon mud, Dhaka rooftop at dusk. Surfaces change how far marbles slide. Rocks, heavy and golden marbles, combos, saved stars and unlockable skins.
 * **Kite Alive (ঘুড়ি):** you stand in an open paddy field beside a beel. Steer your kite with a pinch; touch rival kites fast to cut their strings, dodge crows, survive wind gusts and keep the kite alive as long as you can.
 * **Lattim (লাটিম):** pinch the top, swing, release. A faster flick gives more spin. Knock the other tops out of the chalk ring before your top wobbles to a stop. 6 rounds.
 

@@ -3,7 +3,7 @@
 Hands-only VR village games from Bangladesh, built for the **Meta VR Start Developer Competition 2026**.
 No controllers. Seated. Everything within arm's reach.
 
-* **গুলি (Marbles)** – pinch the white marble, pull back, release. Flick the coloured marbles out of the *goalla* ring. 16 levels across four Bangladeshi places: the village courtyard (with the classic গর্ত hole game), a dry harvest field, the monsoon mud and a Dhaka rooftop at dusk. Each surface changes how far a marble slides.
+* **গুলি (Marbles)** – pinch the white marble, pull back, release. Six ways to play across 37 levels: **Classic** goalla ring, **গর্ত Hole** game (sink marbles in the pit), **Precision** (tip a single target out), **Race** (hole-in-one with limited shots), **Duel vs Rafiq** (turn-based against an AI village kid), and an optional **Fantasy** set (Moon, Mars, orbit) that is off the main path. Four Bangladeshi settings: village courtyard, harvest field, monsoon mud and a Dhaka rooftop at dusk. Each surface changes how far a marble slides.
 * **ঘুড়ি (Kite Alive)** – stand in an open paddy field beside a beel. Pinch and move your hand to fly your kite. Touch rival kites **fast** to cut their strings, dodge crows, eagles and enemy manjha strings, stay clear of **power wires and trees** (a snagged kite costs a life, shake your hand to free it), read the **wind forecast**, ride the **golden wind streams** for free lift, and watch your **string tension** (ease it with your other hand or SPACE) to keep your kite alive as long as you can. Each game has its own folk-style music (bansuri, tanpura, tabla/dhol); press M to mute.
 * **লাটিম (Lattim)** – pinch the spinning top, swing and let go. Knock the other tops out of the chalk ring before yours stops spinning. 6 rounds.
 
@@ -46,3 +46,6 @@ Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
 ## Credits
 All scenery, models, textures and sounds are procedural (code-generated). The sunset sky lighting is a CC0 HDRI from [Poly Haven](https://polyhaven.com).
+
+## Kite Alive extras
+Golden wind streams lift the kite, a forecast graph shows the next gusts, string tension eases with SPACE or your second hand, and the dangers are manjha string, an eagle, electric wires and trees that snag the kite. Procedural music; press M to mute.
