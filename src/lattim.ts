@@ -35,7 +35,7 @@ const TOP_SCALE = 1.35;
 const PINCH_START = 0.92;
 const PINCH_HOLD = 0.6;
 const MAX_TOPS = 3;
-const HAND_GAIN = 1.3;
+const HAND_GAIN = 0.5;
 const MAX_THROW = 3;
 
 type HandName = 'left' | 'right';
@@ -213,6 +213,14 @@ export class LattimSystem extends createSystem({}) {
       this.unlocked = 1;
     }
 
+    // read-only probe for automated tests
+    (window as unknown as { __lattim?: () => unknown }).__lattim = () => ({
+      level: this.level,
+      phase: this.phase,
+      tops: this.topsLeft,
+      enemies: this.enemiesLeft,
+      unlocked: this.unlocked,
+    });
     const down = (e: PointerEvent) => {
       this.mouseDown = true;
       this.mouseX = e.clientX;
@@ -532,7 +540,7 @@ export class LattimSystem extends createSystem({}) {
     for (const t of tops) {
       if (t.state !== 'live') continue;
       const sp = Math.hypot(t.vx, t.vz);
-      const damp = Math.exp(-(2.4 + (t.spin < 30 ? 1.6 : 0)) * dt);
+      const damp = Math.exp(-(3.2 + (t.spin < 30 ? 1.6 : 0)) * dt);
       t.vx *= damp;
       t.vz *= damp;
       t.spin -= (2.1 + sp * 2.5) * dt;
