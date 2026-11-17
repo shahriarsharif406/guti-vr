@@ -13,6 +13,9 @@ import {
   SRGBColorSpace,
   Vector2,
   Vector3,
+  Entity,
+  Pressed,
+  RayInteractable,
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
@@ -20,6 +23,7 @@ import { emitBurst } from './fx.js';
 import { readPinchPoint } from './hand.js';
 import { modeState, setMode } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
+import { LatOpt } from './ui-components.js';
 
 // ---- Arena layout (metres, in front of the seated player)
 const TABLE_Y = 0.72;
@@ -56,6 +60,13 @@ const LEVELS: LevelDef[] = [
   { enemies: 4, spin: 84, dash: 2.0, tip: 'Final round: clear the ring' },
 ];
 
+/** Three real-world style tops. wc = critical spin: below it the top can no longer
+ *  hold itself upright (gyroscopic stability); P = gravity torque / inertia. */
+const DESIGNS = [
+  { name: 'Natural', color: 0xff9a2e, wc: 28, P: 300, fric: 1 },
+  { name: 'Painted', color: 0x3b6fd0, wc: 24, P: 380, fric: 1.15 },
+  { name: 'Tall', color: 0xd0a030, wc: 34, P: 240, fric: 0.8 },
+];
 const TOP_COLORS = [0xe0483f, 0x2f9e6b, 0x3b82f6, 0xf2b134, 0x9b59d0];
 
 let bandTex: CanvasTexture | null = null;
@@ -111,6 +122,13 @@ class Top {
   enemy = false;
   nextDash = 3;
   spinRot = 0;
+  tilt = 0;
+  prec = 0;
+  life = 0;
+  peak = 0;
+  wc = 28;
+  P = 300;
+  fric = 1;
 
   constructor(color: number) {
     this.group.scale.setScalar(TOP_SCALE);
@@ -131,7 +149,16 @@ class Top {
   }
 }
 
-export class LattimSystem extends createSystem({}) {
+export class LattimSystem extends createSystem({
+  opts: { required: [LatOpt, Pressed] },
+}) {
+  private master = false;
+  private design = 0;
+  private bestTime = 0;
+  private lastTime = 0;
+  private optBtns: TextPanel[] = [];
+  private optCooldown = 0;
+  private hudTick = 0;
   private tops: Top[] = []; // index 0 is the player's
   private root: { visible: boolean }[] = [];
   private hud!: TextPanel;
@@ -206,6 +233,37 @@ export class LattimSystem extends createSystem({}) {
     this.world.createTransformEntity(this.hud.mesh);
     this.root.push(this.hud.mesh);
     this.setVisible(false);
+    for (let i = 0; i < 2; i++) {
+      const panel = new TextPanel(0.2, 0.07, 512);
+      panel.mesh.position.set(-0.62, 0.95 - i * 0.085, -0.52);
+      panel.mesh.rotation.y = 0.6;
+      const entity = this.world.createTransformEntity(panel.mesh);
+      entity.addComponent(RayInteractable);
+      entity.addComponent(LatOpt, { id: i });
+      this.optBtns.push(panel);
+      this.root.push(panel.mesh);
+    }
+    this.cleanupFuncs.push(
+      this.queries.opts.subscribe('qualify', (entity: Entity) => {
+        if (modeState.mode !== 'lattim' || this.optCooldown > 0 || this.phase === 'live') return;
+        this.optCooldown = 0.3;
+        sfx.select();
+        const id = entity.getValue(LatOpt, 'id') as number;
+        if (id === 0) this.master = !this.master;
+        else this.design = (this.design + 1) % DESIGNS.length;
+        this.tops[0].body.material = new MeshStandardMaterial({ color: DESIGNS[this.design].color, map: bandTexture(), roughness: 0.35, metalness: 0.08 });
+        this.drawOpts();
+        this.held = null;
+        this.startLevel(this.master ? 1 : this.unlocked);
+        this.hudDirty = true;
+      }),
+    );
+    try {
+      this.bestTime = Number(localStorage.getItem('guti-lattim-best') ?? '0') || 0;
+    } catch {
+      /* ignore */
+    }
+    this.drawOpts();
 
     try {
       this.unlocked = Math.min(LEVELS.length, Math.max(1, Number(localStorage.getItem('guti-lattim-level') ?? '1') || 1));
@@ -220,7 +278,20 @@ export class LattimSystem extends createSystem({}) {
       tops: this.topsLeft,
       enemies: this.enemiesLeft,
       unlocked: this.unlocked,
+      master: this.master,
+      design: this.design,
+      best: this.bestTime,
+      tilt: this.tops[0].tilt,
+      spin: this.tops[0].spin,
+      life: this.tops[0].life,
     });
+    (window as unknown as { __lattimSet?: (m: boolean, d: number) => void }).__lattimSet = (m, d) => {
+      this.master = m;
+      this.design = d % DESIGNS.length;
+      this.tops[0].body.material = new MeshStandardMaterial({ color: DESIGNS[this.design].color, map: bandTexture(), roughness: 0.35, metalness: 0.08 });
+      this.drawOpts();
+      this.startLevel(m ? 1 : this.unlocked);
+    };
     const down = (e: PointerEvent) => {
       this.mouseDown = true;
       this.mouseX = e.clientX;
@@ -325,7 +396,24 @@ export class LattimSystem extends createSystem({}) {
   }
 
   // ------------------------------------------------------------------ levels
+  private startMaster(): void {
+    this.master = true;
+    this.tipText = 'Spin Master: how long can your top stay alive?';
+    this.topsLeft = 99;
+    this.enemiesLeft = 0;
+    for (const t of this.tops) {
+      t.state = 'off';
+      t.group.visible = false;
+    }
+    this.prepareTop();
+    this.say(this.tipText, 3);
+  }
+
   private startLevel(level: number): void {
+    if (this.master) {
+      this.startMaster();
+      return;
+    }
     this.level = level;
     const def = LEVELS[level - 1];
     this.tipText = def.tip;
@@ -345,6 +433,10 @@ export class LattimSystem extends createSystem({}) {
       t.z = CZ + Math.sin(a) * r;
       t.vx = t.vz = 0;
       t.spin = def.spin + Math.random() * 8;
+      t.tilt = 0.05;
+      t.wc = 28;
+      t.P = 300;
+      t.fric = 1;
       t.state = 'live';
       t.nextDash = 2 + Math.random() * def.dash;
       t.group.visible = true;
@@ -424,6 +516,14 @@ export class LattimSystem extends createSystem({}) {
     p.spin = 75 + Math.min(Math.hypot(p.vx, p.vz) * 14, 45);
     p.state = 'live';
     p.group.rotation.set(0, 0, 0);
+    const D = DESIGNS[this.design];
+    p.wc = D.wc;
+    p.P = D.P;
+    p.fric = D.fric;
+    p.tilt = 0.04 + Math.random() * 0.05;
+    p.prec = Math.random() * 6;
+    p.life = 0;
+    p.peak = p.spin;
     this.topsLeft -= 1;
     this.phase = 'live';
     this.held = null;
@@ -448,6 +548,29 @@ export class LattimSystem extends createSystem({}) {
 
   private afterThrowChecks(): void {
     if (this.phase !== 'live') return;
+    if (this.master) {
+      const p = this.tops[0];
+      this.hudTick -= 0.016;
+      if (this.hudTick <= 0) {
+        this.hudTick = 0.2;
+        this.hudDirty = true;
+      }
+      if (p.state === 'out' || p.state === 'off') {
+        this.lastTime = p.life;
+        const rec = p.life > this.bestTime;
+        if (rec) {
+          this.bestTime = p.life;
+          try {
+            localStorage.setItem('guti-lattim-best', String(p.life));
+          } catch {
+            /* ignore */
+          }
+        }
+        sfx.lose();
+        this.say((rec ? 'New best  ' : 'Spun ') + p.life.toFixed(1) + ' s', 3, 'retry');
+      }
+      return;
+    }
     if (this.enemiesLeft <= 0) {
       const stars = Math.max(1, 4 - (MAX_TOPS - this.topsLeft));
       this.shotsStars = stars;
@@ -543,7 +666,15 @@ export class LattimSystem extends createSystem({}) {
       const damp = Math.exp(-(3.2 + (t.spin < 30 ? 1.6 : 0)) * dt);
       t.vx *= damp;
       t.vz *= damp;
-      t.spin -= (2.1 + sp * 2.5) * dt;
+      t.spin -= (2.1 + sp * 2.5) * dt * t.fric;
+      // gyroscopic tilt: friction at the tip topples the axis faster as the spin falls
+      const w = Math.max(t.spin, 8);
+      const r = (t.wc / w) * (t.wc / w);
+      t.tilt += (0.004 + 0.1 * r) * dt;
+      t.prec += (t.P / w) * dt;
+      t.life += dt;
+      if (t.spin > t.peak) t.peak = t.spin;
+      if (t.tilt > 0.85) t.spin = Math.min(t.spin, 13.9);
       // a spinning top wanders a little, like a real one on rough earth
       const k = (t.spin / 90) * 0.05;
       t.vx += Math.sin(this.elapsed * 1.7 + t.phase) * k * dt * 12;
@@ -614,15 +745,46 @@ export class LattimSystem extends createSystem({}) {
         b.vz += (jn / mb) * nz;
         a.spin *= 0.95;
         b.spin *= 0.95;
+        a.tilt += 0.1 * vn;
+        b.tilt += 0.1 * vn;
         sfx.clack(Math.min(1, vn / 1.5));
         emitBurst((a.x + b.x) / 2, SURFACE_Y + 0.04, (a.z + b.z) / 2, 1, 0.9, 0.6, 8, 0.35);
       }
     }
   }
 
+  private drawOpts(): void {
+    const labels = [['MODE', this.master ? 'Spin Master' : 'Battle'], ['TOP', DESIGNS[this.design].name]];
+    for (let i = 0; i < 2; i++) {
+      const p = this.optBtns[i];
+      p.card('rgba(40,24,12,0.9)', '#ffb56b');
+      p.text(labels[i][0], p.h * 0.3, 22, '#cdb99a');
+      p.text(labels[i][1], p.h * 0.7, 34, '#ffe9c4');
+      p.commit();
+    }
+  }
+
   private drawHud(): void {
     const h = this.hud;
     h.card();
+    if (this.master) {
+      const p = this.tops[0];
+      h.text('Spin Master  •  ' + DESIGNS[this.design].name + ' top', 62, 40);
+      if (this.phase === 'message') {
+        h.text(this.msg, 140, 38, '#8dff9d');
+      } else {
+        const live = p.state === 'live';
+        h.text(
+          (live ? p.life.toFixed(1) : this.lastTime.toFixed(1)) + ' s   Best ' + this.bestTime.toFixed(1) + ' s   ' +
+            Math.round(((live ? p.spin : 0) * 60) / (Math.PI * 2)) + ' rpm   Tilt ' + Math.round((live ? p.tilt : 0) * 57.3) + '°',
+          140,
+          30,
+        );
+      }
+      h.text(this.phase === 'ready' || this.phase === 'held' ? this.tipText : 'Keep it upright and inside the ring', 215, 26, '#cdb99a');
+      h.commit();
+      return;
+    }
     h.text('Lattim  •  Level ' + this.level + '/' + LEVELS.length, 62, 40);
     if (this.phase === 'message' || this.msgT > 0) {
       h.text(this.msg, 140, 38, this.phase === 'message' && this.msg.startsWith('Out of') ? '#ff9d8d' : '#8dff9d');
@@ -635,6 +797,7 @@ export class LattimSystem extends createSystem({}) {
 
   update(delta: number): void {
     this.elapsed += delta;
+    if (this.optCooldown > 0) this.optCooldown -= delta;
     if (modeState.mode !== this.lastMode) {
       this.lastMode = modeState.mode;
       const on = modeState.mode === 'lattim';
@@ -682,9 +845,9 @@ export class LattimSystem extends createSystem({}) {
         t.spinRot += Math.min(t.spin, 30) * delta;
         g.rotation.y = t.spinRot;
         // wobble grows as the spin dies
-        const wob = Math.max(0, 1 - t.spin / 38) * 0.45;
-        g.rotation.x = Math.sin(this.elapsed * 9 + t.phase) * wob;
-        g.rotation.z = Math.cos(this.elapsed * 9 + t.phase) * wob;
+        const wob = Math.min(t.tilt, 1.2);
+        g.rotation.x = Math.sin(t.prec) * wob;
+        g.rotation.z = Math.cos(t.prec) * wob;
       } else if (t.state === 'dying') {
         t.fallT += delta;
         g.position.set(t.x, SURFACE_Y + 0.01, t.z);

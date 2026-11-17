@@ -25,3 +25,8 @@ export const KiteOpt = createComponent('KiteOpt', {
 export const DanOpt = createComponent('DanOpt', {
   id: { type: Types.Int8, default: 0 },
 });
+
+/** A pressable option on the Lattim table (mode, top design). */
+export const LatOpt = createComponent('LatOpt', {
+  id: { type: Types.Int8, default: 0 },
+});
