@@ -1,7 +1,7 @@
 # Devpost submission texts (final, matches the real game)
 
 **Project name:** Guti
-**Elevator pitch (<=140 chars):** Guti: three Bangladeshi village games in VR (marbles, kite fighting, lattim). Hands only, seated, no controllers.
+**Elevator pitch (<=140 chars):** Guti: four Bangladeshi village games in VR (marbles, kites, lattim, danguli). Hands only, seated, no controllers.
 **Playable link (Try it out):** https://shahriarsharif406.github.io/guti-vr/
 **GitHub:** https://github.com/shahriarsharif406/guti-vr
 **Track:** Gaming  **Division:** New Experience  **Build path:** IWSDK (WebXR)
@@ -31,7 +31,7 @@ Guti is the first step of a Bangla folk-games arcade: dang-guli, sat-chara and b
 WebXR, IWSDK, TypeScript, Three.js, Havok Physics, Vite, Meta Quest, Hand Tracking
 
 ## Demo video script (< 3 min)
-1. 0:00 Title "Guti: hands-only VR village games". Menu with three cards (10 s).
+1. 0:00 Title "Guti: hands-only VR village games". Menu with four cards (10 s).
 2. 0:10 Marbles in the village: ghost-hand hint, pinch, pull, release, marbles scatter (25 s).
 3. 0:35 Jump with ?level=8 (monsoon rain) then ?level=11 (Dhaka rooftop): different surfaces, different slides (25 s).
 4. 1:00 Menu, open Kite Alive: steer, slice two strings, dodge a crow, a gust, final survival time (50 s).
