@@ -88,7 +88,7 @@ export class MenuSystem extends createSystem({
     const t = this.title;
     t.card('rgba(30,18,10,0.0)', 'rgba(0,0,0,0)');
     t.text('GUTI', t.h * 0.5, 120, '#ffd9a0');
-    t.text('গুটি  •  hands-only village games of Bangladesh', t.h * 0.9, 34, '#ffe9c4');
+    t.text('গুটি  •  make it with your hands, then play it', t.h * 0.9, 34, '#ffe9c4');
     t.commit();
   }
 

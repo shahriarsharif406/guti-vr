@@ -1,8 +1,11 @@
 # গুটি · Guti
 
-Hands-only VR village games from Bangladesh, built for the **Meta VR Start Developer Competition 2026**.
+Make it with your hands, then play it: VR village crafts and games from Bangladesh, built for the **Meta VR Start Developer Competition 2026**.
 No controllers. Seated. Everything within arm's reach.
 
+* **কুমোরের চাকা (Pottery)** – shape spinning clay with both hands (inside = widen, outside = squeeze, pinch the rim and lift), match a target, glaze, fire, keep it on your shelf.
+* **ঘুড়ি কারখানা (Kite workshop)** – build your kite by hand (cross stick, paper, tail, string), then fly it in Kite Alive.
+* **গুলির পথ (Marble Run)** – place bamboo ramps on a board and roll the marble into the basket. 5 levels.
 * **গুলি (Marbles)** – pinch the white marble, pull back, release. Six ways to play across 37 levels: **Classic** goalla ring, **গর্ত Hole** game (sink marbles in the pit), **Precision** (tip a single target out), **Race** (hole-in-one with limited shots), **Duel vs Rafiq** (turn-based against an AI village kid), and an optional **Fantasy** set (Moon, Mars, orbit) that is off the main path. Four Bangladeshi settings: village courtyard, harvest field, monsoon mud and a Dhaka rooftop at dusk. Each surface changes how far a marble slides.
 * **ঘুড়ি (Kite Alive)** – stand in an open paddy field beside a beel. Pinch and move your hand to fly your kite. Touch rival kites **fast** to cut their strings, dodge crows, eagles and enemy manjha strings, stay clear of **power wires and trees** (a snagged kite costs a life, shake your hand to free it), read the **wind forecast**, ride the **golden wind streams** for free lift, and watch your **string tension** (ease it with your other hand or SPACE) to keep your kite alive as long as you can. Each game has its own folk-style music (bansuri, tanpura, tabla/dhol); press M to mute.
 * **Coming soon (hidden from the menu): লাটিম (Lattim)** – pinch the spinning top, swing and let go. Knock the other tops out of the chalk ring before yours stops spinning. 6 battle rounds plus a **Spin Master** mode (how long can your top stay alive; live seconds, rpm, tilt angle, personal best). Tops follow a simplified gyroscopic model: the axis tilts and precesses as the spin falls, and collisions kick the tilt. Three top designs (Natural, Painted, Tall) with different stability.
