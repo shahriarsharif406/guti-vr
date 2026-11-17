@@ -10,6 +10,7 @@ import { MarbleRunSystem } from './marblerun.js';
 import { PaperPlaneSystem } from './paperplane.js';
 import { GearShiftSystem } from './gearshift.js';
 import { AuraSystem } from './aura.js';
+import { SpellforgeSystem } from './spellforge.js';
 import { LattimSystem } from './lattim.js';
 import { MenuSystem } from './menu.js';
 
@@ -29,6 +30,7 @@ World.create(
   world.registerSystem(PaperPlaneSystem);
   world.registerSystem(GearShiftSystem);
   world.registerSystem(AuraSystem);
+  world.registerSystem(SpellforgeSystem);
   const boot = document.getElementById('boot');
   if (boot) {
     boot.style.opacity = '0';

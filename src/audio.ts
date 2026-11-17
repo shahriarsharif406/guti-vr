@@ -218,7 +218,7 @@ import { modeState } from './mode.js';
 
 // Cinematic score: warm string pad, felt-piano arpeggios, a sparse bell melody and a soft sub, in D minor.
 // Each screen gets its own colour (menu: open and gentle; gears: darker with a clockwork pulse; others: lighter).
-type Colour = 'menu' | 'gears' | 'play' | 'aura';
+type Colour = 'menu' | 'gears' | 'play' | 'aura' | 'spell';
 const midi = (n: number): number => 440 * Math.pow(2, (n - 69) / 12);
 // Dm9 - Bb - F - C : bass note + pad voicing (MIDI)
 const PROG: { bass: number; pad: number[] }[] = [
@@ -236,6 +236,14 @@ const AURA_PROG: { bass: number; pad: number[] }[] = [
   { bass: 45, pad: [57, 61, 64, 66, 69] },
 ];
 const AURA_MELODY = [62, 64, 66, 69, 71, 74, 76];
+// Spellforge: dark, heroic A minor. tension = combat intensity, jam = boss fight.
+const SPELL_PROG: { bass: number; pad: number[] }[] = [
+  { bass: 33, pad: [45, 52, 57, 60, 64] },
+  { bass: 29, pad: [41, 53, 57, 60, 65] },
+  { bass: 36, pad: [48, 55, 60, 64, 67] },
+  { bass: 31, pad: [43, 55, 59, 62, 67] },
+];
+const SPELL_MELODY = [69, 71, 72, 74, 76, 79, 81];
 
 let musicGain: GainNode | null = null;
 let musicOn = true;
@@ -249,7 +257,7 @@ let melodyIdx = 2;
 
 function colourFor(): Colour {
   const m = modeState.mode;
-  return m === 'menu' ? 'menu' : m === 'gears' ? 'gears' : m === 'aura' ? 'aura' : 'play';
+  return m === 'menu' ? 'menu' : m === 'gears' ? 'gears' : m === 'aura' ? 'aura' : m === 'spell' ? 'spell' : 'play';
 }
 
 function out(c: AudioContext): AudioNode {
@@ -371,11 +379,32 @@ function schedule(): void {
     curColour = col;
     nextT = Math.max(nextT, c.currentTime + 0.15);
   }
-  if (musicGain && musicOn) musicGain.gain.setTargetAtTime(musicVol * (0.8 - 0.5 * Math.max(musicState.tension, musicState.jam)), c.currentTime, 0.4);
+  if (musicGain && musicOn) musicGain.gain.setTargetAtTime(musicVol * (curColour === 'spell' ? 0.8 : 0.8 - 0.5 * Math.max(musicState.tension, musicState.jam)), c.currentTime, 0.4);
   const stepDur = 60 / BPM / 2; // eighth notes; 8 per bar (4 beats)
   while (nextT < c.currentTime + 0.3) {
     const s = step % 8;
     const chord = (col === 'aura' ? AURA_PROG : PROG)[Math.floor(bar) % 4];
+    if (col === 'spell') {
+      const sp = SPELL_PROG[Math.floor(bar) % 4];
+      const tn = musicState.tension;
+      const boss = musicState.jam;
+      if (s === 0) {
+        for (const n of sp.pad) mNote(c, nextT, midi(n), stepDur * 8.4, 0.012 + 0.012 * tn, 'pad');
+        mNote(c, nextT, midi(sp.bass), stepDur * 8, 0.08, 'sub');
+        if (boss > 0.5) for (const n of sp.pad.slice(0, 3)) mNote(c, nextT, midi(n + 12), stepDur * 8, 0.012, 'pad');
+      }
+      if (tn > 0.15 && s % 2 === 0) mNote(c, nextT, midi(sp.bass + (s % 4 === 0 ? 12 : 19)), 0.35, 0.05 * tn + 0.02 * boss, 'piano');
+      if (tn > 0.4 && s % 2 === 1) mNote(c, nextT, midi(sp.pad[(s + bar) % sp.pad.length] + 12), 0.5, 0.025 * tn, 'box');
+      if (s % 2 === 1 && Math.random() < 0.35) mNote(c, nextT, midi(sp.pad[(s + bar) % sp.pad.length] + 24), 2.2, 0.02, 'bell');
+      if ((s === 0 || s === 4) && Math.random() < 0.45 + 0.3 * boss) {
+        melodyIdx = Math.max(0, Math.min(SPELL_MELODY.length - 1, melodyIdx + Math.floor(Math.random() * 3) - 1));
+        mNote(c, nextT, midi(SPELL_MELODY[melodyIdx]), 2.6, 0.026 + 0.01 * boss, 'bell');
+      }
+      nextT += stepDur;
+      step += 1;
+      if (step % 8 === 0) bar += 1;
+      continue;
+    }
     if (col === 'aura') {
       const sw = musicState.swell;
       if (s === 0) {
@@ -864,7 +893,125 @@ export const sfx = {
       }
     });
   },
+  // ---------------------------------------------------------------- Spellforge
+  /** persistent charge voice: lvl 0..1 (size), el 0..5 (element index). lvl 0 silences it */
+  spellVoice(lvl: number, el: number): void {
+    const c = ac();
+    if (!c) return;
+    if (!spellV) {
+      if (lvl < 0.01) return;
+      const o1 = c.createOscillator();
+      const o2 = c.createOscillator();
+      const f = c.createBiquadFilter();
+      const g = c.createGain();
+      o1.type = 'sawtooth';
+      o2.type = 'sine';
+      f.type = 'lowpass';
+      f.frequency.value = 500;
+      g.gain.value = 0;
+      o1.connect(f);
+      o2.connect(g);
+      f.connect(g);
+      g.connect(dest(c));
+      o1.start();
+      o2.start();
+      spellV = { o1, o2, f, g };
+    }
+    const base = [98, 233, 311, 174, 130, 82][el % 6];
+    const t = c.currentTime;
+    const m = 1 + lvl * 0.9;
+    spellV.o1.frequency.setTargetAtTime(base * m, t, 0.06);
+    spellV.o2.frequency.setTargetAtTime(base * m * 2.003, t, 0.06);
+    spellV.f.frequency.setTargetAtTime(300 + lvl * 2200, t, 0.08);
+    spellV.g.gain.setTargetAtTime(lvl < 0.01 ? 0 : 0.012 + lvl * 0.03, t, 0.1);
+  },
+  spellCast(el: number, power: number, pan = 0): void {
+    withPan(pan, () => {
+      const p = 0.6 + power * 0.5;
+      if (el === 0) {
+        burst(0.5, 0.12 * p, 700, 0.7);
+        tone(120, 0.5, 0.12 * p, 'sawtooth', 60);
+      } else if (el === 1) {
+        tone(1800, 0.3, 0.07 * p, 'triangle', 700);
+        tone(2600, 0.2, 0.03, 'sine', 1200);
+        burst(0.12, 0.08, 6000, 2);
+      } else if (el === 2) {
+        burst(0.25, 0.16 * p, 3200, 0.6);
+        tone(90, 0.35, 0.1 * p, 'square', 40);
+      } else if (el === 3) {
+        tone(330, 0.5, 0.07 * p, 'sine', 990);
+        tone(332, 0.5, 0.06 * p, 'sine', 996);
+      } else if (el === 4) {
+        burst(0.4, 0.1 * p, 450, 0.8);
+        tone(180, 0.4, 0.07, 'triangle', 260);
+      } else {
+        tone(70, 0.7, 0.12 * p, 'sine', 35);
+        tone(140, 0.6, 0.05, 'sawtooth', 50);
+      }
+    });
+  },
+  spellHit(el: number, big = false, pan = 0): void {
+    withPan(pan, () => {
+      const v = big ? 1.6 : 1;
+      const f = [260, 1400, 2200, 520, 200, 100][el % 6];
+      burst(0.18 * v, 0.07 * v, f, 1.4);
+      tone(f * 0.5, 0.18 * v, 0.05 * v, el === 1 ? 'triangle' : 'sine', f * 0.25);
+    });
+  },
+  spellShield(on: boolean): void {
+    if (on) {
+      tone(440, 0.35, 0.06, 'sine', 880);
+      tone(660, 0.45, 0.03, 'triangle', 1320, 0.05);
+    } else tone(660, 0.25, 0.04, 'sine', 330);
+  },
+  spellBlock(): void {
+    burst(0.12, 0.1, 2500, 2);
+    tone(900, 0.2, 0.06, 'triangle', 500);
+  },
+  spellDiscover(): void {
+    [523.25, 659.25, 783.99, 1046.5, 1318.5, 1568].forEach((f, i) => {
+      tone(f, 2.2, 0.06 / (1 + i * 0.2), 'sine', undefined, i * 0.09);
+      tone(f * 1.004, 1.8, 0.02, 'triangle', undefined, i * 0.09 + 0.02);
+    });
+    burst(1.2, 0.04, 4200, 0.8);
+  },
+  spellUnlock(): void {
+    [392, 523.25, 784, 1046.5].forEach((f, i) => tone(f, 1.6, 0.06, 'sine', undefined, i * 0.14));
+  },
+  spellFizzle(): void {
+    tone(220, 0.25, 0.05, 'sawtooth', 110);
+    burst(0.15, 0.04, 900, 1);
+  },
+  spellHurt(): void {
+    tone(110, 0.35, 0.12, 'sawtooth', 55);
+    burst(0.25, 0.1, 400, 0.8);
+  },
+  spellTelegraph(kind: number): void {
+    const f = [330, 262, 392, 294][kind % 4];
+    tone(f, 0.5, 0.05, 'triangle', f * 1.6);
+  },
+  bossRoar(): void {
+    tone(55, 1.6, 0.16, 'sawtooth', 28);
+    tone(82, 1.4, 0.08, 'square', 41);
+    burst(1.4, 0.09, 220, 0.6);
+  },
+  spellDie(): void {
+    tone(300, 0.4, 0.06, 'triangle', 80);
+    burst(0.3, 0.06, 1200, 1);
+  },
+  spellStomp(): void {
+    tone(70, 0.4, 0.15, 'sine', 30);
+    burst(0.3, 0.12, 180, 0.6);
+  },
+  spellWin(): void {
+    [261.63, 329.63, 392, 523.25, 659.25, 783.99].forEach((f, i) => tone(f, 3.4, 0.06, 'sine', undefined, i * 0.2));
+    burst(2, 0.04, 2200, 0.5);
+  },
+  spellLose(): void {
+    [220, 185, 147].forEach((f, i) => tone(f, 2.4, 0.07, 'sine', f * 0.9, i * 0.3));
+  },
 };
+let spellV: { o1: OscillatorNode; o2: OscillatorNode; f: BiquadFilterNode; g: GainNode } | null = null;
 let auraV: { cy: { o: OscillatorNode; g: GainNode }[]; ma: { o: OscillatorNode; g: GainNode }[]; go: { o: OscillatorNode; g: GainNode }[] } | null = null;
 const meshVoices: ({ bp: BiquadFilterNode; lfo: OscillatorNode; level: GainNode; sp: StereoPannerNode | null } | undefined)[] = [];
 let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode; nf: BiquadFilterNode; ng: GainNode; lfo: OscillatorNode; lg: GainNode } | null = null;

@@ -338,6 +338,7 @@ export class GameSystem extends createSystem({
   private floorMat!: MeshStandardMaterial;
   private floorMesh!: Mesh;
   private tableMesh!: Mesh;
+  private stemMesh!: Mesh;
   private tableMat!: MeshStandardMaterial;
   private curWorld: WorldId = 'earth';
   private dots!: Points;
@@ -480,6 +481,7 @@ export class GameSystem extends createSystem({
       new MeshStandardMaterial({ color: 0x5a3d2a, roughness: 1 }),
     );
     stem.position.set(0, (TABLE_Y - 0.04) / 2, TABLE_CENTER_Z);
+    this.stemMesh = stem;
     world.createTransformEntity(stem);
 
     // the goalla ring drawn in the clay
@@ -1555,6 +1557,7 @@ export class GameSystem extends createSystem({
       const open = modeState.mode === 'kite' || modeState.mode === 'lattim' || modeState.mode === 'danguli' || modeState.mode === 'kitecraft' || modeState.mode === 'marblerun' || modeState.mode === 'paperplane' || modeState.mode === 'gears' || modeState.mode === 'aura' || modeState.mode === 'spell' || modeState.mode === 'menu';
       this.floorMesh.visible = !open;
       this.tableMesh.visible = !open;
+      this.stemMesh.visible = modeState.mode !== 'spell';
       if (open) {
         this.sun.color.setHex(0xffe6b8);
         this.sun.intensity = 2.6;

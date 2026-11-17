@@ -1,15 +1,12 @@
 # Demo video (under 3 minutes) - screen-record on a laptop
 
-Record in the browser at https://shahriarsharif406.github.io/guti-vr/ (use the mouse to pinch). Keep the HUD readable.
+Record at https://shahriarsharif406.github.io/guti-vr/ in a desktop browser (mouse stands in for hands). Keep the HUD readable. Say plainly that it is a desktop capture of a hands-only WebXR app.
 
-0:00-0:15  Hook (the best moment first): topple a long domino chain, confetti. Text: "Pocket Workshop - build it with your hands, then play."
-0:15-0:50  Pottery: pinch the clay, lift the rim, pick a glaze, fire it, pot lands on the shelf. Mentor line appears.
-0:50-1:35  Brick Builder: build a tower, show the AI challenge line, hit SMASH, collapse, confetti.
-1:35-2:15  Domino Run: place a chain, press "Topple them", challenge complete.
-2:15-2:40  The room: pan the cozy workshop, window, shelves. Say: hands only, seated, no controllers.
-2:40-3:00  Closing card: name, link, credits.
+0:00-0:12  Pocket Workshop menu: three posters. "Three hands-only experiences."
+0:12-0:55  SPELLFORGE (the hero): title, BEGIN JOURNEY (tutorial). Hold left mouse: orb grows, release: fireball. Press 2 then cast: ice spear. Space: shield. Press 1 then Shift+3 and cast: "FUSION DISCOVERED" banner. Show the Spell Library with the new entry unlocked.
+0:55-1:35  Boss: Modes > Boss: Ignar. Show the fireballs, break a shockwave (F), armour phase (Ice), the phase banner. Cut to Vyra's pylons or the Void King's final phase.
+1:35-2:05  AURA WEAVER: START, swing a mirror, the gate wakes; show two colours mixing.
+2:05-2:30  GEARSHIFT: seat gears, the output wheel spins.
+2:30-3:00  Closing card: name, link, "hands only, no controllers", credits.
 
-Tips: wait for the AI line to appear before cutting; record each station twice and keep the better take.
-
-# Aura Weaver segment (add 25-40 s, or give it the whole demo)
-Menu: click Aura Weaver, START. Swing the first mirror, gate wakes (chord, wave, lotus). Jump to level 4 via Chapters if needed, show two colours mixing. End on the finale title card, then Photo mode.
+Tips: set the window to about 1280x720; use Settings > Reduced intensity if the capture stutters; record each segment twice and keep the better take.

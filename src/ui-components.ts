@@ -70,3 +70,8 @@ export const GearOpt = createComponent('GearOpt', {
 export const AuraOpt = createComponent('AuraOpt', {
   id: { type: Types.Int8, default: 0 },
 });
+
+/** A pressable option in Spellforge (menu slots 0-9, sigils 20-35, in-play buttons 40+). */
+export const SfOpt = createComponent('SfOpt', {
+  id: { type: Types.Int8, default: 0 },
+});

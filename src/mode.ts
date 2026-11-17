@@ -6,3 +6,6 @@ export const modeState: { mode: Mode } = { mode: 'menu' };
 export function setMode(mode: Mode): void {
   modeState.mode = mode;
 }
+
+/** Spellforge owns the whole scene while this is set: the workshop room is hidden. */
+export const spellRoom: { hide: boolean } = { hide: false };

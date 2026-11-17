@@ -1,28 +1,26 @@
 # Pocket Workshop
 
-**Build something with your hands, then play with it. Hands only, seated, no controllers.**
+**Three hands-only experiences in one WebXR app. No controllers.**
 
 ## Inspiration
-The best moments in VR are when your hands make something. Pocket Workshop is a cozy workshop on your table: you build first, then play with what you built.
+The best moments in VR are when your hands do something that feels real. We wanted three very different things you can do with nothing but your hands: solve, compose and cast.
 
 ## What it does
-Five stations, all driven by hand-tracking pinch:
-- **GearShift:** a blueprint bench of 6 gear puzzles. Seat the right gears (some with two layers of teeth) so the output wheel spins the way the goal says.
-- **Pottery:** shape spinning clay into a pot, glaze it, fire it in a kiln and keep it on your shelf.
-- **Brick Builder:** snap bricks into a tower, then smash it with a wrecking ball.
-- **Domino Run:** stand dominoes in a chain and watch it fall.
-- **Aura Weaver:** turn mirrors and prisms, mix cyan, magenta and gold light, wake dark monoliths and watch a forgotten sanctuary bloom. 7 solver-verified puzzles, procedural adaptive music, save and photo mode.
-
-A small **AI Workshop Mentor** sets a fair challenge (the game verifies the goal) and comments on what you made in one friendly line. No personal data is sent, and it falls back to built-in lines when offline.
+- **GearShift:** a steampunk blueprint bench of gear puzzles. Seat the right gears so the output wheel spins the way the goal says.
+- **Aura Weaver:** turn mirrors and prisms, mix cyan, magenta and gold light and wake dark monoliths until a forgotten sanctuary blooms. 7 solver-verified puzzles, adaptive music, save and photo mode.
+- **Spellforge: The Arcane Awakening:** cast fire, ice, lightning, aether, nature and shadow with distinct hand gestures. Attune your two hands to different elements and discover fusion spells nobody tells you about (15 of them). Face three bosses with multi-phase fights (Ignar, Vyra, the Void King), plus Endless Rift, Boss Rush, Trials, a Spell Library and a Bestiary.
 
 ## How we built it
-IWSDK + TypeScript on WebXR. A custom lathe mesh for clay, a stud-grid brick system with support and collapse simulation, a domino toppling simulation, procedural scenery, and real sound effects.
+IWSDK + TypeScript on WebXR. Spellforge has a gesture engine (hysteresis, hold times, confidence, an armed-push guard) that works on synthetic hand poses, so it is unit-tested (58 tests) and also driven by a mouse stand-in on desktop. All visuals and audio are procedural.
 
 ## Challenges
-Making hand input forgiving for first-time players and keeping scenes light for Quest.
+Making hand gestures forgiving yet precise, and keeping effects light enough for a headset.
+
+## Honest status
+Verified in a desktop browser with automated tests. Not verified on a physical Quest headset; no frame-rate claim is made.
 
 ## What's next
-More stations, more materials and shareable creations.
+Real-hand tuning on device, more realms and enemies.
 
 ## Credits
-SFX: "Oculus Audio Pack 01" by Oculus VR, LLC (CC BY 4.0). 3D props: Free Apartment Props by Vuena (CC0). AI mentor text: Pollinations.
+SFX: "Oculus Audio Pack 01" by Oculus VR, LLC (CC BY 4.0). 3D props: Free Apartment Props by Vuena (CC0).

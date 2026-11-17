@@ -34,7 +34,7 @@ import {
   Mesh as ThreeMesh,
 } from '@iwsdk/core';
 import type { Texture } from '@iwsdk/core';
-import { modeState } from './mode.js';
+import { modeState, spellRoom } from './mode.js';
 import { buildCinematicRoom } from './room.js';
 import type { RoomFx } from './room.js';
 import { kiteCfg } from './kitecfg.js';
@@ -656,6 +656,8 @@ export class EnvSystem extends createSystem({}) {
 
   // ------------------------------------------------------------ cinematic atelier
   private roomFx: RoomFx | null = null;
+  private roomGroup: Group | null = null;
+  private roomWasHidden = false;
 
   private buildWorkshop(): void {
     this.room = new Group();
@@ -665,6 +667,7 @@ export class EnvSystem extends createSystem({}) {
     this.room = null;
     this.world.createTransformEntity(room);
     this.groups.workshop.push(room);
+    this.roomGroup = room;
   }
 
   private roomEnv: Texture | null = null;
@@ -813,7 +816,17 @@ export class EnvSystem extends createSystem({}) {
         sc.fog = this.prevFog;
       }
     }
-    if (inRoom) this.roomFx?.update(this.t);
+    if (this.roomGroup) {
+      // Spellforge builds its own arena: the workshop room stays out of it
+      if (spellRoom.hide) {
+        this.roomGroup.visible = false;
+        this.roomWasHidden = true;
+      } else if (this.roomWasHidden) {
+        this.roomWasHidden = false;
+        this.roomGroup.visible = this.shownWorld === 'workshop';
+      }
+    }
+    if (inRoom && !spellRoom.hide) this.roomFx?.update(this.t);
     const open = want === 'field' || want === 'bil' || want === 'winter' || want === 'char';
     for (const sp of this.spinners) sp.rotation.y += dt * 0.02;
     for (const c of this.clouds) {

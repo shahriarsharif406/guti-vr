@@ -386,7 +386,7 @@ export class MenuSystem extends createSystem({
       const menu = modeState.mode === 'menu';
       for (const b of this.buttons) b.mesh.visible = menu;
       this.title.mesh.visible = menu;
-      this.back.mesh.visible = !menu;
+      this.back.mesh.visible = !menu && modeState.mode !== 'spell'; // Spellforge has its own exit
     }
     if (isFontReady() !== this.fontWasReady) {
       this.fontWasReady = isFontReady();
