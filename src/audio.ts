@@ -426,4 +426,17 @@ export const sfx = {
   whoosh(): void {
     burst(0.25, 0.08, 600, 0.5);
   },
+  /** wood on wood: a dry, hollow knock (danda hitting the guli); strength 0..1 */
+  wood(strength: number): void {
+    const v = 0.1 + 0.3 * Math.min(1, strength);
+    tone(420 + Math.random() * 60, 0.09, v, 'triangle', 300);
+    tone(1150 + Math.random() * 120, 0.05, v * 0.6, 'sine', 800);
+    burst(0.025, v * 0.5, 2500, 1.5);
+  },
+  /** the guli landing on packed earth */
+  thud(strength: number): void {
+    const v = 0.06 + 0.16 * Math.min(1, strength);
+    tone(110, 0.14, v, 'sine', 60);
+    burst(0.06, v * 0.7, 500, 0.8);
+  },
 };

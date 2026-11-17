@@ -20,3 +20,8 @@ export const LevelTile = createComponent('LevelTile', {
 export const KiteOpt = createComponent('KiteOpt', {
   id: { type: Types.Int8, default: 0 },
 });
+
+/** A pressable option on the Danguli pitch (game mode, difficulty). */
+export const DanOpt = createComponent('DanOpt', {
+  id: { type: Types.Int8, default: 0 },
+});
