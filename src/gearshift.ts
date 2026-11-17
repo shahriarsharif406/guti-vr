@@ -22,8 +22,10 @@ import {
   RayInteractable,
   RingGeometry,
   SRGBColorSpace,
+  ShaderMaterial,
   Shape,
   SphereGeometry,
+  SpotLight,
   TorusGeometry,
   Vector3,
   createSystem,
@@ -33,6 +35,7 @@ import { celebrate, emitBurst } from './fx.js';
 import { CHAPTERS, M, LEVELS, chapterOf, evaluate, fits, needsClutch, outerRadius, radius } from './gearlogic.js';
 import type { Evaluation, GearDef, Level } from './gearlogic.js';
 import { roundedBox, woodTexture } from './geo.js';
+import { SparkField } from './sparks.js';
 import { readPinchPoint } from './hand.js';
 import { askMentor } from './mentor.js';
 import { modeState } from './mode.js';
@@ -82,6 +85,8 @@ interface Lever {
   pos: number; // 0 up .. 1 down (engaged)
   target: number;
   drag: boolean;
+  vel: number;
+  slammed: boolean;
   deco: Mesh[];
 }
 const TRAVEL = 0.16;
@@ -128,6 +133,101 @@ function metal(color: number, rough = 0.42, bump = 0.6): MeshStandardMaterial {
   return new MeshStandardMaterial({ color, metalness: 0.92, roughness: rough, roughnessMap: t, bumpMap: t, bumpScale: bump, envMapIntensity: 1.3 });
 }
 
+const wearCache = new Map<number, CanvasTexture>();
+/** Aged brass/bronze colour map: patina blotches in the recesses and worn silver showing through on the edges. */
+function wearTexture(hex: number): CanvasTexture {
+  const hit = wearCache.get(hex);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  g.fillStyle = '#' + hex.toString(16).padStart(6, '0');
+  g.fillRect(0, 0, 256, 256);
+  let seed = hex % 9973;
+  const rnd = (): number => ((seed = (seed * 16807 + 11) % 2147483647) / 2147483647);
+  for (let i = 0; i < 40; i++) {
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 14 + rnd() * 30);
+    gr.addColorStop(0, 'rgba(30,45,30,' + (0.12 + rnd() * 0.15).toFixed(2) + ')'); // green patina
+    gr.addColorStop(1, 'rgba(30,45,30,0)');
+    g.save();
+    g.translate(rnd() * 256, rnd() * 256);
+    g.fillStyle = gr;
+    g.fillRect(-50, -50, 100, 100);
+    g.restore();
+  }
+  for (let i = 0; i < 260; i++) {
+    g.strokeStyle = 'rgba(225,230,238,' + (0.25 + rnd() * 0.4).toFixed(2) + ')'; // worn silver
+    g.lineWidth = 0.7 + rnd() * 1.6;
+    const x = rnd() * 256;
+    const y = rnd() * 256;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + (rnd() - 0.5) * 22, y + (rnd() - 0.5) * 22);
+    g.stroke();
+  }
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.wrapS = t.wrapT = 1000;
+  t.repeat.set(14, 14);
+  wearCache.set(hex, t);
+  return t;
+}
+
+/** Gear metal: brushed micro-roughness + bump + patina/worn-silver colour map. */
+function wornMetal(hex: number, rough = 0.42): MeshStandardMaterial {
+  const t = scratchTexture();
+  return new MeshStandardMaterial({ color: 0xffffff, map: wearTexture(hex), metalness: 0.92, roughness: rough, roughnessMap: t, bumpMap: t, bumpScale: 0.6, envMapIntensity: 1.4 });
+}
+
+let ironMapTex: CanvasTexture | null = null;
+let ironBumpTex: CanvasTexture | null = null;
+/** Cast iron: pitting, oily sheen blotches (smooth/rough variation) and pale dust specks in the crevices. */
+function ironMat(): MeshStandardMaterial {
+  if (!ironMapTex || !ironBumpTex) {
+    let seed = 5;
+    const rnd = (): number => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d') as CanvasRenderingContext2D;
+    g.fillStyle = '#3d3a38';
+    g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 26; i++) {
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 20 + rnd() * 40);
+      gr.addColorStop(0, rnd() < 0.5 ? 'rgba(120,125,140,0.22)' : 'rgba(0,0,0,0.3)'); // oil sheen vs grease dark
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.save();
+      g.translate(rnd() * 256, rnd() * 256);
+      g.fillStyle = gr;
+      g.fillRect(-70, -70, 140, 140);
+      g.restore();
+    }
+    for (let i = 0; i < 500; i++) {
+      g.fillStyle = 'rgba(190,180,165,' + (rnd() * 0.22).toFixed(2) + ')'; // dust
+      g.fillRect(rnd() * 256, rnd() * 256, 1, 1 + rnd() * 2);
+    }
+    ironMapTex = new CanvasTexture(c);
+    ironMapTex.colorSpace = SRGBColorSpace;
+    ironMapTex.wrapS = ironMapTex.wrapT = 1000;
+    ironMapTex.repeat.set(7, 7);
+    const b = document.createElement('canvas');
+    b.width = b.height = 256;
+    const bg = b.getContext('2d') as CanvasRenderingContext2D;
+    bg.fillStyle = '#9a9a9a';
+    bg.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 900; i++) {
+      const v = Math.floor(30 + rnd() * 90); // pits
+      bg.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+      bg.beginPath();
+      bg.arc(rnd() * 256, rnd() * 256, 0.6 + rnd() * 2.2, 0, Math.PI * 2);
+      bg.fill();
+    }
+    ironBumpTex = new CanvasTexture(b);
+    ironBumpTex.wrapS = ironBumpTex.wrapT = 1000;
+    ironBumpTex.repeat.set(7, 7);
+  }
+  return new MeshStandardMaterial({ color: 0xffffff, map: ironMapTex, metalness: 0.8, roughness: 0.55, roughnessMap: scratchTexture(), bumpMap: ironBumpTex, bumpScale: 1.4, envMapIntensity: 1.1 });
+}
+
 function dotTexture(): CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 32;
@@ -139,6 +239,8 @@ function dotTexture(): CanvasTexture {
   g.fillRect(0, 0, 32, 32);
   return new CanvasTexture(c);
 }
+/** which metal a gear is made of, for its impact sound */
+const kindOf = (n: number): 'brass' | 'bronze' | 'copper' | 'iron' => (n === 10 || n === 20 ? 'brass' : n === 14 ? 'copper' : n === 15 || n === 24 ? 'iron' : 'bronze');
 const gearGeo = new Map<number, BufferGeometry>();
 const DUST = 110;
 
@@ -185,7 +287,7 @@ function gearGeometry(n: number): BufferGeometry {
 }
 
 function gearMaterial(n: number): MeshStandardMaterial {
-  return metal(COLORS[n] ?? 0x9a6a35, n === 10 || n === 20 ? 0.28 : 0.45);
+  return wornMetal(COLORS[n] ?? 0x9a6a35, n === 10 || n === 20 ? 0.28 : 0.45);
 }
 
 function blueprintTexture(): CanvasTexture {
@@ -341,6 +443,22 @@ export class GearShiftSystem extends createSystem({
   private phi: number[] = [];
   private wp = new Vector3();
   private lights: PointLight[] = [];
+  private key!: SpotLight;
+  private fill!: PointLight;
+  private rim!: PointLight;
+  private sparks = new SparkField();
+  private shake = 0;
+  private hazeMat!: ShaderMaterial;
+  private hazeGroup = new Group();
+  private tubeMat!: ShaderMaterial;
+  private ghost!: Mesh;
+  private guideRing!: Mesh;
+  private guideLabel!: Mesh;
+  private guideCtx!: CanvasRenderingContext2D;
+  private guideTex!: CanvasTexture;
+  private guidePeg = -2;
+  private mouseSeen = false;
+  private hoverPos = new Vector3();
   private bulbGlow: Mesh[] = [];
   private dust!: Points;
   private dustPos = new Float32Array(DUST * 3);
@@ -398,7 +516,7 @@ export class GearShiftSystem extends createSystem({
     board.position.set(0, BY, BZ);
     board.receiveShadow = true;
     this.root.add(board);
-    const legM = metal(0x2c2a2a, 0.5, 0.4);
+    const legM = ironMat();
     for (const x of [-0.5, 0.5]) {
       const leg = new Mesh(new BoxGeometry(0.05, BY - 0.35, 0.05), legM);
       leg.position.set(x, (BY - 0.35) / 2, BZ - 0.12);
@@ -406,7 +524,7 @@ export class GearShiftSystem extends createSystem({
     }
 
     // riveted iron back panel, brass pipes, Edison lamps, gauges
-    const iron = metal(0x3a3837, 0.55, 0.9);
+    const iron = ironMat();
     const brassM = metal(0xc79a46, 0.3, 0.4);
     const panel = new Mesh(roundedBox(BW + 0.5, BH + 0.4, 0.02, 0.01), iron);
     panel.position.set(0, BY + 0.05, BZ - 0.06);
@@ -437,7 +555,7 @@ export class GearShiftSystem extends createSystem({
       cap.rotation.x = Math.PI / 2;
       cap.position.set(bulb.position.x, bulb.position.y, bulb.position.z - 0.035);
       this.root.add(cap);
-      const light = new PointLight(0xffa850, 2.6, 3, 2);
+      const light = new PointLight(0xffa850, 1.2, 3, 2);
       light.position.set(bulb.position.x * 0.8, bulb.position.y - 0.05, bulb.position.z + 0.12);
       this.root.add(light);
       this.lights.push(light);
@@ -464,6 +582,24 @@ export class GearShiftSystem extends createSystem({
     this.dust = new Points(dg, new PointsMaterial({ size: 0.011, map: dotTexture(), transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false }));
     this.dust.frustumCulled = false;
     this.root.add(this.dust);
+
+    // three-point lighting: warm key from the overhead Edison lamp (soft shadows), cyan fill from the aether tube, gold rim
+    this.key = new SpotLight(0xffb866, 9, 4, 0.75, 0.7, 2);
+    this.key.position.set(0.05, BY + 0.95, BZ + 0.75);
+    this.key.target.position.set(0, BY - 0.05, BZ);
+    this.key.castShadow = true;
+    this.key.shadow.mapSize.set(1024, 1024);
+    this.key.shadow.bias = -0.0004;
+    this.key.shadow.radius = 4;
+    this.key.shadow.camera.near = 0.4;
+    this.key.shadow.camera.far = 3;
+    this.root.add(this.key, this.key.target);
+    this.fill = new PointLight(0x4fd0ff, 0.5, 1.6, 2);
+    this.fill.position.set(BW / 2 + 0.1, BY + 0.2, BZ + 0.3);
+    this.root.add(this.fill);
+    this.rim = new PointLight(0xffc860, 1.6, 2, 2);
+    this.rim.position.set(-0.75, BY + 0.45, BZ + 0.18);
+    this.root.add(this.rim);
 
     // physical levers (right: master ignition, left: clutch), aether tube, piston, constellation
     const labelTex = (t: string): CanvasTexture => {
@@ -497,7 +633,7 @@ export class GearShiftSystem extends createSystem({
       const lab = new Mesh(new PlaneGeometry(0.1, 0.025), new MeshBasicMaterial({ map: labelTex(label), transparent: true }));
       lab.position.set(x, BY + top - TRAVEL - 0.05, BZ + 0.046);
       this.root.add(lab);
-      return { g, knob, x, top, pos: 0, target: 0, drag: false, deco: [slot, groove, lab] };
+      return { g, knob, x, top, pos: 0, target: 0, drag: false, vel: 0, slammed: false, deco: [slot, groove, lab] };
     };
     this.master = makeLever(BW / 2 + 0.1, 0.12, 'IGNITION', true);
     this.clutch = makeLever(-(BW / 2 + 0.1), 0.0, 'CLUTCH', false);
@@ -511,9 +647,65 @@ export class GearShiftSystem extends createSystem({
       cap.position.set(tubeX, BY + 0.33 + dy, BZ + 0.03);
       this.root.add(cap);
     }
-    this.tubeGlow = new Mesh(new CylinderGeometry(0.006, 0.006, 0.18, 8), new MeshBasicMaterial({ color: 0xffb04a, transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false }));
+    this.tubeMat = new ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      side: 2,
+      uniforms: { uTime: { value: 0 }, uCalm: { value: 0 }, uPower: { value: 0.3 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      // swirling plasma ribbons: azure when calm, erratic red when over-revving or jammed
+      fragmentShader: `varying vec2 vUv; uniform float uTime; uniform float uCalm; uniform float uPower;
+        void main(){
+          float sp = mix(1.2, 7.0, uCalm);
+          float w = sin(vUv.y*18.0 + uTime*sp + sin(vUv.x*12.566 + uTime*0.7)*mix(1.2,3.5,uCalm));
+          float w2 = sin(vUv.y*29.0 - uTime*sp*1.3 + vUv.x*18.8 + sin(uTime*mix(1.0,9.0,uCalm))*uCalm*2.0);
+          float band = smoothstep(0.55,1.0,w)*0.9 + smoothstep(0.7,1.0,w2)*0.6;
+          vec3 col = mix(vec3(0.15,0.62,1.0), vec3(1.0,0.14,0.08), uCalm);
+          float edge = 1.0 - abs(vUv.x*2.0-1.0)*0.0;
+          float a = (band*0.9 + 0.18) * uPower * edge;
+          gl_FragColor = vec4(col*a*1.6, a);
+        }`,
+    });
+    this.tubeGlow = new Mesh(new CylinderGeometry(0.016, 0.016, 0.18, 20, 1, true), this.tubeMat);
     this.tubeGlow.position.set(tubeX, BY + 0.33, BZ + 0.03);
     this.root.add(this.tubeGlow);
+    // heat haze rising from the piston chamber at high rpm
+    this.hazeMat = new ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      side: 2,
+      uniforms: { uTime: { value: 0 }, uStrength: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `varying vec2 vUv; uniform float uTime; uniform float uStrength;
+        void main(){
+          float x = vUv.x + sin(vUv.y*14.0 - uTime*3.0)*0.12 + sin(vUv.y*31.0 - uTime*5.0)*0.05;
+          float stripe = pow(max(0.0, sin(x*9.0 + uTime*1.3)), 3.0);
+          float fade = smoothstep(0.0,0.2,vUv.y) * (1.0 - smoothstep(0.55,1.0,vUv.y)) * (1.0 - abs(vUv.x*2.0-1.0));
+          float a = stripe * fade * uStrength * 0.22;
+          gl_FragColor = vec4(1.0,0.78,0.5,a);
+        }`,
+    });
+    for (let i = 0; i < 3; i++) {
+      const hz = new Mesh(new PlaneGeometry(0.1, 0.22), this.hazeMat);
+      hz.position.set(-(BW / 2 + 0.1) + (i - 1) * 0.015, BY + 0.43, BZ + 0.03 + i * 0.012);
+      this.hazeGroup.add(hz);
+    }
+    this.root.add(this.hazeGroup);
+    // blueprint guide: a floating hologram ring + label above an empty axle, and a ghost of the held gear
+    this.guideRing = new Mesh(new TorusGeometry(0.03, 0.0012, 8, 40), new MeshBasicMaterial({ color: 0x66d8ff, transparent: true, opacity: 0.0, blending: AdditiveBlending, depthWrite: false }));
+    this.root.add(this.guideRing);
+    const gc = document.createElement('canvas');
+    gc.width = 512;
+    gc.height = 128;
+    this.guideCtx = gc.getContext('2d') as CanvasRenderingContext2D;
+    this.guideTex = new CanvasTexture(gc);
+    this.guideLabel = new Mesh(new PlaneGeometry(0.3, 0.075), new MeshBasicMaterial({ map: this.guideTex, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    this.root.add(this.guideLabel);
+    this.ghost = new Mesh(gearGeometry(10), new MeshBasicMaterial({ color: 0x66d8ff, wireframe: true, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    this.root.add(this.ghost);
+    this.root.add(this.sparks.group);
     // reciprocating piston on the left (pumps with the output wheel)
     const px = -(BW / 2 + 0.1);
     const sleeve = new Mesh(new CylinderGeometry(0.02, 0.02, 0.13, 16), iron);
@@ -615,6 +807,7 @@ export class GearShiftSystem extends createSystem({
       return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
     };
     w.__gearLevel = (i: number) => this.loadLevel(i);
+    w.__gearPegs = () => this.lv.pegs;
     w.__gearJam = () => {
       this.ev = { ...this.ev, jam: true, win: false };
     };
@@ -639,6 +832,7 @@ export class GearShiftSystem extends createSystem({
       this.mouseY = e.clientY;
     };
     const move = (e: PointerEvent) => {
+      this.mouseSeen = true;
       this.mouseX = e.clientX;
       this.mouseY = e.clientY;
     };
@@ -713,12 +907,12 @@ export class GearShiftSystem extends createSystem({
     // motor and output wheel
     const mp = lv.pegs[lv.motor.peg];
     const tp = lv.pegs[lv.target.peg];
-    const motor = new Mesh(gearGeometry(lv.motor.n), metal(0x8a3a2a, 0.35, 0.8));
+    const motor = new Mesh(gearGeometry(lv.motor.n), wornMetal(0x8a3a2a, 0.35));
     motor.position.set(mp.x, BY + mp.y, BZ + Z0);
     motor.castShadow = motor.receiveShadow = true;
     this.fixedGroup.add(motor);
     this.fixed.set(lv.motor.peg + ':0', motor);
-    const box = new Mesh(roundedBox(0.07, 0.07, 0.03, 0.005), metal(0x2e2c2c, 0.5, 0.9));
+    const box = new Mesh(roundedBox(0.07, 0.07, 0.03, 0.005), ironMat());
     box.position.set(mp.x, BY + mp.y, BZ + Z0 + 0.026);
     box.castShadow = true;
     this.fixedGroup.add(box);
@@ -739,7 +933,7 @@ export class GearShiftSystem extends createSystem({
     this.crank.position.set(mp.x, BY + mp.y, BZ + Z0 + 0.05);
     arm.castShadow = knob.castShadow = true;
     this.fixedGroup.add(this.crank);
-    const out = new Mesh(gearGeometry(lv.target.n), metal(0x2f6f86, 0.32, 0.6));
+    const out = new Mesh(gearGeometry(lv.target.n), wornMetal(0x2f6f86, 0.32));
     out.position.set(tp.x, BY + tp.y, BZ + (lv.target.layer === 0 ? Z0 : Z1));
     out.castShadow = out.receiveShadow = true;
     this.fixedGroup.add(out);
@@ -857,10 +1051,12 @@ export class GearShiftSystem extends createSystem({
     }
     const tp = this.lv.pegs[this.lv.target.peg];
     celebrate(tp.x, BY + tp.y, BZ + 0.1, 3);
-    emitBurst(tp.x, BY + tp.y, BZ + 0.06, 1, 0.8, 0.35, 34, 0.9);
-    sfx.chime();
-    sfx.hiss();
+    this.sparks.spray(tp.x, BY + tp.y, BZ + 0.06, 0, 1, 40, 1, 0.8, 0.35, 0.9);
+    this.shake = 1;
     const last = this.level === LEVELS.length - 1;
+    if (last) sfx.finale();
+    else sfx.chime();
+    sfx.hiss(0.8);
     if (last) {
       this.finaleT = 0;
       this.stars.visible = true;
@@ -881,7 +1077,8 @@ export class GearShiftSystem extends createSystem({
     const it = this.items[idx];
     if (!it || it.peg < 0) return;
     const p = this.lv.pegs[it.peg];
-    emitBurst(p.x, BY + p.y, BZ + 0.06, 1, 0.25, 0.1, 30, 0.9);
+    this.sparks.spray(p.x, BY + p.y, BZ + 0.06, 0, 1, 40, 1, 0.3, 0.12, 1.0);
+    this.shake = 1;
     this.placement[it.peg] = -1;
     it.peg = -1;
     it.x = it.home.x;
@@ -891,6 +1088,7 @@ export class GearShiftSystem extends createSystem({
     this.master.target = 0;
     this.master.pos = Math.min(this.master.pos, 0.6);
     sfx.thud(0.8);
+    sfx.lever();
     this.evaluateNow();
     this.msg = 'JAM!  The gear was ejected back to the rack';
     this.msgT = 4;
@@ -1000,7 +1198,7 @@ export class GearShiftSystem extends createSystem({
     if (!pt.down && pt.lever) {
       pt.lever.drag = false;
       pt.lever.target = pt.lever.pos > 0.5 ? 1 : 0;
-      if (pt.lever.target === 1) sfx.clank();
+      pt.lever.vel = 0;
       pt.lever = null;
     }
     if (pt.down && !pt.was && !pt.lever) {
@@ -1049,9 +1247,10 @@ export class GearShiftSystem extends createSystem({
       });
       const idx = this.items.indexOf(it);
       if (bestPeg >= 0 && this.place(idx, bestPeg)) {
-        sfx.clank();
         const p = this.lv.pegs[bestPeg];
-        emitBurst(p.x, BY + p.y, BZ + 0.05, 1, 0.78, 0.35, 16, 0.4);
+        sfx.clank(kindOf(it.def.parts[0].n), p.x / 0.6);
+        this.sparks.spray(p.x, BY + p.y, BZ + 0.05, 0, 1, 18, 1, 0.78, 0.35, 0.55);
+        this.shake = Math.max(this.shake, 0.25);
       } else {
         if (bestPeg >= 0) {
           sfx.thud(0.4);
@@ -1087,10 +1286,27 @@ export class GearShiftSystem extends createSystem({
     const dt = Math.min(delta, 0.05);
     this.time += dt;
     for (const pt of this.pointers) this.updatePointer(pt);
+    this.updateGuide(dt);
 
     // levers ease toward their target; the ignition spins the motor up
     for (const l of [this.master, this.clutch]) {
-      if (!l.drag) l.pos += Math.sign(l.target - l.pos) * Math.min(Math.abs(l.target - l.pos), dt * 5);
+      if (!l.drag) {
+        // spring-damper: snaps to its stop with a little elastic overshoot
+        l.vel += ((l.target - l.pos) * 160 - l.vel * 13) * dt;
+        l.pos += l.vel * dt;
+        if (l.pos > 1.07) {
+          l.pos = 1.07;
+          l.vel = 0;
+        } else if (l.pos < -0.07) {
+          l.pos = -0.07;
+          l.vel = 0;
+        }
+      } else l.vel = 0;
+      if (l.pos > 0.92 && !l.slammed && l.target === 1) {
+        l.slammed = true;
+        this.shake = Math.max(this.shake, 0.7);
+        sfx.lever();
+      } else if (l.pos < 0.5) l.slammed = false;
       l.g.position.y = BY + l.top - l.pos * TRAVEL;
     }
     const masterOn = this.master.pos > 0.85;
@@ -1118,7 +1334,7 @@ export class GearShiftSystem extends createSystem({
       this.grindT -= dt;
       if (this.grindT <= 0) {
         this.grindT = 0.38;
-        sfx.grind();
+        sfx.grind(0);
       }
       for (const s of parts) {
         const m = this.meshFor(s.peg, s.layer);
@@ -1144,15 +1360,27 @@ export class GearShiftSystem extends createSystem({
       if (this.tickT <= 0) {
         this.tickT = 0.35;
         this.tockFlip = !this.tockFlip;
-        sfx.tickTock(this.tockFlip, this.power * Math.min(1, this.ev.ratio / 2));
+        sfx.tickTock(this.tockFlip, this.power * Math.min(1, this.ev.ratio / 2), this.lv.pegs[this.lv.target.peg].x / 0.6);
       }
     }
     sfx.whirr(this.power > 0.02 && !jamming ? 0.15 + 0.6 * this.power * (powered ? Math.min(1, 0.4 + this.ev.ratio * 0.3) : 0.5) : 0);
     // piston pumps with the output wheel; aether tube shows the machine's state
     this.rod.position.y = BY + 0.27 + 0.035 * Math.sin(this.outPhi);
-    const tm = this.tubeGlow.material as MeshBasicMaterial;
-    tm.color.setHex(jamming ? 0xff3a22 : powered ? 0x55c8ff : 0xffb04a);
-    tm.opacity = jamming ? 0.6 + 0.4 * Math.random() : 0.25 + this.power * 0.5 + (powered ? 0.12 * Math.sin(this.time * 9) : 0);
+    const over = powered && this.ev.ratio > this.lv.target.maxRatio;
+    const calmT = jamming ? 1 : over ? 0.85 : 0;
+    this.tubeMat.uniforms.uTime.value = this.time;
+    this.tubeMat.uniforms.uCalm.value += (calmT - this.tubeMat.uniforms.uCalm.value) * Math.min(1, dt * 5);
+    this.tubeMat.uniforms.uPower.value = 0.35 + this.power * 0.65;
+    this.fill.color.setHex(jamming || over ? 0xff4a30 : 0x4fd0ff);
+    this.fill.intensity = 0.4 + this.power * 1.6 + (jamming ? Math.random() * 0.8 : 0);
+    const hz = powered ? Math.max(0, Math.min(1, (this.ev.ratio * this.power) / this.lv.target.maxRatio - 0.45) * 1.8) : 0;
+    this.hazeMat.uniforms.uTime.value = this.time;
+    this.hazeMat.uniforms.uStrength.value += (hz - this.hazeMat.uniforms.uStrength.value) * Math.min(1, dt * 3);
+    this.hazeGroup.visible = this.piston.visible;
+    // juice: bench micro-shake (never the player's camera, which would be uncomfortable in VR)
+    this.shake = jamming ? Math.max(this.shake, 0.45) : this.shake * Math.exp(-dt * 6);
+    this.root.position.set((Math.random() - 0.5) * 0.006 * this.shake, (Math.random() - 0.5) * 0.006 * this.shake, 0);
+    this.sparks.update(dt);
     // crank follows the motor wheel
     const mm = this.fixed.get(this.lv.motor.peg + ':0');
     if (mm) this.crank.rotation.z = mm.rotation.z;
@@ -1164,8 +1392,8 @@ export class GearShiftSystem extends createSystem({
       const a = s.parent >= 0 ? parts[s.parent] : null;
       const pa = this.lv.pegs[s.peg];
       const pb = a ? this.lv.pegs[a.peg] : pa;
-      if (this.ev.jam) emitBurst((pa.x + pb.x) / 2, BY + (pa.y + pb.y) / 2, BZ + 0.045, 1, 0.2, 0.12, 6, 0.5);
-      else if (powered && a && !s.sibling) emitBurst((pa.x + pb.x) / 2, BY + (pa.y + pb.y) / 2, BZ + 0.045, 1, 0.75, 0.3, 2, 0.22);
+      if (this.ev.jam) this.sparks.spray((pa.x + pb.x) / 2, BY + (pa.y + pb.y) / 2, BZ + 0.045, (Math.random() - 0.5) * 2, 1, 9, 1, 0.35, 0.12, 0.9);
+      else if (powered && a && !s.sibling) this.sparks.spray((pa.x + pb.x) / 2, BY + (pa.y + pb.y) / 2, BZ + 0.045, 0, 1, 3, 1, 0.8, 0.35, 0.35);
     }
     // gauges
     this.measure();
@@ -1184,7 +1412,8 @@ export class GearShiftSystem extends createSystem({
     }
     // Edison flicker and dust
     const fl = 1 + Math.sin(this.time * 17) * 0.03 + Math.sin(this.time * 5.3) * 0.04;
-    this.lights.forEach((l, i) => (l.intensity = 2.6 * fl * (i ? 0.95 : 1)));
+    this.lights.forEach((l, i) => (l.intensity = 1.2 * fl * (i ? 0.95 : 1)));
+    this.key.intensity = 9 * fl;
     this.bulbGlow.forEach((b) => ((b.material as MeshBasicMaterial).opacity = 0.16 * fl));
     for (let i = 0; i < DUST; i++) {
       const a = this.dustSeed[i * 3];
@@ -1233,6 +1462,85 @@ export class GearShiftSystem extends createSystem({
     }
     void this.wp;
     void this.lampGlow;
+  }
+
+  /** Holographic blueprint guide: hovering (or carrying a gear over) an empty axle projects a ring, a fit list and a ghost gear. */
+  private updateGuide(dt: number): void {
+    let held: Item | null = null;
+    for (const pt of this.pointers) if (pt.held) held = pt.held;
+    let have = false;
+    let hx = 0;
+    let hy = 0;
+    if (held) {
+      hx = held.x;
+      hy = held.y;
+      have = true;
+    } else if (this.mouseSeen && !this.mouseDown && this.mousePoint(this.hoverPos)) {
+      hx = this.hoverPos.x;
+      hy = this.hoverPos.y - BY;
+      have = true;
+    }
+    let peg = -1;
+    let bd = 0.075;
+    if (have) {
+      this.lv.pegs.forEach((p, k) => {
+        if (k === this.lv.motor.peg || k === this.lv.target.peg || this.placement[k] >= 0) return;
+        const d = Math.hypot(p.x - hx, p.y - hy);
+        if (d < bd) {
+          bd = d;
+          peg = k;
+        }
+      });
+    }
+    const heldIdx = held ? this.items.indexOf(held) : -1;
+    const key = peg * 100 + heldIdx + 1;
+    if (key !== this.guidePeg) {
+      this.guidePeg = key;
+      if (peg >= 0) {
+        const fit: string[] = [];
+        this.items.forEach((it, idx) => {
+          if ((it.peg < 0 || idx === heldIdx) && fits(this.lv, this.placement, peg, idx)) fit.push(it.def.parts.map((q) => q.n).join('/') + 'T');
+        });
+        const g = this.guideCtx;
+        g.clearRect(0, 0, 512, 128);
+        g.fillStyle = 'rgba(6,28,40,0.72)';
+        g.fillRect(4, 4, 504, 120);
+        g.strokeStyle = 'rgba(110,220,255,0.9)';
+        g.lineWidth = 3;
+        g.strokeRect(4, 4, 504, 120);
+        g.fillStyle = '#9fe6ff';
+        g.font = '600 34px monospace';
+        g.fillText('AXLE ' + (peg + 1) + (heldIdx >= 0 ? (fits(this.lv, this.placement, peg, heldIdx) ? '  - release to seat' : '  - teeth clash') : ''), 18, 48);
+        g.fillStyle = '#e6fbff';
+        g.font = '30px monospace';
+        g.fillText(fit.length ? 'fits: ' + fit.join('  ') : 'no free gear fits here', 18, 96);
+        this.guideTex.needsUpdate = true;
+      }
+    }
+    const ringM = this.guideRing.material as MeshBasicMaterial;
+    const labM = this.guideLabel.material as MeshBasicMaterial;
+    const ghM = this.ghost.material as MeshBasicMaterial;
+    const on = peg >= 0;
+    ringM.opacity += ((on ? 0.8 : 0) - ringM.opacity) * Math.min(1, dt * 10);
+    labM.opacity += ((on ? 0.95 : 0) - labM.opacity) * Math.min(1, dt * 10);
+    if (on) {
+      const p = this.lv.pegs[peg];
+      const bob = Math.sin(this.time * 3) * 0.004;
+      this.guideRing.position.set(p.x, BY + p.y, BZ + 0.05);
+      this.guideRing.rotation.z = this.time;
+      this.guideRing.scale.setScalar(1 + Math.sin(this.time * 4) * 0.08);
+      this.guideLabel.position.set(p.x, BY + p.y + 0.09 + bob, BZ + 0.11);
+    }
+    const showGhost = on && held !== null;
+    if (showGhost && held) {
+      const ok = fits(this.lv, this.placement, peg, heldIdx);
+      const p = this.lv.pegs[peg];
+      this.ghost.geometry = gearGeometry(held.def.parts[0].n);
+      this.ghost.position.set(p.x, BY + p.y, BZ + 0.03);
+      this.ghost.rotation.z = this.time * 0.5;
+      ghM.color.setHex(ok ? 0x66d8ff : 0xff5a44);
+    }
+    ghM.opacity += ((showGhost ? 0.6 : 0) - ghM.opacity) * Math.min(1, dt * 10);
   }
 
   private meshFor(peg: number, layer: number): Mesh | null {

@@ -21,6 +21,26 @@ function ac(): AudioContext | null {
   }
 }
 
+/** Stereo position (-1 left .. 1 right) applied to the next procedural sounds; see withPan. */
+let panV = 0;
+export function withPan(p: number, f: () => void): void {
+  panV = Math.max(-1, Math.min(1, p));
+  try {
+    f();
+  } finally {
+    panV = 0;
+  }
+}
+/** Connect a node to the speakers, panned if a position is active. */
+function outTo(c: AudioContext, node: AudioNode): void {
+  if (panV !== 0 && typeof c.createStereoPanner === 'function') {
+    const sp = c.createStereoPanner();
+    sp.pan.value = panV;
+    node.connect(sp);
+    sp.connect(c.destination);
+  } else node.connect(c.destination);
+}
+
 function noise(c: AudioContext): AudioBuffer {
   if (!noiseBuf) {
     noiseBuf = c.createBuffer(1, c.sampleRate * 0.4, c.sampleRate);
@@ -48,7 +68,8 @@ function tone(
   if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
   g.gain.setValueAtTime(vol, t0);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g).connect(c.destination);
+  o.connect(g);
+  outTo(c, g);
   o.start(t0);
   o.stop(t0 + dur + 0.02);
 }
@@ -66,7 +87,8 @@ function burst(dur: number, vol: number, freq: number, q = 1): void {
   const g = c.createGain();
   g.gain.setValueAtTime(vol, t0);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  s.connect(f).connect(g).connect(c.destination);
+  s.connect(f).connect(g);
+  outTo(c, g);
   s.start(t0);
   s.stop(t0 + dur + 0.02);
 }
@@ -116,7 +138,8 @@ function play(key: string, vol = 1, rate = 1, loop = false): boolean {
   s.loop = loop;
   const g = c.createGain();
   g.gain.value = vol;
-  s.connect(g).connect(c.destination);
+  s.connect(g);
+  outTo(c, g);
   s.start();
   return true;
 }
@@ -515,14 +538,19 @@ export const sfx = {
     if (play('metal', 0.07, 1.7 + Math.random() * 0.4)) return;
     burst(0.02, 0.03, 2500, 0.8);
   },
-  /** clock tick-tock: alternates pitch, quicker as rpm (0..1) rises */
-  tickTock(tock: boolean, rpm: number): void {
-    const f = (tock ? 1500 : 2100) * (0.9 + rpm * 0.3);
-    tone(f, 0.035, 0.09, 'square', f * 0.6);
-    burst(0.02, 0.05, f * 1.6, 2);
-    if (!play('metal', 0.05, (tock ? 1.3 : 1.8) + rpm * 0.3)) return;
+  /** clock tick-tock from the escapement; pan places it in the room; rpm 0..1 */
+  tickTock(tock: boolean, rpm: number, pan = 0): void {
+    withPan(pan, () => {
+      const f = (tock ? 1500 : 2100) * (0.9 + rpm * 0.3);
+      tone(f, 0.035, 0.09, 'square', f * 0.6);
+      burst(0.02, 0.05, f * 1.6, 2);
+      play('metal', 0.05, (tock ? 1.3 : 1.8) + rpm * 0.3);
+    });
   },
-  /** continuous mechanical whirr whose pitch follows rpm (0..1); call every frame, 0 stops it */
+  /**
+   * Steam-turbine whirr: filtered saw + triangle, plus noise whose band-pass centre is frequency-modulated.
+   * Call every frame with rpm 0..1; 0 fades it out.
+   */
   whirr(rpm: number): void {
     const c = ac();
     if (!c) return;
@@ -532,40 +560,83 @@ export const sfx = {
       const o2 = c.createOscillator();
       const f = c.createBiquadFilter();
       const g = c.createGain();
+      const n = c.createBufferSource();
+      n.buffer = noise(c);
+      n.loop = true;
+      const nf = c.createBiquadFilter();
+      const ng = c.createGain();
+      const lfo = c.createOscillator();
+      const lg = c.createGain();
       o.type = 'sawtooth';
       o2.type = 'triangle';
       f.type = 'lowpass';
       f.frequency.value = 500;
       g.gain.value = 0;
+      nf.type = 'bandpass';
+      nf.Q.value = 1.4;
+      nf.frequency.value = 900;
+      ng.gain.value = 0;
+      lfo.frequency.value = 7;
+      lg.gain.value = 300;
+      lfo.connect(lg);
+      lg.connect(nf.frequency); // FM on the noise band
       o.connect(f);
       o2.connect(f);
-      f.connect(g).connect(c.destination);
+      f.connect(g);
+      n.connect(nf);
+      nf.connect(ng);
+      const pan = c.createStereoPanner ? c.createStereoPanner() : null;
+      if (pan) {
+        pan.pan.value = 0.15;
+        g.connect(pan);
+        ng.connect(pan);
+        pan.connect(c.destination);
+      } else {
+        g.connect(c.destination);
+        ng.connect(c.destination);
+      }
       o.start();
       o2.start();
-      whirrNode = { o, o2, g, f };
+      n.start();
+      lfo.start();
+      whirrNode = { o, o2, g, f, nf, ng, lfo, lg };
     }
     const t = c.currentTime;
-    whirrNode.o.frequency.setTargetAtTime(55 + rpm * 110, t, 0.1);
-    whirrNode.o2.frequency.setTargetAtTime(110 + rpm * 220, t, 0.1);
-    whirrNode.f.frequency.setTargetAtTime(300 + rpm * 700, t, 0.1);
-    whirrNode.g.gain.setTargetAtTime(rpm > 0.01 ? 0.018 + rpm * 0.03 : 0, t, 0.12);
+    const w = whirrNode;
+    w.o.frequency.setTargetAtTime(55 + rpm * 110, t, 0.1);
+    w.o2.frequency.setTargetAtTime(110 + rpm * 220, t, 0.1);
+    w.f.frequency.setTargetAtTime(300 + rpm * 700, t, 0.1);
+    w.nf.frequency.setTargetAtTime(500 + rpm * 1800, t, 0.1);
+    w.lfo.frequency.setTargetAtTime(4 + rpm * 22, t, 0.1);
+    w.lg.gain.setTargetAtTime(150 + rpm * 700, t, 0.1);
+    w.g.gain.setTargetAtTime(rpm > 0.01 ? 0.016 + rpm * 0.028 : 0, t, 0.12);
+    w.ng.gain.setTargetAtTime(rpm > 0.01 ? 0.01 + rpm * 0.05 : 0, t, 0.12);
   },
-  /** steam released */
-  hiss(): void {
-    burst(1.3, 0.12, 5200, 0.5);
-    burst(0.9, 0.08, 2600, 0.4);
+  /** steam released; pan 1 = from the right-side valves */
+  hiss(pan = 0.8): void {
+    withPan(pan, () => {
+      burst(1.3, 0.12, 5200, 0.5);
+      burst(0.9, 0.08, 2600, 0.4);
+    });
   },
-  /** heavy metallic clank when a gear seats on its shaft */
-  clank(): void {
-    if (!play('metal', 0.7, 0.6 + Math.random() * 0.15)) burst(0.05, 0.3, 900, 3);
-    tone(180, 0.25, 0.14, 'triangle', 90);
-    tone(1370, 0.3, 0.06, 'sine', 1300);
-    tone(2210, 0.2, 0.04, 'sine', 2100);
+  /** a gear seats on its shaft; bronze/brass ring higher than iron */
+  clank(kind: 'brass' | 'bronze' | 'copper' | 'iron' = 'bronze', pan = 0): void {
+    const ring: Record<string, number[]> = { brass: [1320, 2480, 3510], bronze: [980, 1870, 2650], copper: [760, 1500, 2230], iron: [330, 720, 1190] };
+    const f = ring[kind];
+    withPan(pan, () => {
+      if (!play('metal', 0.55, kind === 'iron' ? 0.55 : 0.75 + Math.random() * 0.15)) burst(0.05, 0.3, 900, 3);
+      tone(kind === 'iron' ? 120 : 180, 0.25, 0.14, 'triangle', 80);
+      tone(f[0], kind === 'iron' ? 0.18 : 0.5, 0.07, 'sine', f[0] * 0.98);
+      tone(f[1], kind === 'iron' ? 0.12 : 0.35, 0.045, 'sine', f[1] * 0.98);
+      tone(f[2], kind === 'iron' ? 0.08 : 0.25, 0.03, 'sine');
+    });
   },
   /** teeth grinding in a jam */
-  grind(): void {
-    burst(0.35, 0.2, 1800 + Math.random() * 600, 1.2);
-    tone(90 + Math.random() * 30, 0.35, 0.12, 'sawtooth', 70);
+  grind(pan = 0): void {
+    withPan(pan, () => {
+      burst(0.35, 0.2, 1800 + Math.random() * 600, 1.2);
+      tone(90 + Math.random() * 30, 0.35, 0.12, 'sawtooth', 70);
+    });
   },
   /** harmonic chime chord on success */
   chime(): void {
@@ -574,5 +645,44 @@ export const sfx = {
       tone(f * 2, 1.1, 0.03, 'sine', undefined, i * 0.13);
     });
   },
+  /** lever slammed down */
+  lever(): void {
+    tone(70, 0.3, 0.3, 'triangle', 40);
+    burst(0.06, 0.25, 700, 2);
+    tone(1600, 0.2, 0.04, 'sine');
+  },
+  /** finale: a swelling, cascading major-chord drone while the orrery unfolds (about 9 seconds) */
+  finale(): void {
+    const c = ac();
+    if (!c) return;
+    const t0 = c.currentTime;
+    const master = c.createGain();
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(0.5, t0 + 6);
+    master.gain.exponentialRampToValueAtTime(0.0001, t0 + 11);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(400, t0);
+    lp.frequency.exponentialRampToValueAtTime(5000, t0 + 6);
+    master.connect(lp);
+    lp.connect(c.destination);
+    const notes = [65.41, 130.81, 196, 261.63, 329.63, 392, 523.25, 659.25, 783.99, 1046.5]; // C major stack
+    notes.forEach((f, i) => {
+      for (const det of [-4, 4]) {
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = i < 3 ? 'sawtooth' : 'sine';
+        o.frequency.value = f;
+        o.detune.value = det;
+        const start = t0 + i * 0.45; // cascade upward
+        g.gain.setValueAtTime(0.0001, start);
+        g.gain.exponentialRampToValueAtTime(i < 3 ? 0.035 : 0.05, start + 1.5);
+        o.connect(g);
+        g.connect(master);
+        o.start(start);
+        o.stop(t0 + 11.5);
+      }
+    });
+  },
 };
-let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode } | null = null;
+let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode; nf: BiquadFilterNode; ng: GainNode; lfo: OscillatorNode; lg: GainNode } | null = null;
