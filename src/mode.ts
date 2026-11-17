@@ -1,4 +1,4 @@
-export type Mode = 'menu' | 'guti' | 'kite';
+export type Mode = 'menu' | 'guti' | 'kite' | 'lattim';
 
 /** Tiny shared state: which game screen is active. */
 export const modeState: { mode: Mode } = { mode: 'menu' };

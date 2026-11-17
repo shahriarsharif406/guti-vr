@@ -6,8 +6,16 @@ import {
   Group,
   Line,
   LineBasicMaterial,
+  BufferAttribute as BA,
+  CanvasTexture,
+  CylinderGeometry,
+  MeshStandardMaterial,
   Mesh,
   MeshBasicMaterial,
+  PlaneGeometry,
+  Points,
+  PointsMaterial,
+  SRGBColorSpace,
   Vector3,
   createSystem,
 } from '@iwsdk/core';
@@ -34,14 +42,63 @@ const SHARP_SECONDS = 7;
 const ENEMY_SLOTS = 5;
 const COMBO_WINDOW = 3;
 const HIT_RADIUS = 0.13;
-const ROUND_SECONDS = 60;
 const START_LIVES = 3;
+const MAX_LIVES = 5;
+const BIRDS = 3;
 const STRING_PTS = 10;
 const TAIL_PTS = 7;
 const PINCH_START = 0.92;
 const PINCH_HOLD = 0.6;
 
 type HandName = 'left' | 'right';
+
+let kiteTex: CanvasTexture | null = null;
+/** Grey-scale paper pattern (tinted per kite): quarter panels, bamboo spars, paper border. */
+function kiteTexture(): CanvasTexture {
+  if (kiteTex) return kiteTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, 256, 256);
+  const shade = ['#ffffff', '#cfcfcf', '#bdbdbd', '#f2f2f2'];
+  g.fillStyle = shade[0];
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = shade[1];
+  g.fillRect(128, 0, 128, 128);
+  g.fillStyle = shade[2];
+  g.fillRect(0, 128, 128, 128);
+  g.fillStyle = shade[3];
+  g.fillRect(128, 128, 128, 128);
+  // paper grain
+  for (let i = 0; i < 1500; i++) {
+    g.fillStyle = 'rgba(0,0,0,' + Math.random() * 0.05 + ')';
+    g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  // spars
+  g.strokeStyle = 'rgba(70,45,20,0.9)';
+  g.lineWidth = 5;
+  g.beginPath();
+  g.moveTo(128, 0);
+  g.lineTo(128, 256);
+  g.moveTo(0, 128);
+  g.lineTo(256, 128);
+  g.stroke();
+  // paper-folded rim
+  g.strokeStyle = 'rgba(255,255,255,0.8)';
+  g.lineWidth = 8;
+  g.beginPath();
+  g.moveTo(128, 4);
+  g.lineTo(252, 128);
+  g.lineTo(128, 252);
+  g.lineTo(4, 128);
+  g.closePath();
+  g.stroke();
+  kiteTex = new CanvasTexture(c);
+  kiteTex.colorSpace = SRGBColorSpace;
+  return kiteTex;
+}
+const bowGeo = new PlaneGeometry(0.05, 0.028);
 
 class Kite {
   readonly group = new Group();
@@ -53,11 +110,12 @@ class Kite {
   readonly pos = new Vector3();
   readonly anchor = new Vector3();
   readonly mat: MeshBasicMaterial;
+  readonly bows: Mesh[] = [];
 
   constructor(color: number, readonly size: number) {
     const geo = new CircleGeometry(size * 0.5, 4);
     geo.scale(0.8, 1.15, 1);
-    this.mat = new MeshBasicMaterial({ color, side: DoubleSide });
+    this.mat = new MeshBasicMaterial({ color, side: DoubleSide, map: kiteTexture() });
     this.body = new Mesh(geo, this.mat);
     this.group.add(this.body);
 
@@ -76,6 +134,12 @@ class Kite {
       new LineBasicMaterial({ color: 0xf2f2f2 }),
     );
     this.string.frustumCulled = false;
+    // paper bows along the tail
+    for (let i = 0; i < TAIL_PTS - 1; i++) {
+      const b = new Mesh(bowGeo, new MeshBasicMaterial({ color: i % 2 ? 0xffffff : 0xffd23f, side: DoubleSide }));
+      this.group.add(b);
+      this.bows.push(b);
+    }
   }
 
   setSharp(on: boolean): void {
@@ -103,8 +167,42 @@ class Kite {
       this.tailPos[i * 3 + 2] = p.z;
     }
     (this.tail.geometry.getAttribute('position') as BufferAttribute).needsUpdate = true;
+    for (let i = 0; i < this.bows.length; i++) {
+      const t = (i + 1) / (TAIL_PTS - 1);
+      const b = this.bows[i];
+      b.position.set(Math.sin(time * 6 + (i + 1) * 0.9) * 0.025 * t * 2, -this.size * 0.6 - t * 0.25, 0.002);
+      b.rotation.z = Math.sin(time * 7 + i) * 0.7;
+    }
   }
 }
+
+/** A crow that crosses the sky; touching it costs a life. */
+class Bird {
+  readonly group = new Group();
+  private readonly wl: Mesh;
+  private readonly wr: Mesh;
+  active = false;
+  dir = 1;
+  speed = 0.6;
+  constructor() {
+    const wing = new BufferGeometry();
+    wing.setAttribute('position', new BA(new Float32Array([0, 0, 0, 0.16, 0.02, 0.05, 0.1, 0, -0.05]), 3));
+    const mat = new MeshBasicMaterial({ color: 0x1b1b1f, side: DoubleSide });
+    this.wl = new Mesh(wing, mat);
+    this.wr = new Mesh(wing, mat);
+    this.wr.scale.x = -1;
+    const body = new Mesh(new SphereGeometry(0.03, 8, 6), mat);
+    body.scale.set(1, 0.8, 1.6);
+    this.group.add(body, this.wl, this.wr);
+    this.group.visible = false;
+  }
+  flap(t: number): void {
+    const a = Math.sin(t * 14) * 0.6;
+    this.wl.rotation.z = a;
+    this.wr.rotation.z = -a;
+  }
+}
+
 
 type EnemyType = 'normal' | 'fast' | 'armored' | 'golden';
 
@@ -149,7 +247,12 @@ export class KiteSystem extends createSystem({}) {
   private phase: Phase = 'play';
   private lastMode = '';
   private fontWasReady = false;
-  private time = ROUND_SECONDS;
+  private time = 0; // seconds survived
+  private birds: Bird[] = [];
+  private nextBird = 8;
+  private leaves!: Points;
+  private leafPos = new Float32Array(24 * 3);
+  private bestTime = 0;
   private lives = START_LIVES;
   private score = 0;
   private cuts = 0;
@@ -202,7 +305,7 @@ export class KiteSystem extends createSystem({}) {
     ];
     for (let i = 0; i < ENEMY_SLOTS; i++) {
       const k = new Kite(0x4dd2ff, 0.15);
-      k.anchor.set(anchors[i][0], TABLE_Y + 0.1, anchors[i][1]);
+      k.anchor.set(anchors[i][0] * 5, 0.1, -5 + anchors[i][1] * 1.5);
       this.enemies.push({
         kite: k,
         slot: i,
@@ -243,10 +346,42 @@ export class KiteSystem extends createSystem({}) {
     this.hud.mesh.rotation.x = -0.45;
     this.world.createTransformEntity(this.hud.mesh);
     this.root.push(this.hud.mesh);
+    for (let i = 0; i < BIRDS; i++) {
+      const b = new Bird();
+      this.birds.push(b);
+      this.world.createTransformEntity(b.group);
+      this.root.push(b.group);
+    }
+    for (let i = 0; i < 24; i++) this.leafPos[i * 3 + 1] = -50;
+    const lg = new BufferGeometry();
+    lg.setAttribute('position', new BA(this.leafPos, 3));
+    this.leaves = new Points(lg, new PointsMaterial({ color: 0xcde58a, size: 0.035, transparent: true, opacity: 0.9, depthWrite: false }));
+    this.leaves.frustumCulled = false;
+    this.world.createTransformEntity(this.leaves);
+    this.root.push(this.leaves);
+    // wooden spool (latai) in the player's hand, the string winds off it
+    const wood = new MeshStandardMaterial({ color: 0x9a6a3a, roughness: 0.8 });
+    const spool = new Group();
+    const rod = new Mesh(new CylinderGeometry(0.012, 0.012, 0.2, 8), wood);
+    rod.rotation.z = Math.PI / 2;
+    spool.add(rod);
+    for (const x of [-0.09, 0.09]) {
+      const d = new Mesh(new CylinderGeometry(0.05, 0.05, 0.012, 16), wood);
+      d.rotation.z = Math.PI / 2;
+      d.position.x = x;
+      spool.add(d);
+    }
+    const wound = new Mesh(new CylinderGeometry(0.034, 0.034, 0.16, 14), new MeshStandardMaterial({ color: 0xf2f2f2, roughness: 1 }));
+    wound.rotation.z = Math.PI / 2;
+    spool.add(wound);
+    spool.position.set(PLAYER_ANCHOR.x, PLAYER_ANCHOR.y - 0.03, PLAYER_ANCHOR.z + 0.05);
+    this.world.createTransformEntity(spool);
+    this.root.push(spool);
     this.setVisible(false);
 
     try {
       this.best = Number(localStorage.getItem('guti-kite-best') ?? '0') || 0;
+      this.bestTime = Number(localStorage.getItem('guti-kite-time') ?? '0') || 0;
     } catch {
       this.best = 0;
     }
@@ -289,7 +424,12 @@ export class KiteSystem extends createSystem({}) {
 
   private startRound(): void {
     this.phase = 'play';
-    this.time = ROUND_SECONDS;
+    this.time = 0;
+    this.nextBird = 8;
+    for (const b of this.birds) {
+      b.active = false;
+      b.group.visible = false;
+    }
     this.roundT = 0;
     this.lives = START_LIVES;
     this.score = 0;
@@ -405,7 +545,7 @@ export class KiteSystem extends createSystem({}) {
       if (e.spawnDelay <= 0 && active < this.activeTarget()) this.spawnEnemy(e);
       return;
     }
-    const ramp = 1 + Math.min(this.cuts, 12) * 0.06;
+    const ramp = 1 + Math.min(this.cuts, 12) * 0.06 + Math.min(this.roundT / 90, 1) * 0.35;
     if (e.state === 'fall') {
       e.fallT += delta;
       e.vy += 1.6 * delta;
@@ -493,8 +633,8 @@ export class KiteSystem extends createSystem({}) {
         sfx.cut();
         emitBurst(e.kite.pos.x, e.kite.pos.y, e.kite.pos.z, col.r, col.g, col.b, 30, 0.8);
         if (e.type === 'golden') {
-          this.time += 5;
-          this.flash('Golden kite! +5 seconds', 1.5);
+          this.lives = Math.min(MAX_LIVES, this.lives + 1);
+          this.flash('Golden kite! +1 life', 1.5);
           emitBurst(e.kite.pos.x, e.kite.pos.y, e.kite.pos.z, 1, 0.85, 0.3, 40, 0.9);
         } else if (mult >= 2) {
           this.flash('Combo x' + mult + '!', 1.2);
@@ -545,6 +685,77 @@ export class KiteSystem extends createSystem({}) {
     }
   }
 
+  private updateBirds(delta: number): void {
+    if (this.phase !== 'play') {
+      for (const b of this.birds) {
+        b.active = false;
+        b.group.visible = false;
+      }
+      return;
+    }
+    this.nextBird -= delta;
+    if (this.nextBird <= 0) {
+      const b = this.birds.find((o) => !o.active);
+      if (b) {
+        b.active = true;
+        b.dir = Math.random() < 0.5 ? 1 : -1;
+        b.speed = 0.55 + Math.random() * 0.35 + Math.min(this.roundT / 120, 0.3);
+        b.group.position.set(-b.dir * (BOX_X + 0.3), BOX_Y_MIN + 0.1 + Math.random() * (BOX_Y_MAX - BOX_Y_MIN - 0.2), SKY_Z);
+        b.group.scale.x = b.dir;
+        b.group.visible = true;
+        sfx.whoosh();
+        this.flash('Crow! Dodge it', 1.2);
+      }
+      this.nextBird = Math.max(4, 10 - this.roundT / 15) + Math.random() * 3;
+    }
+    for (const b of this.birds) {
+      if (!b.active) continue;
+      const p = b.group.position;
+      p.x += b.dir * b.speed * delta;
+      p.y += Math.sin(this.elapsed * 3 + p.x * 4) * 0.12 * delta;
+      b.flap(this.elapsed + p.x);
+      if (Math.abs(p.x) > BOX_X + 0.4) {
+        b.active = false;
+        b.group.visible = false;
+        continue;
+      }
+      const dx = p.x - this.mine.pos.x;
+      const dy = p.y - this.mine.pos.y;
+      if (dx * dx + dy * dy < 0.011 && this.hurtCooldown <= 0) {
+        this.lives -= 1;
+        this.hurtCooldown = 2;
+        this.combo = 0;
+        this.comboTimer = 0;
+        sfx.hurt();
+        emitBurst(p.x, p.y, p.z, 0.15, 0.15, 0.18, 24, 0.6);
+        b.active = false;
+        b.group.visible = false;
+        this.flash('Crow hit your kite!', 1.2);
+        if (this.lives <= 0) this.endRound();
+        this.hudDirty = true;
+      }
+    }
+  }
+
+  private updateLeaves(delta: number, wind: number): void {
+    const on = this.gustT > 0 && this.phase === 'play';
+    const attr = this.leaves.geometry.getAttribute('position') as BA;
+    for (let i = 0; i < 24; i++) {
+      if (!on) {
+        this.leafPos[i * 3 + 1] = -50;
+        continue;
+      }
+      if (this.leafPos[i * 3 + 1] < -40 || Math.abs(this.leafPos[i * 3]) > 1.6) {
+        this.leafPos[i * 3] = -this.gustDir * 1.4;
+        this.leafPos[i * 3 + 1] = 0.9 + Math.random() * 1.2;
+        this.leafPos[i * 3 + 2] = SKY_Z + 0.35 + Math.random() * 0.5;
+      }
+      this.leafPos[i * 3] += this.gustDir * (0.9 + Math.abs(wind) * 2) * delta * (0.7 + (i % 5) * 0.12);
+      this.leafPos[i * 3 + 1] += Math.sin(this.elapsed * 5 + i) * 0.25 * delta;
+    }
+    attr.needsUpdate = true;
+  }
+
   private endRound(): void {
     this.phase = 'over';
     this.overTimer = 5;
@@ -556,25 +767,39 @@ export class KiteSystem extends createSystem({}) {
         /* ignore */
       }
     }
+    if (this.time > this.bestTime) {
+      this.bestTime = this.time;
+      try {
+        localStorage.setItem('guti-kite-time', String(Math.floor(this.bestTime)));
+      } catch {
+        /* ignore */
+      }
+    }
     sfx.lose();
     this.hudDirty = true;
+  }
+
+  private fmt(t: number): string {
+    const m = Math.floor(t / 60);
+    const sec = Math.floor(t % 60);
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
   }
 
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('Kite Fight', 62, 48);
+    h.text('Kite Alive', 62, 48);
     if (this.phase === 'over') {
-      h.text('Score ' + this.score + '   Best ' + this.best, 140, 40, '#8dff9d');
-      h.text('Cuts ' + this.cuts + '  •  returning to the menu...', 215, 28, '#cdb99a');
+      h.text('Survived ' + this.fmt(this.time) + '   Score ' + this.score, 140, 36, '#8dff9d');
+      h.text('Best ' + this.fmt(this.bestTime) + ' / ' + this.best + '  •  back to menu...', 215, 26, '#cdb99a');
     } else {
       const mult = this.comboTimer > 0 ? '  x' + Math.min(this.combo, 5) : '';
       h.text(
-        'Score ' + this.score + mult + '   Lives ' + this.lives + '   ' + Math.ceil(this.time) + 's',
+        this.fmt(this.time) + '   Score ' + this.score + mult + '   ' + '♥'.repeat(this.lives),
         140,
         36,
       );
-      let line = 'Hit fast to cut. Slow and they cut you';
+      let line = 'Keep your kite alive: dodge birds, cut fast';
       let color = '#cdb99a';
       if (this.flashTimer > 0) {
         line = this.flashText;
@@ -645,15 +870,11 @@ export class KiteSystem extends createSystem({}) {
     if (this.phase === 'play') {
       this.updateInput();
       this.roundT += delta;
-      this.time -= delta;
-      const sec = Math.ceil(this.time);
+      this.time += delta;
+      const sec = Math.floor(this.time);
       if (sec !== this.lastSecond) {
         this.lastSecond = sec;
         this.hudDirty = true;
-      }
-      if (this.time <= 0) {
-        this.time = 0;
-        this.endRound();
       }
       this.updateOrb(delta);
     } else {
@@ -665,13 +886,15 @@ export class KiteSystem extends createSystem({}) {
     const k = this.mine;
     const f = 1 - Math.exp(-7 * delta);
     this.prevPos.copy(k.pos);
-    k.pos.x += (this.target.x + wind * 0.5 - k.pos.x) * f;
+    k.pos.x += (this.target.x + wind * 0.9 - k.pos.x) * f;
     k.pos.y += (this.target.y - k.pos.y) * f;
     k.pos.z = SKY_Z;
     const inst = delta > 0 ? this.prevPos.distanceTo(k.pos) / delta : 0;
     this.speed += (inst - this.speed) * Math.min(1, delta * 12);
     k.group.rotation.z = Math.max(-0.5, Math.min(0.5, (this.target.x - k.pos.x) * -1.2));
 
+    this.updateBirds(delta);
+    this.updateLeaves(delta, wind);
     for (const e of this.enemies) this.enemyUpdate(e, delta, wind);
     if (this.phase === 'play') this.checkContacts();
 

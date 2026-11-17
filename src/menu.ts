@@ -78,7 +78,8 @@ export class MenuSystem extends createSystem({
       p.commit();
     };
     card(this.buttons[0].panel, 'Marbles', 'গুলি', 'Flick them out of the ring', '#7fd8ff');
-    card(this.buttons[1].panel, 'Kite Fight', 'ঘুড়ি', 'Cut the other kites', '#ffb56b');
+    card(this.buttons[1].panel, 'Kite Alive', 'ঘুড়ি', 'Cut kites, dodge crows', '#ffb56b');
+    card(this.buttons[2].panel, 'Lattim', 'লাটিম', 'Spin and knock them out', '#a6e08a');
     const b = this.back.panel;
     b.card('rgba(40,24,12,0.88)', '#ffd9a0');
     b.text('← Menu', b.h * 0.62, 70, '#ffe9c4');
@@ -86,7 +87,7 @@ export class MenuSystem extends createSystem({
     const t = this.title;
     t.card('rgba(30,18,10,0.0)', 'rgba(0,0,0,0)');
     t.text('GUTI', t.h * 0.5, 120, '#ffd9a0');
-    t.text('গুটি  •  hands-only village games', t.h * 0.9, 34, '#ffe9c4');
+    t.text('গুটি  •  hands-only village games of Bangladesh', t.h * 0.9, 34, '#ffe9c4');
     t.commit();
   }
 
@@ -94,8 +95,9 @@ export class MenuSystem extends createSystem({
     const y = TABLE_Y + 0.2;
     const z = TABLE_CENTER_Z + 0.02;
     this.buttons.push(
-      this.makeButton(MenuTargets.Guti, 0.22, 0.22, -0.15, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Kite, 0.22, 0.22, 0.15, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Guti, 0.2, 0.2, -0.23, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Kite, 0.2, 0.2, 0, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Lattim, 0.2, 0.2, 0.23, y, z, -0.5, () => {}),
     );
     this.back = this.makeButton(
       MenuTargets.Menu,
@@ -123,7 +125,7 @@ export class MenuSystem extends createSystem({
       sfx.ambience();
       sfx.select();
       this.cooldown = 0.4;
-      setMode(target as 'menu' | 'guti' | 'kite');
+      setMode(target as 'menu' | 'guti' | 'kite' | 'lattim');
     };
     this.cleanupFuncs.push(this.queries.pressed.subscribe('qualify', onPress));
   }
@@ -161,7 +163,7 @@ export class MenuSystem extends createSystem({
         this.cooldown = 0.4;
         sfx.ambience();
         sfx.select();
-        setMode(hit === 0 ? 'guti' : 'kite');
+        setMode(hit === 0 ? 'guti' : hit === 1 ? 'kite' : 'lattim');
       }
     }
     // hover feedback: buttons lift a little

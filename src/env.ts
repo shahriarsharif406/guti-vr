@@ -15,10 +15,45 @@ import {
   PointsMaterial,
   RepeatWrapping,
   SphereGeometry,
-  AssetManager,
+  CircleGeometry,
+  DoubleSide,
+  LineBasicMaterial,
+  LineSegments,
+  Object3D,
+  SRGBColorSpace,
   createSystem,
 } from '@iwsdk/core';
+import { modeState } from './mode.js';
+import {
+  bambooClump,
+  bananaPlant,
+  boat,
+  cementTexture,
+  harvestTexture,
+  haystack,
+  hazeDisc,
+  hut,
+  mudTexture,
+  paddyTexture,
+  paintedSky,
+  palm,
+  shadeTree,
+  water,
+} from './scenery.js';
 import { WorldId, worldState } from './worlds.js';
+
+const RAIN = 260;
+const rnd = (a: number, b: number): number => a + Math.random() * (b - a);
+type SceneKey = WorldId | 'field';
+const birdGeo = (() => {
+  const g = new BufferGeometry();
+  g.setAttribute(
+    'position',
+    new BufferAttribute(new Float32Array([-0.5, 0, 0, 0, 0, -0.18, 0, 0, 0.08, 0.5, 0, 0, 0, 0, -0.18, 0, 0, 0.08]), 3),
+  );
+  return g;
+})();
+const birdMat = new MeshBasicMaterial({ color: 0x2a2a2a, side: DoubleSide });
 
 const FIREFLIES = 60;
 
@@ -30,33 +65,29 @@ export class EnvSystem extends createSystem({}) {
   private ffGeo!: BufferGeometry;
   private t = 0;
   private clouds: Mesh[] = [];
-  private groups: Record<WorldId, { visible: boolean }[]> = {
+  private groups: Record<SceneKey, { visible: boolean }[]> = {
     earth: [],
     moon: [],
     mars: [],
     station: [],
+    field: [],
   };
-  private shownWorld: WorldId | '' = '';
+  private shownWorld: SceneKey | '' = '';
+  private sway: { o: Object3D; phase: number }[] = [];
+  private farKites: { m: Mesh; x: number; y: number; phase: number }[] = [];
+  private farBirds: { m: Mesh; a: number; r: number; h: number; s: number }[] = [];
+  private rainPos = new Float32Array(RAIN * 6);
+  private rainBase = new Float32Array(RAIN * 3);
+  private rainGeo!: BufferGeometry;
+  private rain: Object3D | null = null;
   private spinners: Mesh[] = [];
-  private building: WorldId = 'earth';
+  private building: SceneKey = 'earth';
 
-  private add(m: Mesh, x: number, y: number, z: number): Mesh {
+  private add<T extends Object3D>(m: T, x: number, y: number, z: number): T {
     m.position.set(x, y, z);
     this.world.createTransformEntity(m);
     this.groups[this.building].push(m);
     return m;
-  }
-
-  /** Places a Kenney model in the village (earth group). Silently skipped if it failed to load. */
-  private place(key: string, x: number, z: number, scale: number, rotY = 0, y = 0): void {
-    const gltf = AssetManager.getGLTF(key);
-    if (!gltf) return;
-    const o = gltf.scene;
-    o.position.set(x, y, z);
-    o.scale.setScalar(scale);
-    o.rotation.y = rotY;
-    this.world.createTransformEntity(o);
-    this.groups[this.building].push(o);
   }
 
   private groundTexture(): CanvasTexture {
@@ -108,18 +139,7 @@ export class EnvSystem extends createSystem({}) {
       );
     }
 
-    // village houses and trees (Kenney models), arranged in a loose ring behind the courtyard
-    this.place('houseA', 4.2, -8.6, 1.5, -0.25);
-    this.place('houseB', 8.2, -5.0, 1.5, -1.1);
-    this.place('houseC', -7.8, -5.2, 1.5, 1.1);
-    this.place('houseD', 0.2, -11.5, 1.6, 0);
-    this.place('houseA', -5.0, -10.5, 1.4, 0.4);
-    this.place('houseB', 9.0, -9.5, 1.5, -0.8);
-    this.place('treesTall', -5.2, -3.2, 1.6, 0.3);
-    this.place('trees', 5.6, -1.5, 1.4, 0.5);
-    this.place('trees', -6.2, 0.4, 1.4, 2.0);
-    this.place('treesTall', 2.6, -9.6, 1.8, 1.0);
-    this.place('lamps', -3.2, -7.4, 1.2, Math.PI / 2);
+    this.buildVillageExtras();
 
     // clay jars (matka) near the player
     const clay = new MeshStandardMaterial({ color: 0xb4532a, roughness: 0.85 });
@@ -134,21 +154,6 @@ export class EnvSystem extends createSystem({}) {
     const bamboo = new MeshStandardMaterial({ color: 0xa8a05a, roughness: 0.9 });
     for (let i = -8; i <= 8; i++) {
       this.add(new Mesh(new CylinderGeometry(0.035, 0.035, 1.3, 6), bamboo), i * 0.5, 0.65, -6.5);
-    }
-
-    // low sun
-    this.add(
-      new Mesh(new SphereGeometry(2.2, 24, 16), new MeshBasicMaterial({ color: 0xffa55a })),
-      -4, 3.2, -28,
-    );
-
-    // slow drifting clouds
-    const cloudMat = new MeshBasicMaterial({ color: 0xffd9c0, transparent: true, opacity: 0.55 });
-    for (let i = 0; i < 7; i++) {
-      const c = new Mesh(new SphereGeometry(1, 12, 8), cloudMat);
-      c.scale.set(2.5 + Math.random() * 2, 0.45, 0.9);
-      this.add(c, -14 + i * 4.5, 4.5 + Math.random() * 3, -22 - Math.random() * 6);
-      this.clouds.push(c);
     }
 
     // fireflies
@@ -176,255 +181,257 @@ export class EnvSystem extends createSystem({}) {
     this.groups.earth.push(pts);
 
     this.building = 'moon';
-    this.buildMoon();
+    this.buildHarvest();
     this.building = 'mars';
-    this.buildMars();
+    this.buildMonsoon();
     this.building = 'station';
-    this.buildStation();
+    this.buildRooftop();
+    this.building = 'field';
+    this.buildField();
     this.building = 'earth';
     this.showWorld('earth');
   }
 
   // ------------------------------------------------------------ other worlds
-  private showWorld(id: WorldId): void {
+  private showWorld(id: SceneKey): void {
     this.shownWorld = id;
     for (const k of Object.keys(this.groups) as WorldId[]) {
       for (const m of this.groups[k]) m.visible = k === id;
     }
   }
 
-  private skyDome(top: string, mid: string, bottom: string, stars: number): void {
-    const c = document.createElement('canvas');
-    c.width = 2048;
-    c.height = 1024;
-    const g = c.getContext('2d') as CanvasRenderingContext2D;
-    const grad = g.createLinearGradient(0, 0, 0, 1024);
-    grad.addColorStop(0, top);
-    grad.addColorStop(0.5, mid);
-    grad.addColorStop(1, bottom);
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 2048, 1024);
-    for (let i = 0; i < stars; i++) {
-      const y = Math.random() * 800;
-      const a = 0.3 + Math.random() * 0.6;
-      g.fillStyle = 'rgba(255,255,255,' + a + ')';
-      const r = Math.random() < 0.06 ? 2 : 1;
-      g.fillRect(Math.random() * 2048, y, r, r);
-    }
-    const dome = new Mesh(
-      new SphereGeometry(60, 32, 16),
-      new MeshBasicMaterial({ map: new CanvasTexture(c), side: BackSide, depthWrite: false }),
-    );
-    dome.renderOrder = -10;
-    dome.frustumCulled = false;
-    this.add(dome, 0, 1.3, -0.5);
+  // ------------------------------------------------------------ scenery helpers
+  private put(o: Object3D, x: number, z: number, scale = 1, rotY = 0, y = 0): Object3D {
+    o.position.set(x, y, z);
+    o.scale.multiplyScalar(scale);
+    o.rotation.y += rotY;
+    this.world.createTransformEntity(o);
+    this.groups[this.building].push(o);
+    return o;
   }
 
-  private craterTexture(base: string, dark: string, light: string, craters: number): CanvasTexture {
-    const c = document.createElement('canvas');
-    c.width = c.height = 512;
-    const g = c.getContext('2d') as CanvasRenderingContext2D;
-    g.fillStyle = base;
-    g.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 2500; i++) {
-      g.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)';
-      g.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 4, 1 + Math.random() * 4);
-    }
-    for (let i = 0; i < craters; i++) {
-      const x = Math.random() * 512;
-      const y = Math.random() * 512;
-      const r = 6 + Math.random() * 34;
-      g.beginPath();
-      g.arc(x, y, r, 0, Math.PI * 2);
-      g.fillStyle = dark;
-      g.fill();
-      g.beginPath();
-      g.arc(x - r * 0.12, y - r * 0.12, r * 0.82, 0, Math.PI * 2);
-      g.strokeStyle = light;
-      g.lineWidth = 2;
-      g.stroke();
-    }
-    const t = new CanvasTexture(c);
-    t.wrapS = t.wrapT = RepeatWrapping;
-    t.repeat.set(5, 5);
-    return t;
-  }
-
-  private earthTexture(): CanvasTexture {
-    const c = document.createElement('canvas');
-    c.width = 512;
-    c.height = 256;
-    const g = c.getContext('2d') as CanvasRenderingContext2D;
-    const og = g.createLinearGradient(0, 0, 0, 256);
-    og.addColorStop(0, '#2a6fc4');
-    og.addColorStop(0.5, '#1b4f9e');
-    og.addColorStop(1, '#2a6fc4');
-    g.fillStyle = og;
-    g.fillRect(0, 0, 512, 256);
-    for (let i = 0; i < 16; i++) {
-      g.fillStyle = Math.random() < 0.7 ? '#3f8f4a' : '#b79b64';
-      g.beginPath();
-      const x = Math.random() * 512;
-      const y = 40 + Math.random() * 176;
-      g.ellipse(x, y, 14 + Math.random() * 44, 8 + Math.random() * 24, Math.random() * 3, 0, 6.3);
-      g.fill();
-    }
-    for (let i = 0; i < 40; i++) {
-      g.fillStyle = 'rgba(255,255,255,' + (0.25 + Math.random() * 0.4) + ')';
-      g.beginPath();
-      g.ellipse(Math.random() * 512, Math.random() * 256, 12 + Math.random() * 50, 3 + Math.random() * 8, Math.random() * 3, 0, 6.3);
-      g.fill();
-    }
-    g.fillStyle = '#f4f8ff';
-    g.fillRect(0, 0, 512, 14);
-    g.fillRect(0, 242, 512, 14);
-    return new CanvasTexture(c);
-  }
-
-  private rocks(mat: MeshStandardMaterial, n: number, spread: number, minR: number, maxR: number): void {
-    const geo = new IcosahedronGeometry(1, 0);
+  private ring(
+    n: number,
+    rMin: number,
+    rMax: number,
+    make: () => Object3D,
+    scaleMin = 1,
+    scaleMax = 1.4,
+    arcFrom = 0,
+    arcTo = Math.PI * 2,
+  ): void {
     for (let i = 0; i < n; i++) {
-      const r = minR + Math.random() * (maxR - minR);
-      const m = new Mesh(geo, mat);
-      m.scale.set(r, r * (0.55 + Math.random() * 0.35), r);
-      m.rotation.y = Math.random() * 6;
-      const a = Math.random() * Math.PI * 2;
-      const d = 2.2 + Math.random() * spread;
-      this.add(m, Math.cos(a) * d, r * 0.3, -1 + Math.sin(a) * d);
+      const a = arcFrom + ((i + Math.random() * 0.8) / n) * (arcTo - arcFrom) - Math.PI;
+      const r = rMin + Math.random() * (rMax - rMin);
+      const o = this.put(make(), Math.sin(a) * r, -Math.cos(a) * r, scaleMin + Math.random() * (scaleMax - scaleMin), Math.random() * 6.28);
+      if (o.userData.crown) this.sway.push({ o, phase: Math.random() * 6 });
     }
   }
 
-  private buildMoon(): void {
-    this.skyDome('#000004', '#03040a', '#0a0c14', 900);
-    const ground = new Mesh(
-      new CylinderGeometry(9, 9, 0.02, 48),
-      new MeshStandardMaterial({ map: this.craterTexture('#8d8d93', '#6d6d74', '#b4b4bb', 40), roughness: 1 }),
-    );
-    this.add(ground, 0, 0.001, -1);
-    this.rocks(new MeshStandardMaterial({ color: 0x77777e, roughness: 1, flatShading: true }), 16, 6, 0.15, 0.7);
-    // Earth hanging in the black sky
-    const earth = new Mesh(new SphereGeometry(2.6, 32, 20), new MeshBasicMaterial({ map: this.earthTexture() }));
-    this.add(earth, -7, 8, -30);
-    this.spinners.push(earth);
-    // small lander
-    const foil = new MeshStandardMaterial({ color: 0xd9b34a, roughness: 0.4, metalness: 0.7 });
-    const leg = new MeshStandardMaterial({ color: 0xbfc3c9, roughness: 0.6 });
-    this.add(new Mesh(new BoxGeometry(1.0, 0.7, 1.0), foil), 3.4, 0.95, -4.6);
-    this.add(new Mesh(new ConeGeometry(0.55, 0.5, 8), foil), 3.4, 1.55, -4.6);
-    for (const [dx, dz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]] as [number, number][]) {
-      const l = new Mesh(new CylinderGeometry(0.04, 0.04, 0.95, 6), leg);
-      l.rotation.z = -dx * 0.5;
-      l.rotation.x = dz * 0.5;
-      this.add(l, 3.4 + dx * 0.9, 0.45, -4.6 + dz * 0.9);
-      this.add(new Mesh(new CylinderGeometry(0.16, 0.16, 0.03, 10), leg), 3.4 + dx * 1.1, 0.02, -4.6 + dz * 1.1);
+  private distantKites(n: number, z: number): void {
+    const cols = [0xff4d6d, 0xffd23f, 0x4dd2ff, 0x7cf29a, 0xc77dff, 0xff9a3c];
+    for (let i = 0; i < n; i++) {
+      const geo = new CircleGeometry(0.5, 4);
+      geo.scale(0.8, 1.15, 1);
+      const m = new Mesh(geo, new MeshBasicMaterial({ color: cols[i % cols.length], side: DoubleSide, fog: false }));
+      const x = -26 + (i / n) * 52 + Math.random() * 3;
+      const y = 7 + Math.random() * 14;
+      this.put(m, x, z - Math.random() * 12, 1.2 + Math.random() * 0.8, 0, y);
+      this.farKites.push({ m, x, y, phase: Math.random() * 6 });
     }
   }
 
-  private buildMars(): void {
-    this.skyDome('#5b3b43', '#b8825f', '#d9a57a', 150);
-    const ground = new Mesh(
-      new CylinderGeometry(9, 9, 0.02, 48),
-      new MeshStandardMaterial({ map: this.craterTexture('#a4522f', '#8a4125', '#c8744a', 22), roughness: 1 }),
-    );
-    this.add(ground, 0, 0.001, -1);
-    this.rocks(new MeshStandardMaterial({ color: 0x8b4a2c, roughness: 1, flatShading: true }), 20, 6, 0.15, 0.8);
-    // distant mesas
-    const mesa = new MeshStandardMaterial({ color: 0x8e5136, roughness: 1, flatShading: true });
-    for (const [x, z, h, r] of [[-9, -22, 3, 4], [4, -26, 4.5, 5], [14, -20, 2.4, 3.5], [-18, -18, 2, 3]] as number[][]) {
-      this.add(new Mesh(new CylinderGeometry(r * 0.6, r, h, 8), mesa), x, h / 2, z);
+  // ------------------------------------------------------------ the village (marbles 1-4)
+  private buildVillageExtras(): void {
+    this.put(paintedSky({ top: '#3d5f9e', mid: '#e0a06e', horizon: '#ffd6a0', sunU: 0.75, sunV: 0.42, sunColor: '#ffcf8a', cloudColor: '255,214,176', cloudAlpha: 0.5, clouds: 28 }), 0, -0.5, 1, 0, 1.3);
+    const g = hazeDisc(70, paddyTexture(), 0xf2c898);
+    this.put(g, 0, -1, 1, 0, -0.012);
+    this.ring(10, 20, 34, () => palm(rnd(6, 8), rnd(-0.18, 0.18)), 1.0, 1.4, Math.PI * 0.55, Math.PI * 1.45);
+    this.ring(5, 14, 24, () => bambooClump(8, rnd(4, 6)), 1, 1.4, Math.PI * 0.6, Math.PI * 1.4);
+    this.ring(6, 7, 14, () => bananaPlant(rnd(1.8, 2.5)), 1, 1.3, Math.PI * 0.55, Math.PI * 1.45);
+    this.put(hut(), 8.5, -11, 1.0, -0.5);
+    this.put(hut(), -9.5, -12, 1.0, 0.6);
+    this.put(hut(), 2.5, -19, 1.1, 0.1);
+    this.put(haystack(), 4.5, -7, 0.8);
+    this.put(water(26, 14, 0x53808a), -14, -18, 1, 0, -0.01);
+    this.ring(12, 38, 56, () => shadeTree(rnd(4, 6), rnd(2, 3)), 1.2, 1.9, Math.PI * 0.3, Math.PI * 1.7);
+  }
+
+  // ------------------------------------------------------------ harvest field (levels 5-7)
+  private buildHarvest(): void {
+    this.put(paintedSky({ top: '#3f7fc4', mid: '#9cc7e6', horizon: '#f6e3b5', sunU: 0.7, sunV: 0.36, sunColor: '#fff0c0', clouds: 30, cloudAlpha: 0.6 }), 0, -0.5, 1, 0, 1.3);
+    this.put(hazeDisc(70, harvestTexture(), 0xf1deb0), 0, -1, 1, 0, -0.012);
+    for (const [x, z, r] of [[-5, -6, 1], [6, -7.5, 1.2], [-9.5, -12, 1.1], [10, -14, 1.2], [1, -18, 1.3]] as number[][]) {
+      this.put(haystack(), x, z, r * 0.8);
     }
-    // small pale sun
-    this.add(new Mesh(new SphereGeometry(0.9, 20, 14), new MeshBasicMaterial({ color: 0xfff1da })), 6, 6, -30);
-    // rover
-    const body = new MeshStandardMaterial({ color: 0xd8d8d2, roughness: 0.6 });
-    const dark = new MeshStandardMaterial({ color: 0x2b2b2e, roughness: 0.9 });
-    this.add(new Mesh(new BoxGeometry(1.2, 0.35, 0.7), body), -3.0, 0.55, -4.2);
-    this.add(new Mesh(new CylinderGeometry(0.04, 0.04, 0.8, 6), dark), -2.6, 1.0, -4.2);
-    this.add(new Mesh(new BoxGeometry(0.28, 0.18, 0.18), dark), -2.6, 1.45, -4.2);
-    for (const dx of [-0.45, 0, 0.45]) {
-      for (const dz of [-0.45, 0.45]) {
-        const w = new Mesh(new CylinderGeometry(0.2, 0.2, 0.12, 14), dark);
-        w.rotation.x = Math.PI / 2;
-        this.add(w, -3.0 + dx, 0.2, -4.2 + dz);
+    this.ring(12, 22, 38, () => palm(rnd(6, 9), rnd(-0.15, 0.15)), 1.0, 1.5, Math.PI * 0.5, Math.PI * 1.5);
+    this.ring(12, 38, 58, () => shadeTree(rnd(4.5, 6.5), rnd(2.2, 3.2)), 1.2, 1.9, Math.PI * 0.25, Math.PI * 1.75);
+    this.put(hut(), -10, -13, 1.0, 0.7);
+    this.put(hut(), 11, -16, 1.0, -0.7);
+    this.distantKites(6, -35);
+  }
+
+  // ------------------------------------------------------------ monsoon (levels 8-10)
+  private buildMonsoon(): void {
+    this.put(paintedSky({ top: '#566471', mid: '#8b98a2', horizon: '#c0c8c9', cloudColor: '120,132,142', cloudAlpha: 0.75, clouds: 40 }), 0, -0.5, 1, 0, 1.3);
+    this.put(hazeDisc(70, mudTexture(), 0xb6bfc0, 0.55), 0, -1, 1, 0, -0.012);
+    this.put(water(60, 30, 0x5d7782), 0, -25, 1, 0, 0.0);
+    this.ring(8, 10, 20, () => bananaPlant(rnd(2, 3)), 1, 1.5, Math.PI * 0.5, Math.PI * 1.5);
+    this.ring(6, 12, 24, () => bambooClump(9, rnd(5, 7)), 1, 1.5, Math.PI * 0.55, Math.PI * 1.45);
+    this.ring(8, 22, 36, () => palm(rnd(6, 8.5), rnd(-0.2, 0.2)), 1.0, 1.4, Math.PI * 0.5, Math.PI * 1.5);
+    this.put(hut(), -9, -11, 1.0, 0.6);
+    this.put(hut(), 9, -13, 1.0, -0.5);
+    this.put(boat(), 4, -16, 1.4, 0.4, 0.02);
+    // rain streaks that fall around the player
+    for (let i = 0; i < RAIN; i++) {
+      this.rainBase[i * 3] = (Math.random() - 0.5) * 16;
+      this.rainBase[i * 3 + 1] = Math.random() * 7;
+      this.rainBase[i * 3 + 2] = -Math.random() * 14 + 2;
+    }
+    this.rainGeo = new BufferGeometry();
+    this.rainGeo.setAttribute('position', new BufferAttribute(this.rainPos, 3));
+    const rain = new LineSegments(
+      this.rainGeo,
+      new LineBasicMaterial({ color: 0xcfe0ee, transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    rain.frustumCulled = false;
+    this.put(rain, 0, 0);
+    this.rain = rain;
+  }
+
+  // ------------------------------------------------------------ Dhaka rooftop (levels 11-13)
+  private buildRooftop(): void {
+    this.put(paintedSky({ top: '#1d2650', mid: '#7a4a78', horizon: '#ff9c62', sunU: 0.72, sunV: 0.47, sunColor: '#ffae70', cloudColor: '255,150,130', cloudAlpha: 0.4, clouds: 24, stars: 160 }), 0, -0.5, 1, 0, 1.3);
+    // lit city windows
+    const [wc, wg] = (() => {
+      const c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 256;
+      return [c, c.getContext('2d') as CanvasRenderingContext2D] as const;
+    })();
+    wg.fillStyle = '#2b2f40';
+    wg.fillRect(0, 0, 128, 256);
+    for (let y = 8; y < 250; y += 16) {
+      for (let x = 6; x < 124; x += 14) {
+        wg.fillStyle = Math.random() < 0.45 ? 'rgba(255,214,130,0.95)' : 'rgba(40,46,64,1)';
+        wg.fillRect(x, y, 8, 9);
       }
     }
+    const wt = new CanvasTexture(wc);
+    wt.colorSpace = SRGBColorSpace;
+    const bm = new MeshStandardMaterial({ map: wt, emissiveMap: wt, emissive: 0xffffff, emissiveIntensity: 0.7, roughness: 0.9 });
+    const flat = new MeshStandardMaterial({ color: 0x5d5858, roughness: 1 });
+    for (let i = 0; i < 46; i++) {
+      const a = (i / 46) * Math.PI * 2;
+      const r = 18 + Math.random() * 20;
+      const w = 3 + Math.random() * 5;
+      const h = 8 + Math.random() * 26;
+      const geo = new BoxGeometry(w, h, w);
+      const uv = geo.getAttribute('uv');
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (w / 3), uv.getY(k) * (h / 8));
+      this.put(new Mesh(geo, i % 5 === 0 ? flat : bm), Math.sin(a) * r, -Math.cos(a) * r, 1, a, h / 2 - 0.01);
+    }
+    // low parapet around the roof
+    const wall = new MeshStandardMaterial({ map: cementTexture(), roughness: 1 });
+    for (let i = 0; i < 32; i++) {
+      const a = (i / 32) * Math.PI * 2;
+      const seg = new Mesh(new BoxGeometry(1.2, 0.9, 0.25), wall);
+      this.put(seg, Math.sin(a) * 5.6, -1 - Math.cos(a) * 5.6, 1, -a, 0.45);
+    }
+    // water tank and dish
+    const tank = new Mesh(new CylinderGeometry(0.7, 0.7, 1.1, 18), new MeshStandardMaterial({ color: 0x2d5f86, roughness: 0.5 }));
+    this.put(tank, -3.6, -3.6, 1, 0, 0.55);
+    this.put(new Mesh(new CylinderGeometry(0.75, 0.75, 0.05, 18), new MeshStandardMaterial({ color: 0x244d70 })), -3.6, -3.6, 1, 0, 1.12);
+    // warm string lights
+    const n = 40;
+    const lp = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      lp[i * 3] = -4.8 + t * 9.6;
+      lp[i * 3 + 1] = 2.2 - Math.sin(t * Math.PI) * 0.5;
+      lp[i * 3 + 2] = -4.9;
+    }
+    const lg = new BufferGeometry();
+    lg.setAttribute('position', new BufferAttribute(lp, 3));
+    const lights = new Points(lg, new PointsMaterial({ color: 0xffd9a0, size: 0.12, blending: AdditiveBlending, transparent: true, depthWrite: false }));
+    lights.frustumCulled = false;
+    this.put(lights, 0, 0);
+    this.distantKites(12, -22);
   }
 
-  private buildStation(): void {
-    this.skyDome('#000003', '#02030a', '#05070e', 1100);
-    // metal deck
-    const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    const g = c.getContext('2d') as CanvasRenderingContext2D;
-    g.fillStyle = '#4a5260';
-    g.fillRect(0, 0, 256, 256);
-    g.strokeStyle = 'rgba(0,0,0,0.45)';
-    g.lineWidth = 3;
-    for (let i = 0; i <= 256; i += 64) {
-      g.beginPath();
-      g.moveTo(i, 0);
-      g.lineTo(i, 256);
-      g.moveTo(0, i);
-      g.lineTo(256, i);
-      g.stroke();
-    }
-    const tex = new CanvasTexture(c);
-    tex.wrapS = tex.wrapT = RepeatWrapping;
-    tex.repeat.set(9, 9);
-    this.add(
-      new Mesh(new CylinderGeometry(9, 9, 0.02, 48), new MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.5 })),
-      0, 0.001, -1,
-    );
-    // huge Earth below the horizon
-    const earth = new Mesh(new SphereGeometry(26, 48, 28), new MeshBasicMaterial({ map: this.earthTexture() }));
-    this.add(earth, 0, -22, -45);
-    this.spinners.push(earth);
-    // main module and solar arrays
-    const hull = new MeshStandardMaterial({ color: 0xe6e9ee, roughness: 0.5, metalness: 0.3 });
-    const module = new Mesh(new CylinderGeometry(1.2, 1.2, 9, 20), hull);
-    module.rotation.z = Math.PI / 2;
-    this.add(module, 0, 3.4, -14);
-    const truss = new Mesh(new CylinderGeometry(0.06, 0.06, 16, 6), hull);
-    truss.rotation.z = Math.PI / 2;
-    this.add(truss, 0, 3.4, -14);
-    const panelCanvas = document.createElement('canvas');
-    panelCanvas.width = 128;
-    panelCanvas.height = 64;
-    const pg = panelCanvas.getContext('2d') as CanvasRenderingContext2D;
-    pg.fillStyle = '#16327a';
-    pg.fillRect(0, 0, 128, 64);
-    pg.strokeStyle = '#6f93e0';
-    pg.lineWidth = 1.5;
-    for (let i = 0; i <= 128; i += 16) {
-      pg.beginPath();
-      pg.moveTo(i, 0);
-      pg.lineTo(i, 64);
-      pg.stroke();
-    }
-    for (let j = 0; j <= 64; j += 16) {
-      pg.beginPath();
-      pg.moveTo(0, j);
-      pg.lineTo(128, j);
-      pg.stroke();
-    }
-    const panelMat = new MeshStandardMaterial({
-      map: new CanvasTexture(panelCanvas),
-      roughness: 0.3,
-      metalness: 0.6,
-      emissive: 0x0a1a44,
-    });
-    for (const x of [-6.5, 6.5]) {
-      this.add(new Mesh(new BoxGeometry(4.4, 0.05, 2.2), panelMat), x, 3.4, -14);
+  // ------------------------------------------------------------ open countryside (kite + lattim)
+  private buildField(): void {
+    this.put(paintedSky({ top: '#2f78c8', mid: '#8fc0e8', horizon: '#f7e8c4', sunU: 0.68, sunV: 0.34, sunColor: '#fff4cc', clouds: 38, cloudAlpha: 0.65 }), 0, -0.5, 1, 0, 1.3);
+    this.put(hazeDisc(70, paddyTexture(), 0xe9efd8), 0, -1, 1, 0, -0.012);
+    // beel (wetland) with boats
+    this.put(water(44, 22, 0x4d8c98), -9, -22, 1, 0, -0.005);
+    this.put(boat(), -6, -20, 1.5, 0.3, 0.01);
+    this.put(boat(), -15, -26, 1.3, -0.6, 0.01);
+    this.ring(14, 22, 38, () => palm(rnd(6, 9), rnd(-0.2, 0.2)), 1.0, 1.5, Math.PI * 0.45, Math.PI * 1.55);
+    this.ring(5, 18, 30, () => bambooClump(9, rnd(5, 7)), 1, 1.5, Math.PI * 0.6, Math.PI * 1.4);
+    this.ring(7, 8, 16, () => bananaPlant(rnd(2, 2.8)), 1, 1.4, Math.PI * 0.5, Math.PI * 1.5);
+    this.ring(14, 40, 60, () => shadeTree(rnd(5, 7), rnd(2.4, 3.4)), 1.2, 2);
+    this.put(hut(), 14, -20, 1.2, -0.7);
+    this.put(hut(), 20, -12, 1.2, -1.1);
+    this.put(hut(), -17, -18, 1.2, 0.6);
+    this.put(haystack(), 7, -9, 0.9);
+    this.put(haystack(), -7, -8, 0.8);
+    // distant children's kites high over the paddy
+    this.distantKites(9, -30);
+    // a loose flock far away
+    for (let i = 0; i < 9; i++) {
+      const b = new Mesh(birdGeo, birdMat);
+      b.rotation.y = 0;
+      this.put(b, 0, -30, 1, 0, 9);
+      this.farBirds.push({ m: b, a: Math.random() * 6.28, r: 22 + Math.random() * 10, h: 8 + Math.random() * 6, s: 0.12 + Math.random() * 0.08 });
     }
   }
 
   update(dt: number): void {
     this.t += dt;
-    if (worldState.id !== this.shownWorld) this.showWorld(worldState.id);
+    const want: SceneKey =
+      modeState.mode === 'kite' || modeState.mode === 'lattim' ? 'field' : worldState.id;
+    if (want !== this.shownWorld) this.showWorld(want);
     for (const sp of this.spinners) sp.rotation.y += dt * 0.02;
     for (const c of this.clouds) {
       c.position.x += dt * 0.15;
       if (c.position.x > 18) c.position.x = -18;
+    }
+    for (const s of this.sway) {
+      const crown = s.o.userData.crown as Object3D;
+      crown.rotation.z = Math.sin(this.t * 0.9 + s.phase) * 0.05;
+      crown.rotation.x = Math.sin(this.t * 0.7 + s.phase * 1.7) * 0.04;
+    }
+    if (want === 'field' || want === 'moon' || want === 'station') {
+      for (const k of this.farKites) {
+        k.m.position.x = k.x + Math.sin(this.t * 0.35 + k.phase) * 1.6;
+        k.m.position.y = k.y + Math.sin(this.t * 0.5 + k.phase * 2) * 0.9;
+        k.m.rotation.z = Math.sin(this.t * 0.6 + k.phase) * 0.25;
+      }
+    }
+    if (want === 'field') {
+      for (const b of this.farBirds) {
+        const a = b.a + this.t * b.s;
+        b.m.position.set(Math.sin(a) * b.r, b.h + Math.sin(this.t * 0.8 + b.a) * 0.6, -Math.cos(a) * b.r - 4);
+        b.m.rotation.y = -a;
+        b.m.scale.y = 1;
+        b.m.rotation.z = Math.sin(this.t * 9 + b.a * 7) * 0.5;
+      }
+    }
+    if (want === 'mars' && this.rain) {
+      for (let i = 0; i < RAIN; i++) {
+        const fall = (this.rainBase[i * 3 + 1] - this.t * 7.5) % 7;
+        const y = fall < 0 ? fall + 7 : fall;
+        const x = this.rainBase[i * 3] + y * 0.12;
+        const z = this.rainBase[i * 3 + 2];
+        this.rainPos[i * 6] = x;
+        this.rainPos[i * 6 + 1] = y;
+        this.rainPos[i * 6 + 2] = z;
+        this.rainPos[i * 6 + 3] = x + 0.015;
+        this.rainPos[i * 6 + 4] = y + 0.25;
+        this.rainPos[i * 6 + 5] = z;
+      }
+      (this.rainGeo.getAttribute('position') as BufferAttribute).needsUpdate = true;
     }
     for (let i = 0; i < FIREFLIES; i++) {
       const p = this.ffPhase[i];

@@ -4,6 +4,7 @@ import { EnvSystem } from './env.js';
 import { FxSystem } from './fx.js';
 import { GameSystem } from './game.js';
 import { KiteSystem } from './kite.js';
+import { LattimSystem } from './lattim.js';
 import { MenuSystem } from './menu.js';
 
 World.create(
@@ -15,4 +16,5 @@ World.create(
   world.registerSystem(MenuSystem);
   world.registerSystem(GameSystem);
   world.registerSystem(KiteSystem);
+  world.registerSystem(LattimSystem);
 });

@@ -91,16 +91,16 @@ const LEVELS: LevelDef[] = [
   { world: 'earth', targets: 4, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Aim dots show where your shot will go' },
   { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Rocks block the way: thread the gap' },
   { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [], tip: 'Knock out the golden marble for a bonus shot' },
-  // ---- Moon (gravity 1.62)
-  { world: 'moon', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Low gravity: marbles slide far. Pull gently' },
+  // ---- Harvest field (dry, slides far)
+  { world: 'moon', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Dry ground: marbles slide far. Pull gently' },
   { world: 'moon', targets: 6, shots: 7, ring: 0.115, formation: 'ring', heavy: 0, gold: 0, rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is smaller. Soft taps are enough' },
   { world: 'moon', targets: 6, shots: 7, ring: 0.125, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Golden marble: bonus shot' },
-  // ---- Mars (gravity 3.71)
-  { world: 'mars', targets: 6, shots: 7, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy grey marbles need a strong hit' },
+  // ---- Monsoon mud
+  { world: 'mars', targets: 6, shots: 7, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy stone marbles need a strong hit' },
   { world: 'mars', targets: 7, shots: 8, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[-0.09, 0.16], [0.09, 0.16]], tip: 'Rocks guard the sides: use the centre lane' },
   { world: 'mars', targets: 8, shots: 8, ring: 0.1, formation: 'ring', heavy: 0, gold: 1, rocks: [], tip: 'Tight ring, golden bonus inside' },
-  // ---- Space Station (zero gravity)
-  { world: 'station', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Zero gravity: no friction. Marbles keep drifting' },
+  // ---- Dhaka rooftop (slippery)
+  { world: 'station', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Slippery cement: marbles keep sliding' },
   { world: 'station', targets: 8, shots: 8, ring: 0.12, formation: 'cluster', heavy: 2, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Heavy, golden and rocks together' },
   { world: 'station', targets: 10, shots: 9, ring: 0.095, formation: 'ring', heavy: 3, gold: 1, rocks: [[-0.09, 0.17], [0.09, 0.17]], tip: 'Final level. Clear the ring!' },
 ];
@@ -248,6 +248,8 @@ export class GameSystem extends createSystem({
   private rockGeo!: CylinderGeometry;
   private sun!: DirectionalLight;
   private floorMat!: MeshStandardMaterial;
+  private floorMesh!: Mesh;
+  private tableMesh!: Mesh;
   private tableMat!: MeshStandardMaterial;
   private curWorld: WorldId = 'earth';
   private dots!: Points;
@@ -358,12 +360,15 @@ export class GameSystem extends createSystem({
     // earthen courtyard floor (visual only)
     this.floorMat = new MeshStandardMaterial({ color: 0x6b4a33, roughness: 1 });
     const floor = new Mesh(new CylinderGeometry(6, 6, 0.02, 48), this.floorMat);
+    this.floorMesh = floor;
+    floor.scale.set(0.4, 1, 0.4);
     floor.position.set(0, -0.01, TABLE_CENTER_Z);
     world.createTransformEntity(floor);
 
     // the playing ground: a round disc of packed clay at hand height
     this.tableMat = new MeshStandardMaterial({ color: 0xb98a5e, roughness: 0.95, map: clayTexture() });
     const table = new Mesh(new CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.04, 64), this.tableMat);
+    this.tableMesh = table;
     table.position.set(0, TABLE_Y - 0.02, TABLE_CENTER_Z);
     this.tableEntity = world.createTransformEntity(table);
     this.tableEntity.addComponent(PhysicsShape, {
@@ -528,7 +533,7 @@ export class GameSystem extends createSystem({
     }
     // the village (houses, trees, clay) is lit by the same sky
     this.world.scene.environmentIntensity = 0.55;
-    if (this.earthEnv && worldState.id === 'earth') this.world.scene.environment = this.earthEnv;
+    if (this.earthEnv) this.world.scene.environment = this.earthEnv;
   }
 
   private buildArrow(): void {
@@ -745,8 +750,10 @@ export class GameSystem extends createSystem({
     this.sun.color.setHex(w.sunColor);
     this.sun.intensity = w.sunIntensity;
     // the real-sky lighting only belongs to the village
-    this.world.scene.environment = id === 'earth' ? this.earthEnv : null;
+    this.world.scene.environment = this.earthEnv;
     this.floorMat.color.setHex(w.floorColor);
+    const fs = id === 'station' ? 1 : 0.4;
+    this.floorMesh.scale.set(fs, 1, fs);
     this.tableMat.color.setHex(w.tableColor);
     this.shooter.setValue(PhysicsBody, 'linearDamping', w.damping);
     sfx.setSpace(w.space);
@@ -1153,6 +1160,13 @@ export class GameSystem extends createSystem({
     if (modeState.mode !== this.lastMode) {
       const wasGuti = this.lastMode === 'guti';
       this.lastMode = modeState.mode;
+      const open = modeState.mode === 'kite' || modeState.mode === 'lattim';
+      this.floorMesh.visible = !open;
+      this.tableMesh.visible = !open;
+      if (open) {
+        this.sun.color.setHex(0xffe6b8);
+        this.sun.intensity = 2.6;
+      }
       if (modeState.mode === 'guti') {
         this.setModeVisible(true);
         for (const t of this.targets) if (t.object3D) t.object3D.visible = true;
