@@ -20,7 +20,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
-import { emitBurst } from './fx.js';
+import { celebrate, emitBurst } from './fx.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -474,6 +474,7 @@ export class PotterySystem extends createSystem({
     this.clayMat.needsUpdate = true;
     sfx.kiln();
     emitBurst(CX, WHEEL_TOP + this.pot.h, CZ, 1, 0.75, 0.35, 70, 0.8);
+    if (this.match >= 80) celebrate(CX, WHEEL_TOP + this.pot.h, CZ, 2);
     this.saved.push({ h: this.pot.h, r: Array.from(this.pot.r), c: g.color });
     this.saved = this.saved.slice(-SHELF_SLOTS);
     try {

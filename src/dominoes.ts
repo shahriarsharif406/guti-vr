@@ -11,7 +11,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
-import { emitBurst } from './fx.js';
+import { celebrate, emitBurst } from './fx.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -467,6 +467,7 @@ export class DominoSystem extends createSystem({
       }
       if (all) {
         sfx.win();
+        celebrate(0, TOP + 0.15, -0.55, this.total >= 30 ? 3 : this.total >= 20 ? 2 : 1);
         this.msg = 'All ' + this.total + ' fell!  ' + (this.total >= 30 ? '★★★' : this.total >= 20 ? '★★' : '★');
         for (const d of this.order) emitBurst(d.x, TOP + 0.05, d.z, 1, 0.85, 0.35, 3, 0.4);
       } else {

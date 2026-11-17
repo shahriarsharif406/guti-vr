@@ -12,7 +12,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
-import { emitBurst } from './fx.js';
+import { celebrate, emitBurst } from './fx.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -587,6 +587,7 @@ export class BrickSystem extends createSystem({
     }
     if (this.smashT > T + 0.4) {
       this.smashT = -1;
+      celebrate(OX + (N * C) / 2, PLATE_Y + 0.1, OZ + (N * C) / 2, 2);
       this.ball.visible = false;
       this.rope.visible = false;
       this.msg = 'Boom!  Build again.';

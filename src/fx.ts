@@ -25,6 +25,22 @@ export function emitBurst(
   fxRef.current?.emit(x, y, z, r, g, b, count, speed);
 }
 
+const CONFETTI: [number, number, number][] = [
+  [1, 0.35, 0.4],
+  [1, 0.85, 0.3],
+  [0.35, 0.9, 0.5],
+  [0.35, 0.7, 1],
+  [0.8, 0.5, 1],
+];
+
+/** Colourful celebration burst; stars 1..3 scales it. */
+export function celebrate(x: number, y: number, z: number, stars = 1): void {
+  for (let i = 0; i < 5; i++) {
+    const c = CONFETTI[i];
+    emitBurst(x + (i - 2) * 0.05, y + 0.1, z, c[0], c[1], c[2], 18 + stars * 10, 0.7 + stars * 0.15);
+  }
+}
+
 export class FxSystem extends createSystem({}) {
   private pos = new Float32Array(N * 3);
   private col = new Float32Array(N * 3);
