@@ -31,7 +31,8 @@ import {
   Vector3,
   createSystem,
 } from '@iwsdk/core';
-import { sfx } from './audio.js';
+import { musicState, sfx } from './audio.js';
+import { quality, tickQuality } from './quality.js';
 import { celebrate, emitBurst } from './fx.js';
 import { CHAPTERS, M, LEVELS, chapterOf, evaluate, fits, needsClutch, outerRadius, radius } from './gearlogic.js';
 import type { Evaluation, GearDef, Level } from './gearlogic.js';
@@ -277,6 +278,13 @@ function dotTexture(): CanvasTexture {
 const kindOf = (n: number): 'brass' | 'bronze' | 'copper' | 'iron' => (n === 10 || n === 20 ? 'brass' : n === 14 ? 'copper' : n === 15 || n === 24 ? 'iron' : 'bronze');
 const gearGeo = new Map<number, BufferGeometry>();
 const DUST = 110;
+function buzz(ms: number | number[]): void {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** A real toothed wheel: trapezoid teeth, a hub hole and round lightening holes, with bevelled edges. */
 function gearGeometry(n: number): BufferGeometry {
@@ -442,6 +450,7 @@ export class GearShiftSystem extends createSystem({
   private pegGroup = new Group();
   private partsGroup = new Group();
   private hud!: TextPanel;
+  private done!: TextPanel;
   private btns: TextPanel[] = [];
   private level = 0;
   private unlocked = 0;
@@ -828,6 +837,16 @@ export class GearShiftSystem extends createSystem({
     this.lampGlow = this.lamp;
     this.root.add(this.ring, this.lamp);
 
+    this.done = new TextPanel(0.5, 0.22);
+    this.done.card('rgba(16,19,22,0.88)', '#B58A45');
+    this.done.text('MASTER CLOCKMAKER', 80, 46, '#E8DCC1');
+    this.done.text('All 6 machines run. The Orrery is awake.', 140, 24, '#AEB7BC');
+    this.done.text('RETRY to replay  -  BACK to revisit a level', 190, 22, '#38BDF8');
+    this.done.commit();
+    this.done.mesh.position.set(0, BY + 0.36, BZ + 0.34);
+    this.done.mesh.visible = false;
+    this.root.add(this.done.mesh);
+
     this.hud = new TextPanel(0.56, 0.2);
     this.hud.mesh.position.set(0, BY + BH / 2 + 0.11, BZ + 0.03);
     this.hud.mesh.rotation.x = -0.15;
@@ -923,6 +942,7 @@ export class GearShiftSystem extends createSystem({
     this.jamT = 0;
     this.lastPlaced = -1;
     this.finaleT = -1;
+    this.done.mesh.visible = false;
     for (const l of [this.master, this.clutch]) {
       l.pos = l.target = 0;
       l.drag = false;
@@ -1118,6 +1138,8 @@ export class GearShiftSystem extends createSystem({
     if (last) sfx.finale();
     else sfx.chime();
     sfx.hiss(0.8);
+    buzz(last ? 220 : 90);
+    this.sparks.steam(0.5, BY + 0.2, BZ + 0.08, 26);
     if (last) {
       this.finaleT = 0;
       this.stars.visible = true;
@@ -1139,6 +1161,7 @@ export class GearShiftSystem extends createSystem({
     if (!it || it.peg < 0) return;
     const p = this.lv.pegs[it.peg];
     this.sparks.spray(p.x, BY + p.y, BZ + 0.06, 0, 1, 40, 1, 0.3, 0.12, 1.0);
+    buzz([60, 40, 90]);
     this.shake = 1;
     this.placement[it.peg] = -1;
     it.peg = -1;
@@ -1310,6 +1333,7 @@ export class GearShiftSystem extends createSystem({
       if (bestPeg >= 0 && this.place(idx, bestPeg)) {
         const p = this.lv.pegs[bestPeg];
         sfx.clank(kindOf(it.def.parts[0].n), p.x / 0.6);
+        buzz(25);
         sfx.crunch(kindOf(it.def.parts[0].n), p.x / 0.6);
         this.sparks.spray(p.x, BY + p.y, BZ + 0.05, 0, 1, 18, 1, 0.78, 0.35, 0.55);
         this.shake = Math.max(this.shake, 0.25);
@@ -1463,6 +1487,17 @@ export class GearShiftSystem extends createSystem({
     this.hazeMat.uniforms.uTime.value = this.time;
     this.hazeMat.uniforms.uStrength.value += (hz - this.hazeMat.uniforms.uStrength.value) * Math.min(1, dt * 3);
     this.hazeGroup.visible = this.piston.visible;
+    const mt = musicState;
+    const tTen = powered ? 0.4 + 0.6 * this.power : 0;
+    mt.tension += (tTen - mt.tension) * Math.min(1, dt * 1.5);
+    mt.jam += ((jamming ? 1 : 0) - mt.jam) * Math.min(1, dt * 3);
+    mt.swell += ((this.solved ? 1 : 0) - mt.swell) * Math.min(1, dt * 0.8);
+    if (over && Math.random() < dt * 5) this.sparks.steam(0.5, BY + 0.2, BZ + 0.08, 2);
+    tickQuality(dt);
+    const qt = quality.tier;
+    this.key.castShadow = qt >= 2;
+    this.dust.geometry.setDrawRange(0, qt >= 3 ? DUST : qt === 2 ? 70 : qt === 1 ? 35 : 0);
+    this.hazeGroup.visible = this.piston.visible && qt >= 1;
     // juice: bench micro-shake (never the player's camera, which would be uncomfortable in VR)
     this.shake = jamming ? Math.max(this.shake, 0.45) : this.shake * Math.exp(-dt * 6);
     this.root.position.set((Math.random() - 0.5) * 0.006 * this.shake, (Math.random() - 0.5) * 0.006 * this.shake + Math.sin(this.time * 1.3) * 0.0014, 0);
@@ -1518,6 +1553,7 @@ export class GearShiftSystem extends createSystem({
     for (const it of this.items) for (const m of it.meshes) (m.material as MeshStandardMaterial).emissive.setRGB(0, em * 0.7, em);
     if (this.finaleT >= 0) {
       this.finaleT += dt;
+      if (this.finaleT > 5) this.done.mesh.visible = true;
       const e = Math.min(1, this.finaleT / 3);
       const k = e * e * (3 - 2 * e);
       this.doors[0].rotation.y = k * 1.25;

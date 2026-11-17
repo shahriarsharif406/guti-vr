@@ -79,6 +79,17 @@ export class SparkField {
     }
   }
 
+  /** A billowing steam cloud rising from a valve. */
+  steam(x: number, y: number, z: number, count: number): void {
+    for (let n = 0; n < count; n++) {
+      this.puff(x + (Math.random() - 0.5) * 0.02, y, z + (Math.random() - 0.5) * 0.02);
+      const i = (this.mNext + NM - 1) % NM;
+      this.mv[i * 3] = (Math.random() - 0.3) * 0.08;
+      this.mv[i * 3 + 1] = 0.08 + Math.random() * 0.1;
+      this.mMax[i] = this.mLife[i] = 1.2 + Math.random() * 0.9;
+    }
+  }
+
   private puff(x: number, y: number, z: number): void {
     const i = this.mNext;
     this.mNext = (this.mNext + 1) % NM;

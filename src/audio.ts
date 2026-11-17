@@ -21,6 +21,37 @@ function ac(): AudioContext | null {
   }
 }
 
+let master: GainNode | null = null;
+let masterVol = 0.9;
+/** Single output bus: every sound goes through one master gain (volume keys). */
+function dest(c: AudioContext): AudioNode {
+  if (!master) {
+    master = c.createGain();
+    master.gain.value = masterVol;
+    const comp = c.createDynamicsCompressor();
+    comp.threshold.value = -14;
+    comp.ratio.value = 4;
+    master.connect(comp);
+    comp.connect(c.destination);
+  }
+  return master;
+}
+/** Adaptive music/mix state driven by the GearShift bench (0..1). */
+export const musicState = { tension: 0, jam: 0, swell: 0 };
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '[' || e.key === ']') {
+      masterVol = Math.max(0, Math.min(1, masterVol + (e.key === ']' ? 0.15 : -0.15)));
+      if (master) master.gain.value = masterVol;
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!ctx) return;
+    if (document.hidden) void ctx.suspend();
+    else void ctx.resume();
+  });
+}
+
 /** Stereo position (-1 left .. 1 right) applied to the next procedural sounds; see withPan. */
 let panV = 0;
 export function withPan(p: number, f: () => void): void {
@@ -37,8 +68,8 @@ function outTo(c: AudioContext, node: AudioNode): void {
     const sp = c.createStereoPanner();
     sp.pan.value = panV;
     node.connect(sp);
-    sp.connect(c.destination);
-  } else node.connect(c.destination);
+    sp.connect(dest(c));
+  } else node.connect(dest(c));
 }
 
 function noise(c: AudioContext): AudioBuffer {
@@ -193,14 +224,14 @@ function out(c: AudioContext): AudioNode {
     const wet = c.createGain();
     wet.gain.value = 0.55;
     reverb.connect(wet);
-    wet.connect(c.destination);
-    musicGain.connect(c.destination);
+    wet.connect(dest(c));
+    musicGain.connect(dest(c));
     musicGain.connect(reverb);
   }
   return musicGain;
 }
 
-type Voice = 'pad' | 'piano' | 'bell' | 'sub';
+type Voice = 'pad' | 'piano' | 'bell' | 'sub' | 'box';
 function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: number, kind: Voice): void {
   const dest = out(c);
   const g = c.createGain();
@@ -246,6 +277,20 @@ function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: numbe
     o2.start(t);
     o.stop(t + dur + 0.05);
     o2.stop(t + dur + 0.05);
+  } else if (kind === 'box') {
+    // music box: bright comb tine, fast decay
+    [1, 3.01, 6.2].forEach((m, k) => {
+      const o = c.createOscillator();
+      const gg = c.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq * m;
+      gg.gain.setValueAtTime(vol / (1 + k * 2.2), t);
+      gg.gain.exponentialRampToValueAtTime(0.0001, t + dur / (1 + k));
+      o.connect(gg);
+      gg.connect(dest);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    });
   } else if (kind === 'bell') {
     // glassy bell: inharmonic partials with a long ring
     [1, 2.76, 5.4].forEach((m, k) => {
@@ -304,6 +349,25 @@ function schedule(): void {
       melodyIdx = Math.max(0, Math.min(MELODY.length - 1, melodyIdx + Math.floor(Math.random() * 3) - 1));
       mNote(c, nextT + (Math.random() < 0.4 ? stepDur : 0), midi(MELODY[melodyIdx] + 12), 3.2, 0.03, 'bell');
     }
+    const ms = musicState;
+    if (col === 'menu' && s % 2 === 1 && Math.random() < 0.6) {
+      const n = chord.pad[(s + bar) % chord.pad.length] + 24;
+      mNote(c, nextT, midi(n), 1.2, 0.03, 'box');
+    }
+    if (col === 'gears' && ms.tension > 0.2 && s % 2 === 0) {
+      // running machine: low pulse that grows with tension
+      mNote(c, nextT, midi(chord.bass + (s % 4 === 0 ? 12 : 19)), 0.4, 0.05 * ms.tension, 'piano');
+      if (s === 0) for (const n of chord.pad.slice(0, 3)) mNote(c, nextT, midi(n - 12), stepDur * 8, 0.02 * ms.tension, 'pad');
+    }
+    if (col === 'gears' && ms.jam > 0.3 && s % 4 === 0) {
+      // tritone against the bass: unease
+      mNote(c, nextT, midi(chord.bass + 18), 1.2, 0.045 * ms.jam, 'bell');
+      mNote(c, nextT, midi(chord.bass + 12), 1.2, 0.04 * ms.jam, 'bell');
+    }
+    if (col === 'gears' && ms.swell > 0.3 && s % 2 === 0) {
+      mNote(c, nextT, midi(MELODY[(s + bar) % MELODY.length] + 12), 2.4, 0.05 * ms.swell, 'bell');
+      if (s === 0) for (const n of chord.pad) mNote(c, nextT, midi(n + 12), stepDur * 8, 0.02 * ms.swell, 'pad');
+    }
     // clockwork pulse for the GearShift bench: a soft tick on every beat
     if (col === 'gears' && s % 2 === 0) {
       const g = c.createGain();
@@ -357,7 +421,7 @@ function startAmbience(): void {
     o.type = 'sine';
     o.frequency.value = f;
     g.gain.value = 0.0015;
-    o.connect(g).connect(c.destination);
+    o.connect(g).connect(dest(c));
     o.start();
   }
 }
@@ -503,10 +567,10 @@ export const sfx = {
         pan.pan.value = 0.15;
         g.connect(pan);
         ng.connect(pan);
-        pan.connect(c.destination);
+        pan.connect(dest(c));
       } else {
-        g.connect(c.destination);
-        ng.connect(c.destination);
+        g.connect(dest(c));
+        ng.connect(dest(c));
       }
       o.start();
       o2.start();
@@ -561,8 +625,8 @@ export const sfx = {
       gate.connect(level);
       if (sp) {
         level.connect(sp);
-        sp.connect(c.destination);
-      } else level.connect(c.destination);
+        sp.connect(dest(c));
+      } else level.connect(dest(c));
       n.start();
       lfo.start();
       bias.start();
@@ -638,7 +702,7 @@ export const sfx = {
     lp.frequency.setValueAtTime(400, t0);
     lp.frequency.exponentialRampToValueAtTime(5000, t0 + 6);
     master.connect(lp);
-    lp.connect(c.destination);
+    lp.connect(dest(c));
     // soft echo: delay line with feedback, torn down when the piece is over
     const dl = c.createDelay(1.5);
     dl.delayTime.value = 0.62;
@@ -650,7 +714,7 @@ export const sfx = {
     dl.connect(fb);
     fb.connect(dl);
     dl.connect(wet);
-    wet.connect(c.destination);
+    wet.connect(dest(c));
     window.setTimeout(() => {
       for (const n of [master, lp, dl, fb, wet]) n.disconnect();
     }, 18000);
