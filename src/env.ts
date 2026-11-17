@@ -1,6 +1,7 @@
 import {
   AdditiveBlending,
   BoxGeometry,
+  PlaneGeometry,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
@@ -62,7 +63,7 @@ import { WorldId, worldState } from './worlds.js';
 const RAIN = 260;
 const rnd = (a: number, b: number): number => a + Math.random() * (b - a);
 type SkyKey = 'sky_golden' | 'sky_morning' | 'sky_noon' | 'sky_cloudy' | 'sky_storm';
-type SceneKey = WorldId | 'field' | 'bil' | 'winter' | 'char' | SkyKey;
+type SceneKey = WorldId | 'workshop' | 'field' | 'bil' | 'winter' | 'char' | SkyKey;
 const birdGeo = (() => {
   const g = new BufferGeometry();
   g.setAttribute(
@@ -92,6 +93,7 @@ export class EnvSystem extends createSystem({}) {
     ares: [],
     orbit: [],
     field: [],
+    workshop: [],
     bil: [],
     winter: [],
     char: [],
@@ -114,9 +116,15 @@ export class EnvSystem extends createSystem({}) {
   private mists: { m: Mesh; x: number; s: number }[] = [];
   private egrets: { m: Mesh; a: number; r: number; h: number; s: number }[] = [];
   private building: SceneKey = 'earth';
+  /** the workshop is one Group (one ECS entity): per-mesh entities overflow the transform pool */
+  private room: Group | null = null;
 
   private add<T extends Object3D>(m: T, x: number, y: number, z: number): T {
     m.position.set(x, y, z);
+    if (this.room) {
+      this.room.add(m);
+      return m;
+    }
     this.world.createTransformEntity(m);
     this.groups[this.building].push(m);
     return m;
@@ -240,6 +248,8 @@ export class EnvSystem extends createSystem({}) {
     this.buildOrbit();
     this.building = 'field';
     this.buildField();
+    this.building = 'workshop';
+    this.buildWorkshop();
     this.building = 'bil';
     this.buildBil();
     this.building = 'winter';
@@ -612,7 +622,6 @@ export class EnvSystem extends createSystem({}) {
       this.put(mb, rnd(-12, 12), -14 - i * 7, 1, 0, 1.0 + i * 0.3);
       this.mists.push({ m: mb, x: mb.position.x, s: rnd(0.05, 0.12) * (i % 2 ? 1 : -1) });
     }
-    this.decor();
     // calm lake
     this.put(water(44, 22, 0x4d8c98), -9, -22, 1, 0, -0.005);
     this.ring(10, 22, 38, () => shadeTree(rnd(5, 7), rnd(2.4, 3.4)), 1.0, 1.5, Math.PI * 0.45, Math.PI * 1.55);
@@ -636,17 +645,143 @@ export class EnvSystem extends createSystem({}) {
     }
   }
 
+  // ------------------------------------------------------------ cozy workshop room
+  private woodTex(): CanvasTexture {
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    const g = c.getContext('2d')!;
+    for (let i = 0; i < 8; i++) {
+      const l = 52 + Math.random() * 10;
+      g.fillStyle = `hsl(28,${42 + Math.random() * 8}%,${l}%)`;
+      g.fillRect(0, i * 64, 512, 62);
+      g.strokeStyle = 'rgba(70,40,20,0.25)';
+      for (let k = 0; k < 14; k++) {
+        g.beginPath();
+        const y = i * 64 + Math.random() * 60;
+        g.moveTo(0, y);
+        g.bezierCurveTo(150, y + (Math.random() - 0.5) * 6, 350, y + (Math.random() - 0.5) * 6, 512, y);
+        g.stroke();
+      }
+      g.fillStyle = 'rgba(40,22,10,0.55)';
+      g.fillRect(0, i * 64 + 62, 512, 2);
+      g.fillRect(((i * 173) % 480) + 10, i * 64, 2, 62);
+    }
+    const t = new CanvasTexture(c);
+    t.wrapS = t.wrapT = RepeatWrapping;
+    t.colorSpace = SRGBColorSpace;
+    return t;
+  }
+
+  private buildWorkshop(): void {
+    this.room = new Group();
+    const box = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, rough = 0.85): Mesh => {
+      const m = new Mesh(new BoxGeometry(w, h, d), new MeshStandardMaterial({ color, roughness: rough }));
+      this.add(m, x, y, z);
+      return m;
+    };
+    // floor
+    const wt = this.woodTex();
+    wt.repeat.set(4, 4);
+    const floor = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ map: wt, roughness: 0.7 }));
+    floor.rotation.x = -Math.PI / 2;
+    this.add(floor, 0, 0.02, 0);
+    // rug under the table
+    const rug = new Mesh(new CircleGeometry(1.25, 48), new MeshStandardMaterial({ color: 0x9c4a3c, roughness: 1 }));
+    rug.rotation.x = -Math.PI / 2;
+    this.add(rug, 0, 0.035, -0.5);
+    const rug2 = new Mesh(new CircleGeometry(0.95, 48), new MeshStandardMaterial({ color: 0xd9b36b, roughness: 1 }));
+    rug2.rotation.x = -Math.PI / 2;
+    this.add(rug2, 0, 0.045, -0.5);
+    // walls (plaster) and ceiling
+    const wall = (w: number, h: number, x: number, y: number, z: number, ry: number, color: number): void => {
+      const m = new Mesh(new PlaneGeometry(w, h), new MeshStandardMaterial({ color, roughness: 1 }));
+      m.rotation.y = ry;
+      this.add(m, x, y, z);
+    };
+    wall(8, 3, 0, 1.5, -3.4, 0, 0xe3cfae);
+    wall(8, 3, -3.4, 1.5, 0, Math.PI / 2, 0xd8c19d);
+    wall(8, 3, 3.4, 1.5, 0, -Math.PI / 2, 0xd8c19d);
+    wall(8, 3, 0, 1.5, 3.4, Math.PI, 0xd8c19d);
+    const ceil = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 }));
+    ceil.rotation.x = Math.PI / 2;
+    this.add(ceil, 0, 3, 0);
+    for (let i = -3; i <= 3; i += 1.5) box(0.16, 0.18, 7, 0x5b3d26, i, 2.9, 0);
+    // skirting
+    box(8, 0.12, 0.05, 0x6b4a30, 0, 0.06, -3.38);
+    // big window on the back wall with a sunset sky behind it
+    const sc = document.createElement('canvas');
+    sc.width = 8;
+    sc.height = 128;
+    const sg = sc.getContext('2d')!;
+    const gr = sg.createLinearGradient(0, 0, 0, 128);
+    gr.addColorStop(0, '#6f8fd6');
+    gr.addColorStop(0.55, '#ffcf9a');
+    gr.addColorStop(1, '#ff9a62');
+    sg.fillStyle = gr;
+    sg.fillRect(0, 0, 8, 128);
+    const st = new CanvasTexture(sc);
+    st.colorSpace = SRGBColorSpace;
+    const sky = new Mesh(new PlaneGeometry(2.6, 1.5), new MeshBasicMaterial({ map: st }));
+    this.add(sky, 0, 1.7, -3.36);
+    const fr = 0x5b3d26;
+    box(2.8, 0.1, 0.12, fr, 0, 2.5, -3.33);
+    box(2.8, 0.1, 0.12, fr, 0, 0.92, -3.33);
+    box(0.1, 1.7, 0.12, fr, -1.35, 1.7, -3.33);
+    box(0.1, 1.7, 0.12, fr, 1.35, 1.7, -3.33);
+    box(0.06, 1.5, 0.1, fr, 0, 1.7, -3.33);
+    box(2.6, 0.06, 0.1, fr, 0, 1.7, -3.33);
+    box(3.0, 0.06, 0.3, 0x6b4a30, 0, 0.9, -3.25);
+    // warm sun patch on the floor
+    const sun = new Mesh(new PlaneGeometry(1.6, 2.2), new MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.14, depthWrite: false }));
+    sun.rotation.x = -Math.PI / 2;
+    this.add(sun, 0, 0.06, -2.0);
+    // shelves on the left wall with pots, books and jars (no bottles)
+    const colors = [0xc8553d, 0x3d7ea6, 0xe0b04a, 0x6aa84f, 0x8e5ea2, 0xd98b5f];
+    for (let r = 0; r < 3; r++) {
+      const y = 0.9 + r * 0.55;
+      box(0.32, 0.05, 2.2, 0x6b4a30, -3.2, y, -0.4);
+      for (let i = 0; i < 6; i++) {
+        const z = -1.3 + i * 0.34 + Math.random() * 0.06;
+        if ((i + r) % 2) {
+          const pot = new Mesh(new CylinderGeometry(0.07, 0.05, 0.14, 16), new MeshStandardMaterial({ color: colors[(i + r * 2) % 6], roughness: 0.7 }));
+          this.add(pot, -3.2, y + 0.095, z);
+        } else {
+          box(0.18, 0.14 + Math.random() * 0.1, 0.07, colors[(i * 2 + r) % 6], -3.2, y + 0.1, z);
+        }
+      }
+    }
+    // pegboard with hanging tools on the right wall
+    box(0.03, 1.1, 2.0, 0x9a7b55, 3.36, 1.55, -0.6);
+    for (let i = 0; i < 6; i++) {
+      const z = -1.4 + i * 0.32;
+      box(0.05, 0.4 + (i % 3) * 0.12, 0.04, 0x4b4b52, 3.31, 1.5, z);
+      box(0.06, 0.12, 0.06, colors[i % 6], 3.3, 1.28 - (i % 3) * 0.05, z);
+    }
+    // pendant lamp over the table
+    const wire = new Mesh(new CylinderGeometry(0.006, 0.006, 1.2, 6), new MeshBasicMaterial({ color: 0x222222 }));
+    this.add(wire, 0, 2.4, -0.55);
+    const shade = new Mesh(new CylinderGeometry(0.09, 0.3, 0.22, 24, 1, true), new MeshStandardMaterial({ color: 0xd8a24a, side: DoubleSide, roughness: 0.6 }));
+    this.add(shade, 0, 1.78, -0.55);
+    const bulb = new Mesh(new SphereGeometry(0.07, 16, 12), new MeshBasicMaterial({ color: 0xfff1c0 }));
+    this.add(bulb, 0, 1.74, -0.55);
+    this.decor();
+    const room = this.room;
+    this.room = null;
+    this.world.createTransformEntity(room);
+    this.groups.workshop.push(room);
+  }
+
   /** CC0 apartment props (Vuena) around the workshop corner */
   private decor(): void {
     const spots: [string, number, number, number, number, number][] = [
-      ['floor_lamp', -1.35, 0, -1.0, 0.4, 1],
-      ['plant_small', 1.3, 0, -1.1, -0.3, 1],
-      ['side_table', 1.25, 0, -0.1, 0, 1],
-      ['basket', -1.2, 0, 0.25, 0.5, 1],
+      ['floor_lamp', -2.0, 0, -2.6, 0.4, 1],
+      ['plant_small', 2.4, 0, -2.4, -0.3, 1],
+      ['side_table', 2.3, 0, -1.5, 0, 1],
+      ['basket', -2.4, 0, -2.5, 0.5, 1],
     ];
     const onTable: [string, number, number, number, number][] = [
-      ['mug', 1.2, 0, 0.05, 0],
-      ['book_stack', 1.32, 0, -0.12, 0.3],
+      ['mug', 2.22, 0, -1.4, 0],
+      ['book_stack', 2.36, 0, -1.58, 0.3],
     ];
     const tryAdd = (key: string, x: number, y: number, z: number, ry: number, sc: number): void => {
       const g = AssetManager.getAsset(key) as { scene?: Object3D } | undefined;
@@ -672,7 +807,7 @@ export class EnvSystem extends createSystem({}) {
         : kiteCfg.place
       : modeState.mode === 'guti'
         ? worldState.id
-        : 'field';
+        : 'workshop';
     const skyWant: SkyKey | '' =
       want === 'field' || want === 'bil' || want === 'winter' || want === 'char'
         ? ((inKite ? 'sky_' + kiteCfg.time : 'sky_golden') as SkyKey)
