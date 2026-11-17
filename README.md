@@ -3,8 +3,9 @@
 Hands-only VR village games from Bangladesh, built for the **Meta VR Start Developer Competition 2026**.
 No controllers. Seated. Everything within arm's reach.
 
-* **গুলি (Marbles)** – pinch the white marble, pull back, release. Flick the coloured marbles out of the *goalla* ring. 13 levels across four worlds with real gravity: the village, the Moon, Mars and a zero-gravity space station.
-* **ঘুড়ি কাটাকাটি (Kite Fight)** – pinch and move your hand to fly your kite. Touch the other kites **fast** to cut their strings; touch slowly and they cut you. 60-second rounds.
+* **গুলি (Marbles)** – pinch the white marble, pull back, release. Flick the coloured marbles out of the *goalla* ring. 13 levels across four Bangladeshi places: the village courtyard, a dry harvest field, the monsoon mud and a Dhaka rooftop at dusk. Each surface changes how far a marble slides.
+* **ঘুড়ি (Kite Alive)** – stand in an open paddy field beside a beel. Pinch and move your hand to fly your kite. Touch rival kites **fast** to cut their strings, dodge crows, ride out wind gusts and keep your kite alive as long as you can.
+* **লাটিম (Lattim)** – pinch the spinning top, swing and let go. Knock the other tops out of the chalk ring before yours stops spinning. 6 rounds.
 
 Built with the Immersive Web SDK (IWSDK, WebXR), TypeScript, Three.js, Havok physics and Vite.
 
@@ -13,8 +14,8 @@ Built with the Immersive Web SDK (IWSDK, WebXR), TypeScript, Three.js, Havok phy
 **Live:** https://shahriarsharif406.github.io/guti-vr/
 
 Open the deployed link in the Meta Quest Browser, tap **Enter XR**, put your hands in front of you.
-Add `?level=5` (Moon), `?level=8` (Mars) or `?level=11` (Space Station) to the link to jump to a world.
-On a laptop you can try it with the mouse: click a card, then click-and-drag (drag down/back = pull; in kite mode drag to steer).
+Add `?level=5` (harvest field), `?level=8` (monsoon) or `?level=11` (rooftop) to the link to jump to a marbles world.
+On a laptop you can try it with the mouse: click a card, then click-and-drag (drag down/back = pull; in kite mode drag to steer; in lattim drag up and let go to throw).
 
 ## Run locally
 
@@ -44,4 +45,4 @@ Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 - Level map: tap a tile to replay any unlocked level; each shows its saved stars.
 
 ## Credits
-Village 3D models by [Kenney](https://kenney.nl) (Starter Kit City Builder, MIT).
+All scenery, models, textures and sounds are procedural (code-generated). The sunset sky lighting is a CC0 HDRI from [Poly Haven](https://polyhaven.com).

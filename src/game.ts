@@ -96,9 +96,9 @@ const LEVELS: LevelDef[] = [
   { world: 'moon', targets: 6, shots: 7, ring: 0.115, formation: 'ring', heavy: 0, gold: 0, rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is smaller. Soft taps are enough' },
   { world: 'moon', targets: 6, shots: 7, ring: 0.125, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Golden marble: bonus shot' },
   // ---- Monsoon mud
-  { world: 'mars', targets: 6, shots: 7, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy stone marbles need a strong hit' },
-  { world: 'mars', targets: 7, shots: 8, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[-0.09, 0.16], [0.09, 0.16]], tip: 'Rocks guard the sides: use the centre lane' },
-  { world: 'mars', targets: 8, shots: 8, ring: 0.1, formation: 'ring', heavy: 0, gold: 1, rocks: [], tip: 'Tight ring, golden bonus inside' },
+  { world: 'mars', targets: 6, shots: 9, ring: 0.13, formation: 'cluster', heavy: 2, gold: 0, rocks: [], tip: 'Heavy stone marbles need a strong hit' },
+  { world: 'mars', targets: 7, shots: 9, ring: 0.13, formation: 'cross', heavy: 0, gold: 0, rocks: [[-0.09, 0.16], [0.09, 0.16]], tip: 'Rocks guard the sides: use the centre lane' },
+  { world: 'mars', targets: 8, shots: 9, ring: 0.1, formation: 'ring', heavy: 0, gold: 1, rocks: [], tip: 'Tight ring, golden bonus inside' },
   // ---- Dhaka rooftop (slippery)
   { world: 'station', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Slippery cement: marbles keep sliding' },
   { world: 'station', targets: 8, shots: 8, ring: 0.12, formation: 'cluster', heavy: 2, gold: 1, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Heavy, golden and rocks together' },
@@ -307,6 +307,8 @@ export class GameSystem extends createSystem({
         ringR: this.ringR,
         won: this.won,
         score: this.score,
+        calls: this.world.renderer.info.render.calls,
+        tris: this.world.renderer.info.render.triangles,
         targets: this.targets
           .filter((t, i) => t.object3D && !this.wasOut[i])
           .map((t) => [t.object3D!.position.x, t.object3D!.position.z + 0.55]),

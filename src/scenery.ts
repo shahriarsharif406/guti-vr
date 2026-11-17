@@ -11,7 +11,10 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  Material,
   MeshStandardMaterial,
+  Matrix4,
+  Object3D,
   PlaneGeometry,
   RepeatWrapping,
   SRGBColorSpace,
@@ -25,6 +28,55 @@ import {
  */
 
 const rnd = (a: number, b: number): number => a + Math.random() * (b - a);
+
+/**
+ * Merge every mesh under `root` into one mesh per material (transforms baked in).
+ * Cuts draw calls a lot on Quest; use it for anything static.
+ */
+export function bake(root: Object3D): Group {
+  root.updateMatrixWorld(true);
+  const inv = new Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map<Material, { pos: number[]; nor: number[]; uv: number[]; idx: number[] }>();
+  const m4 = new Matrix4();
+  root.traverse((o) => {
+    const m = o as Mesh;
+    if (!m.isMesh || !m.visible) return;
+    const g = m.geometry.clone();
+    m4.multiplyMatrices(inv, m.matrixWorld);
+    g.applyMatrix4(m4);
+    const mat = m.material as Material;
+    let b = buckets.get(mat);
+    if (!b) {
+      b = { pos: [], nor: [], uv: [], idx: [] };
+      buckets.set(mat, b);
+    }
+    const base = b.pos.length / 3;
+    const p = g.getAttribute('position');
+    const n = g.getAttribute('normal');
+    const u = g.getAttribute('uv');
+    for (let i = 0; i < p.count; i++) {
+      b.pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      if (n) b.nor.push(n.getX(i), n.getY(i), n.getZ(i));
+      else b.nor.push(0, 1, 0);
+      if (u) b.uv.push(u.getX(i), u.getY(i));
+      else b.uv.push(0, 0);
+    }
+    const ix = g.getIndex();
+    if (ix) for (let i = 0; i < ix.count; i++) b.idx.push(base + ix.getX(i));
+    else for (let i = 0; i < p.count; i++) b.idx.push(base + i);
+    g.dispose();
+  });
+  const out = new Group();
+  buckets.forEach((b, mat) => {
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(new Float32Array(b.pos), 3));
+    geo.setAttribute('normal', new BufferAttribute(new Float32Array(b.nor), 3));
+    geo.setAttribute('uv', new BufferAttribute(new Float32Array(b.uv), 2));
+    geo.setIndex(new BufferAttribute(new Uint32Array(b.idx), 1));
+    out.add(new Mesh(geo, mat));
+  });
+  return out;
+}
 
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
@@ -283,7 +335,6 @@ export function palm(h: number, lean = 0.12): Group {
   trunk.position.y = h / 2;
   grp.add(trunk);
   const crown = new Group();
-  crown.position.set(0, h, 0);
   const n = 9;
   for (let i = 0; i < n; i++) {
     const f = new Mesh(palmFrond, i % 2 ? frondMat : frondMat2);
@@ -292,15 +343,11 @@ export function palm(h: number, lean = 0.12): Group {
     f.scale.setScalar(rnd(0.85, 1.15) * (h / 5));
     crown.add(f);
   }
-  const nut = new MeshStandardMaterial({ color: 0x6d7b2a, roughness: 0.6 });
-  for (let i = 0; i < 4; i++) {
-    const c = new Mesh(new SphereGeometry(0.09, 8, 6), nut);
-    c.position.set(Math.cos(i * 1.6) * 0.12, -0.12, Math.sin(i * 1.6) * 0.12);
-    crown.add(c);
-  }
-  grp.add(crown);
+  const baked = bake(crown);
+  baked.position.set(0, h, 0);
+  grp.add(baked);
   grp.rotation.z = lean;
-  grp.userData.crown = crown;
+  grp.userData.crown = baked;
   return grp;
 }
 
@@ -329,7 +376,7 @@ export function bambooClump(n = 7, h = 5): Group {
     g2.rotation.set(Math.cos(a) * 0.14, 0, -Math.sin(a) * 0.14);
     grp.add(g2);
   }
-  return grp;
+  return bake(grp);
 }
 
 export function bananaPlant(h = 2.2): Group {
@@ -344,7 +391,7 @@ export function bananaPlant(h = 2.2): Group {
     l.rotation.z = rnd(0.25, 0.6);
     grp.add(l);
   }
-  return grp;
+  return bake(grp);
 }
 
 /** A round-leaf shade tree (mango / jackfruit): trunk plus layered canopy blobs. */
@@ -368,7 +415,7 @@ export function shadeTree(h = 3.4, r = 1.5): Group {
     b.scale.set(r * rnd(0.55, 0.8), r * rnd(0.45, 0.6), r * rnd(0.55, 0.8));
     grp.add(b);
   }
-  return grp;
+  return bake(grp);
 }
 
 // ------------------------------------------------------------------ buildings
@@ -463,7 +510,7 @@ export function hut(): Group {
   const plinth = new Mesh(new BoxGeometry(w + 0.4, 0.2, d + 0.4), wallMat);
   plinth.position.y = 0.1;
   grp.add(plinth);
-  return grp;
+  return bake(grp);
 }
 
 export function haystack(r = 0.9, h = 1.7): Group {
@@ -474,7 +521,7 @@ export function haystack(r = 0.9, h = 1.7): Group {
   const top = new Mesh(new ConeGeometry(r * 1.0, h * 0.6, 10), thatchMat);
   top.position.y = h * 0.55 + h * 0.3;
   grp.add(top);
-  return grp;
+  return bake(grp);
 }
 
 /** Small country boat (nouka) for the beel. */
@@ -494,7 +541,7 @@ export function boat(): Group {
   canopy.rotation.z = Math.PI / 2;
   canopy.position.y = 0.55;
   grp.add(canopy);
-  return grp;
+  return bake(grp);
 }
 
 /** Calm beel (wetland) water with a sheen. */

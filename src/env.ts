@@ -17,6 +17,7 @@ import {
   SphereGeometry,
   CircleGeometry,
   DoubleSide,
+  Group,
   LineBasicMaterial,
   LineSegments,
   Object3D,
@@ -25,6 +26,7 @@ import {
 } from '@iwsdk/core';
 import { modeState } from './mode.js';
 import {
+  bake,
   bambooClump,
   bananaPlant,
   boat,
@@ -115,9 +117,14 @@ export class EnvSystem extends createSystem({}) {
     );
     this.add(ground, 0, 0.001, -1);
 
+    const g1 = new Group();
+    const put1 = (m: Mesh, x: number, y: number, z: number): void => {
+      m.position.set(x, y, z);
+      g1.add(m);
+    };
     // mango tree
     const bark = new MeshStandardMaterial({ color: 0x4b3326, roughness: 1 });
-    this.add(new Mesh(new CylinderGeometry(0.18, 0.26, 2.6, 12), bark), -2.8, 1.3, -3.4);
+    put1(new Mesh(new CylinderGeometry(0.18, 0.26, 2.6, 12), bark), -2.8, 1.3, -3.4);
     const leaf = new MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 });
     const blobs: [number, number, number, number][] = [
       [-2.8, 3.2, -3.4, 1.2],
@@ -126,12 +133,12 @@ export class EnvSystem extends createSystem({}) {
       [-2.9, 3.8, -3.6, 0.9],
     ];
     for (const [x, y, z, r] of blobs) {
-      this.add(new Mesh(new SphereGeometry(r, 14, 10), leaf), x, y, z);
+      put1(new Mesh(new SphereGeometry(r, 14, 10), leaf), x, y, z);
     }
     // a few mangoes
     const mango = new MeshStandardMaterial({ color: 0xf2b134, roughness: 0.6 });
     for (let i = 0; i < 6; i++) {
-      this.add(
+      put1(
         new Mesh(new SphereGeometry(0.07, 10, 8), mango),
         -2.8 + Math.cos(i * 1.7) * 0.9,
         2.7 + (i % 3) * 0.12,
@@ -139,22 +146,31 @@ export class EnvSystem extends createSystem({}) {
       );
     }
 
+    this.add(bake(g1), 0, 0, 0);
+
     this.buildVillageExtras();
 
+    const g2 = new Group();
+    const put2 = (m: Mesh, x: number, y: number, z: number): void => {
+      m.position.set(x, y, z);
+      g2.add(m);
+    };
     // clay jars (matka) near the player
     const clay = new MeshStandardMaterial({ color: 0xb4532a, roughness: 0.85 });
     for (const [x, z, s] of [[-0.9, -0.2, 1], [-1.15, -0.45, 0.8], [1.0, -0.3, 0.9]] as [number, number, number][]) {
       const jar = new Mesh(new SphereGeometry(0.2 * s, 16, 12), clay);
       jar.scale.y = 1.15;
-      this.add(jar, x, 0.23 * s, z);
-      this.add(new Mesh(new CylinderGeometry(0.09 * s, 0.12 * s, 0.14 * s, 12), clay), x, 0.5 * s, z);
+      put2(jar, x, 0.23 * s, z);
+      put2(new Mesh(new CylinderGeometry(0.09 * s, 0.12 * s, 0.14 * s, 12), clay), x, 0.5 * s, z);
     }
 
     // bamboo fence
     const bamboo = new MeshStandardMaterial({ color: 0xa8a05a, roughness: 0.9 });
     for (let i = -8; i <= 8; i++) {
-      this.add(new Mesh(new CylinderGeometry(0.035, 0.035, 1.3, 6), bamboo), i * 0.5, 0.65, -6.5);
+      put2(new Mesh(new CylinderGeometry(0.035, 0.035, 1.3, 6), bamboo), i * 0.5, 0.65, -6.5);
     }
+
+    this.add(bake(g2), 0, 0, 0);
 
     // fireflies
     for (let i = 0; i < FIREFLIES; i++) {

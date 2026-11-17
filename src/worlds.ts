@@ -35,8 +35,8 @@ export const WORLDS: Record<WorldId, WorldDef> = {
   moon: {
     id: 'moon',
     name: 'Harvest Field',
-    gravity: 9.81,
-    damping: 0.5,
+    gravity: 1.62, // tuned physics values (not shown to the player)
+    damping: 0.45,
     fact: 'Dry, dusty ground: marbles slide far',
     intro: 'The harvest field: dry ground, marbles slide far',
     sunColor: 0xffd29a,
@@ -48,8 +48,8 @@ export const WORLDS: Record<WorldId, WorldDef> = {
   mars: {
     id: 'mars',
     name: 'Monsoon',
-    gravity: 9.81,
-    damping: 1.5,
+    gravity: 3.71,
+    damping: 0.7,
     fact: 'Wet monsoon mud: marbles stop quickly',
     intro: 'Monsoon: wet mud slows every marble',
     sunColor: 0xb9c8d6,
@@ -61,8 +61,8 @@ export const WORLDS: Record<WorldId, WorldDef> = {
   station: {
     id: 'station',
     name: 'Dhaka Rooftop',
-    gravity: 9.81,
-    damping: 0.3,
+    gravity: 0,
+    damping: 0.55,
     fact: 'Smooth rooftop cement: very slippery',
     intro: 'Dhaka rooftop at dusk: slippery cement',
     sunColor: 0xff9c6a,
