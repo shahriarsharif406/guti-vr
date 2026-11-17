@@ -610,19 +610,10 @@ export class EnvSystem extends createSystem({}) {
       this.put(mb, rnd(-12, 12), -14 - i * 7, 1, 0, 1.0 + i * 0.3);
       this.mists.push({ m: mb, x: mb.position.x, s: rnd(0.05, 0.12) * (i % 2 ? 1 : -1) });
     }
-    // beel (wetland) with boats
+    // calm lake
     this.put(water(44, 22, 0x4d8c98), -9, -22, 1, 0, -0.005);
-    this.put(boat(), -6, -20, 1.5, 0.3, 0.01);
-    this.put(boat(), -15, -26, 1.3, -0.6, 0.01);
-    this.ring(14, 22, 38, () => palm(rnd(6, 9), rnd(-0.2, 0.2)), 1.0, 1.5, Math.PI * 0.45, Math.PI * 1.55);
-    this.ring(5, 18, 30, () => bambooClump(9, rnd(5, 7)), 1, 1.5, Math.PI * 0.6, Math.PI * 1.4);
-    this.ring(7, 8, 16, () => bananaPlant(rnd(2, 2.8)), 1, 1.4, Math.PI * 0.5, Math.PI * 1.5);
+    this.ring(10, 22, 38, () => shadeTree(rnd(5, 7), rnd(2.4, 3.4)), 1.0, 1.5, Math.PI * 0.45, Math.PI * 1.55);
     this.ring(14, 40, 60, () => shadeTree(rnd(5, 7), rnd(2.4, 3.4)), 1.2, 2);
-    this.put(hut(), 14, -20, 1.2, -0.7);
-    this.put(hut(), 20, -12, 1.2, -1.1);
-    this.put(hut(), -17, -18, 1.2, 0.6);
-    this.put(haystack(), 7, -9, 0.9);
-    this.put(haystack(), -7, -8, 0.8);
     // distant children's kites high over the paddy
     this.distantKites(9, -30);
     // egrets gliding low over the paddy
@@ -649,9 +640,9 @@ export class EnvSystem extends createSystem({}) {
       ? kiteCfg.place === 'village'
         ? 'field'
         : kiteCfg.place
-      : modeState.mode === 'lattim' || modeState.mode === 'danguli' || modeState.mode === 'pottery' || modeState.mode === 'kitecraft' || modeState.mode === 'marblerun'
-        ? 'field'
-        : worldState.id;
+      : modeState.mode === 'guti'
+        ? worldState.id
+        : 'field';
     const skyWant: SkyKey | '' =
       want === 'field' || want === 'bil' || want === 'winter' || want === 'char'
         ? ((inKite ? 'sky_' + kiteCfg.time : 'sky_golden') as SkyKey)

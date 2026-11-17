@@ -575,7 +575,7 @@ export class MarbleRunSystem extends createSystem({
     const h = this.hud;
     const placed = this.pieces.filter((p) => p.active && p.placed).length;
     h.card();
-    h.text('Marble run  •  গুলির পথ  ' + (this.level + 1) + '/' + LEVELS.length, 56, 32);
+    h.text('Marble run  •  ' + (this.level + 1) + '/' + LEVELS.length, 56, 32);
     h.text('Ramps placed ' + placed + ' / ' + LEVELS[this.level].pieces.length, 100, 26, '#ffd9a0');
     if (this.msgT > 0) h.text(this.msg, 150, 30, '#8dff9d');
     else h.text(this.phase === 'build' ? 'Place ramps, then press Release marble' : this.phase === 'run' ? 'Rolling...' : 'Nice!', 150, 28, '#ffe9c4');

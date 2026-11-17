@@ -56,9 +56,9 @@ interface Target {
 }
 
 const TARGETS: Target[] = [
-  { name: 'Kolshi (water pot)', bn: 'কলসি', h: 0.19, r: (t) => 0.046 + 0.046 * Math.sin(Math.PI * Math.min(1, t * 1.15 + 0.12)) - 0.012 * t },
-  { name: 'Bowl', bn: 'বাটি', h: 0.09, r: (t) => 0.045 + 0.055 * Math.pow(t, 0.8) },
-  { name: 'Tall vase', bn: 'ফুলদানি', h: 0.24, r: (t) => 0.052 + 0.028 * Math.sin(t * Math.PI * 1.6) - 0.01 * t },
+  { name: 'Water jug', bn: '', h: 0.19, r: (t) => 0.046 + 0.046 * Math.sin(Math.PI * Math.min(1, t * 1.15 + 0.12)) - 0.012 * t },
+  { name: 'Bowl', bn: '', h: 0.09, r: (t) => 0.045 + 0.055 * Math.pow(t, 0.8) },
+  { name: 'Tall vase', bn: '', h: 0.24, r: (t) => 0.052 + 0.028 * Math.sin(t * Math.PI * 1.6) - 0.01 * t },
 ];
 
 const GLAZES: { name: string; color: number }[] = [
@@ -519,7 +519,7 @@ export class PotterySystem extends createSystem({
     const h = this.hud;
     const t = TARGETS[this.targetIdx];
     h.card();
-    h.text('Pottery wheel  •  কুমোরের চাকা', 62, 34);
+    h.text('Pottery wheel', 62, 34);
     if (this.msgT > 0) {
       h.text(this.msg, 130, 38, '#8dff9d');
     } else if (!this.sculpted) {

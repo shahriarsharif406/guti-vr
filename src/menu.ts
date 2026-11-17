@@ -72,23 +72,21 @@ export class MenuSystem extends createSystem({
       color: string,
     ) => {
       p.card('rgba(40,24,12,0.88)', color);
-      p.text(bn, p.h * 0.42, 80, color);
-      p.text(en, p.h * 0.62, 50, '#ffe9c4');
-      p.text(sub, p.h * 0.82, 30, '#cdb99a');
+      p.text(en, p.h * 0.45, 52, color);
+      p.text(sub, p.h * 0.7, 30, '#cdb99a');
       p.commit();
     };
-    card(this.buttons[0].panel, 'Marbles', 'গুলি', 'Flick them out of the ring', '#7fd8ff');
-    card(this.buttons[1].panel, 'Marble Run', 'গুলির পথ', 'Build a path, roll it home', '#a6e08a');
-    card(this.buttons[2].panel, 'Kite Alive', 'ঘুড়ি', 'Make a kite, then fly it', '#ffb56b');
-    card(this.buttons[3].panel, 'Pottery', 'কুমোরের চাকা', 'Shape clay with your hands', '#e8a06a');
+    card(this.buttons[0].panel, '', 'Pottery', 'Shape clay on the wheel', '#e8a06a');
+    card(this.buttons[1].panel, '', 'Kite Workshop', 'Build a kite, then fly it', '#ffb56b');
+    card(this.buttons[2].panel, '', 'Marble Run', 'Build a path, roll it home', '#a6e08a');
     const b = this.back.panel;
     b.card('rgba(40,24,12,0.88)', '#ffd9a0');
     b.text('← Menu', b.h * 0.62, 70, '#ffe9c4');
     b.commit();
     const t = this.title;
     t.card('rgba(30,18,10,0.0)', 'rgba(0,0,0,0)');
-    t.text('GUTI', t.h * 0.5, 120, '#ffd9a0');
-    t.text('গুটি  •  make it with your hands, then play it', t.h * 0.9, 34, '#ffe9c4');
+    t.text('POCKET WORKSHOP', t.h * 0.5, 84, '#ffd9a0');
+    t.text('build it with your hands, then play it', t.h * 0.9, 34, '#ffe9c4');
     t.commit();
   }
 
@@ -96,10 +94,9 @@ export class MenuSystem extends createSystem({
     const y = TABLE_Y + 0.2;
     const z = TABLE_CENTER_Z + 0.02;
     this.buttons.push(
-      this.makeButton(MenuTargets.Guti, 0.21, 0.21, -0.36, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.MarbleRun, 0.21, 0.21, -0.12, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Kite, 0.21, 0.21, 0.12, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Pottery, 0.21, 0.21, 0.36, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Pottery, 0.21, 0.21, -0.25, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Kite, 0.21, 0.21, 0, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.MarbleRun, 0.21, 0.21, 0.25, y, z, -0.5, () => {}),
     );
     this.back = this.makeButton(
       MenuTargets.Menu,
@@ -151,7 +148,7 @@ export class MenuSystem extends createSystem({
       cam.getWorldPosition(this.head);
       cam.getWorldDirection(this.fwd);
       let hit = -1;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 3; i++) {
         this.buttons[i].mesh.getWorldPosition(this.to).sub(this.head).normalize();
         if (this.to.dot(this.fwd) > 0.985) hit = i;
       }
@@ -165,7 +162,7 @@ export class MenuSystem extends createSystem({
         this.cooldown = 0.4;
         sfx.ambience();
         sfx.select();
-        setMode(hit === 0 ? 'guti' : hit === 1 ? 'marblerun' : hit === 2 ? 'kitecraft' : 'pottery');
+        setMode(hit === 0 ? 'pottery' : hit === 1 ? 'kitecraft' : 'marblerun');
       }
     }
     // hover feedback: buttons lift a little

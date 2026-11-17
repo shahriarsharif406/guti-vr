@@ -394,7 +394,7 @@ export class KiteCraftSystem extends createSystem({
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('Kite workshop  •  ঘুড়ির কারখানা', 56, 32);
+    h.text('Kite workshop', 56, 32);
     const dots = [0, 1, 2, 3].map((i) => (i < this.step ? '●' : i === this.step ? '◉' : '○')).join('  ');
     h.text(dots, 100, 30, '#ffd9a0');
     if (this.msgT > 0) h.text(this.msg, 150, 34, '#8dff9d');
