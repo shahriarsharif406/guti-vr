@@ -31,6 +31,9 @@ import {
   bananaPlant,
   boat,
   cementTexture,
+  grassField,
+  mistBank,
+  sunShaft,
   harvestTexture,
   haystack,
   hazeDisc,
@@ -83,6 +86,8 @@ export class EnvSystem extends createSystem({}) {
   private rainGeo!: BufferGeometry;
   private rain: Object3D | null = null;
   private spinners: Mesh[] = [];
+  private mists: { m: Mesh; x: number; s: number }[] = [];
+  private egrets: { m: Mesh; a: number; r: number; h: number; s: number }[] = [];
   private building: SceneKey = 'earth';
 
   private add<T extends Object3D>(m: T, x: number, y: number, z: number): T {
@@ -377,8 +382,31 @@ export class EnvSystem extends createSystem({}) {
 
   // ------------------------------------------------------------ open countryside (kite + lattim)
   private buildField(): void {
-    this.put(paintedSky({ top: '#2f78c8', mid: '#8fc0e8', horizon: '#f7e8c4', sunU: 0.68, sunV: 0.34, sunColor: '#fff4cc', clouds: 38, cloudAlpha: 0.65 }), 0, -0.5, 1, 0, 1.3);
-    this.put(hazeDisc(70, paddyTexture(), 0xe9efd8), 0, -1, 1, 0, -0.012);
+    // golden-hour sky: sun low in front of the player, over the paddy
+    this.put(paintedSky({ top: '#2c5ea6', mid: '#eeb98c', horizon: '#ffe0b4', sunU: 0.68, sunV: 0.34, sunColor: '#ffe6ae', clouds: 42, cloudAlpha: 0.7, cloudColor: '255,226,196' }), 0, -0.5, 1, 0, 1.3);
+    this.put(hazeDisc(70, paddyTexture(), 0xf2dcb4), 0, -1, 1, 0, -0.012);
+    // close-range paddy tufts: gives the ground real depth next to the player
+    this.put(grassField(1100, 1.5, 10), 0, 0, 1, 0, 0);
+    // sun shafts fanning down from the low sun
+    const sunX = 22;
+    const sunY = 30;
+    for (let i = 0; i < 6; i++) {
+      const bx = sunX - rnd(6, 34);
+      const dx = sunX - bx;
+      const dy = sunY - 2;
+      const len = Math.hypot(dx, dy);
+      const sh = sunShaft(len, rnd(3, 7));
+      sh.position.set((sunX + bx) / 2, (sunY + 2) / 2, -46);
+      sh.rotation.z = Math.atan2(-dx, dy);
+      this.put(sh, sh.position.x, -46, 1, 0, sh.position.y);
+      sh.rotation.z = Math.atan2(-dx, dy);
+    }
+    // ground mist banks drifting between field and trees
+    for (let i = 0; i < 4; i++) {
+      const mb = mistBank(rnd(30, 44), rnd(3, 5));
+      this.put(mb, rnd(-12, 12), -14 - i * 7, 1, 0, 1.0 + i * 0.3);
+      this.mists.push({ m: mb, x: mb.position.x, s: rnd(0.05, 0.12) * (i % 2 ? 1 : -1) });
+    }
     // beel (wetland) with boats
     this.put(water(44, 22, 0x4d8c98), -9, -22, 1, 0, -0.005);
     this.put(boat(), -6, -20, 1.5, 0.3, 0.01);
@@ -394,6 +422,14 @@ export class EnvSystem extends createSystem({}) {
     this.put(haystack(), -7, -8, 0.8);
     // distant children's kites high over the paddy
     this.distantKites(9, -30);
+    // egrets gliding low over the paddy
+    const egretMat = new MeshBasicMaterial({ color: 0xfafaf4, side: DoubleSide });
+    for (let i = 0; i < 7; i++) {
+      const b = new Mesh(birdGeo, egretMat);
+      this.put(b, 0, -20, 1, 0, 3);
+      b.scale.set(2.4, 2.4, 2.4);
+      this.egrets.push({ m: b, a: Math.random() * 6.28, r: 9 + Math.random() * 8, h: 2 + Math.random() * 2.5, s: 0.08 + Math.random() * 0.06 });
+    }
     // a loose flock far away
     for (let i = 0; i < 9; i++) {
       const b = new Mesh(birdGeo, birdMat);
@@ -432,6 +468,19 @@ export class EnvSystem extends createSystem({}) {
         b.m.rotation.y = -a;
         b.m.scale.y = 1;
         b.m.rotation.z = Math.sin(this.t * 9 + b.a * 7) * 0.5;
+      }
+    }
+    if (want === 'field') {
+      for (const mi of this.mists) {
+        mi.x += mi.s * dt;
+        if (Math.abs(mi.x) > 22) mi.s = -mi.s;
+        mi.m.position.x = mi.x;
+      }
+      for (const b of this.egrets) {
+        const a = b.a + this.t * b.s;
+        b.m.position.set(Math.sin(a) * b.r, b.h + Math.sin(this.t * 0.9 + b.a) * 0.3, -Math.cos(a) * b.r - 6);
+        b.m.rotation.y = -a;
+        b.m.rotation.z = Math.sin(this.t * 4 + b.a * 7) * 0.35;
       }
     }
     if (want === 'mars' && this.rain) {

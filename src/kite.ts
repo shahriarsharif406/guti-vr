@@ -9,6 +9,7 @@ import {
   BufferAttribute as BA,
   CanvasTexture,
   CylinderGeometry,
+  RepeatWrapping,
   MeshStandardMaterial,
   Mesh,
   MeshBasicMaterial,
@@ -24,7 +25,7 @@ import { readPinchPoint } from './hand.js';
 import { emitBurst } from './fx.js';
 import { SphereGeometry } from '@iwsdk/core';
 import { modeState, setMode } from './mode.js';
-import { isFontReady, TextPanel } from './panel.js';
+import { FONT, isFontReady, TextPanel } from './panel.js';
 
 // ---- Sky layout (meters, in front of the seated player)
 const TABLE_Y = 0.72;
@@ -49,6 +50,52 @@ const STRING_PTS = 10;
 const TAIL_PTS = 7;
 const PINCH_START = 0.92;
 const PINCH_HOLD = 0.6;
+const GUST_DUR = 3;
+const GUST_PEAK = 0.35;
+const FORECAST_S = 24; // seconds of wind shown in the forecast graph
+const STREAMS = 2;
+const STREAM_HALF = 0.13;
+const TENSION_BAR_W = 0.38;
+const TENSION_BAR_X = 0.05;
+const TENSION_BAR_Y = 0.0185;
+
+let streamTex: CanvasTexture | null = null;
+/** Soft golden band with chevrons, scrolled sideways to show the wind direction. */
+function streamTexture(): CanvasTexture {
+  if (streamTex) return streamTex;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 128;
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  const grad = g.createLinearGradient(0, 0, 0, 128);
+  grad.addColorStop(0, 'rgba(255,200,80,0)');
+  grad.addColorStop(0.5, 'rgba(255,176,40,0.7)');
+  grad.addColorStop(1, 'rgba(255,200,80,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 512, 128);
+  g.strokeStyle = 'rgba(255,255,255,0.95)';
+  g.lineCap = 'round';
+  g.lineWidth = 5;
+  for (const x of [60, 190, 320, 450]) {
+    g.beginPath();
+    g.moveTo(x - 14, 44);
+    g.lineTo(x + 6, 64);
+    g.lineTo(x - 14, 84);
+    g.stroke();
+  }
+  g.lineWidth = 2;
+  g.strokeStyle = 'rgba(255,240,180,0.55)';
+  for (const [y, x0, x1] of [[50, 10, 120], [78, 130, 260], [58, 280, 400], [72, 400, 500]]) {
+    g.beginPath();
+    g.moveTo(x0, y);
+    g.lineTo(x1, y);
+    g.stroke();
+  }
+  streamTex = new CanvasTexture(c);
+  streamTex.wrapS = RepeatWrapping;
+  streamTex.colorSpace = SRGBColorSpace;
+  return streamTex;
+}
 
 type HandName = 'left' | 'right';
 
@@ -261,8 +308,31 @@ export class KiteSystem extends createSystem({}) {
   private comboTimer = 0;
   private sharpT = 0;
   private gustT = 0;
-  private nextGust = 14;
   private gustDir = 1;
+  private gusts: { t0: number; dir: number }[] = [];
+  private lastGust = -1;
+  private tension = 0;
+  private easing = false;
+  private spaceDown = false;
+  private streamScore = 0;
+  private streamCooldown = 0;
+  private inStream = false;
+  private streams: { mesh: Mesh; y: number; dir: number }[] = [];
+  private barFill!: Mesh;
+  // hazards: enemy manjha string sweeping across, and a diving eagle
+  private manjha!: Line;
+  private manjhaPos = new Float32Array(8 * 3);
+  private manjhaOn = false;
+  private manjhaX = 0;
+  private manjhaDir = 1;
+  private manjhaY0 = 0;
+  private manjhaY1 = 0;
+  private nextManjha = 15;
+  private eagle!: Bird;
+  private eagleState = 0; // 0 off, 1 warning, 2 diving
+  private eagleT = 0;
+  private nextEagle = 22;
+  private eagleVel = new Vector3();
   private flashText = '';
   private flashTimer = 0;
   private overTimer = 0;
@@ -341,11 +411,42 @@ export class KiteSystem extends createSystem({}) {
     this.world.createTransformEntity(this.orb);
     this.root.push(this.orb);
 
-    this.hud = new TextPanel(0.5, 0.2);
-    this.hud.mesh.position.set(0, TABLE_Y + 0.27, TABLE_CENTER_Z - 0.3);
+    const mg = new BufferGeometry();
+    mg.setAttribute('position', new BufferAttribute(this.manjhaPos, 3));
+    this.manjha = new Line(mg, new LineBasicMaterial({ color: 0xff3030 }));
+    this.manjha.frustumCulled = false;
+    this.manjha.visible = false;
+    this.world.createTransformEntity(this.manjha);
+    this.root.push(this.manjha);
+    this.eagle = new Bird();
+    this.eagle.group.scale.setScalar(2.4);
+    this.world.createTransformEntity(this.eagle.group);
+    this.root.push(this.eagle.group);
+
+    this.hud = new TextPanel(0.56, 0.3);
+    this.hud.mesh.position.set(0, TABLE_Y + 0.2, TABLE_CENTER_Z - 0.15);
     this.hud.mesh.rotation.x = -0.45;
     this.world.createTransformEntity(this.hud.mesh);
     this.root.push(this.hud.mesh);
+    // live string-tension bar, drawn over the HUD card
+    this.barFill = new Mesh(new PlaneGeometry(1, 0.02), new MeshBasicMaterial({ color: 0x66dd77 }));
+    this.barFill.position.set(0, TENSION_BAR_Y, 0.003);
+    this.hud.mesh.add(this.barFill);
+    // golden wind streams: stay inside for lift
+    for (let i = 0; i < STREAMS; i++) {
+      const tex = i === 0 ? streamTexture() : streamTexture().clone();
+      tex.wrapS = RepeatWrapping;
+      tex.repeat.set(3, 1);
+      tex.needsUpdate = true;
+      const m = new Mesh(
+        new PlaneGeometry(2.4, STREAM_HALF * 2.4),
+        new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.8 }),
+      );
+      m.position.set(0, 1.4, SKY_Z - 0.06);
+      this.world.createTransformEntity(m);
+      this.root.push(m);
+      this.streams.push({ mesh: m, y: 1.4, dir: i === 0 ? 1 : -1 });
+    }
     for (let i = 0; i < BIRDS; i++) {
       const b = new Bird();
       this.birds.push(b);
@@ -402,10 +503,23 @@ export class KiteSystem extends createSystem({}) {
     const up = () => {
       this.mouseDown = false;
     };
+    const kd = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        this.spaceDown = true;
+        e.preventDefault();
+      }
+    };
+    const ku = (e: KeyboardEvent) => {
+      if (e.code === 'Space') this.spaceDown = false;
+    };
+    window.addEventListener('keydown', kd);
+    window.addEventListener('keyup', ku);
     window.addEventListener('pointerdown', down);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     this.cleanupFuncs.push(() => {
+      window.removeEventListener('keydown', kd);
+      window.removeEventListener('keyup', ku);
       window.removeEventListener('pointerdown', down);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -438,7 +552,23 @@ export class KiteSystem extends createSystem({}) {
     this.comboTimer = 0;
     this.sharpT = 0;
     this.gustT = 0;
-    this.nextGust = 12 + Math.random() * 4;
+    this.gusts.length = 0;
+    let gt = 11 + Math.random() * 4;
+    for (let i = 0; i < 30; i++) {
+      this.gusts.push({ t0: gt, dir: Math.random() < 0.5 ? -1 : 1 });
+      gt += 13 + Math.random() * 5;
+    }
+    this.manjhaOn = false;
+    this.manjha.visible = false;
+    this.nextManjha = 15;
+    this.eagleState = 0;
+    this.eagle.group.visible = false;
+    this.nextEagle = 24;
+    this.lastGust = -1;
+    this.tension = 0.1;
+    this.streamScore = 0;
+    this.streamCooldown = 0;
+    this.inStream = false;
     this.orbActive = false;
     this.nextOrb = 10;
     this.orb.visible = false;
@@ -452,7 +582,7 @@ export class KiteSystem extends createSystem({}) {
       e.spawnDelay = e.slot * 0.4;
       e.kite.group.visible = false;
     }
-    this.flash('Pinch and move your hand. Touch kites fast to cut!', 4);
+    this.flash('Pinch and move to fly. Hold 2nd hand or SPACE to ease the string', 5);
     this.hudDirty = true;
   }
 
@@ -756,6 +886,200 @@ export class KiteSystem extends createSystem({}) {
     attr.needsUpdate = true;
   }
 
+  /** Index of the gust active at time t, or -1. */
+  private gustIndex(t: number): number {
+    for (let i = 0; i < this.gusts.length; i++) {
+      const g = this.gusts[i];
+      if (t >= g.t0 && t < g.t0 + GUST_DUR) return i;
+    }
+    return -1;
+  }
+
+  private windAt(t: number): number {
+    const i = this.gustIndex(t);
+    if (i < 0) return 0;
+    const g = this.gusts[i];
+    return g.dir * GUST_PEAK * Math.sin(((t - g.t0) / GUST_DUR) * Math.PI);
+  }
+
+  private nextGustIn(): number {
+    for (const g of this.gusts) if (g.t0 > this.roundT) return g.t0 - this.roundT;
+    return -1;
+  }
+
+  /** Streams drift up and down; being inside one gives lift (points + relief). */
+  private updateStreams(delta: number): void {
+    const bases = [1.3, 1.72];
+    let inside = false;
+    for (let i = 0; i < this.streams.length; i++) {
+      const st = this.streams[i];
+      st.y = bases[i] + Math.sin(this.elapsed * 0.22 + i * 2.4) * 0.2;
+      st.mesh.position.y = st.y;
+      const tex = (st.mesh.material as MeshBasicMaterial).map as CanvasTexture;
+      tex.offset.x -= st.dir * delta * 0.22;
+      const near = Math.abs(this.mine.pos.y - st.y) < STREAM_HALF && this.phase === 'play';
+      (st.mesh.material as MeshBasicMaterial).opacity = near ? 1 : 0.7;
+      if (near) inside = true;
+    }
+    if (inside && this.phase === 'play') {
+      this.streamScore += delta * 15;
+      if (this.streamScore >= 1) {
+        const add = Math.floor(this.streamScore);
+        this.streamScore -= add;
+        this.score += add;
+      }
+      if (!this.inStream && this.streamCooldown <= 0) {
+        this.flash('Golden stream: free lift!', 1.2);
+        this.streamCooldown = 6;
+      }
+    }
+    this.streamCooldown = Math.max(0, this.streamCooldown - delta);
+    this.inStream = inside;
+  }
+
+  /** String tension: fast moves and gusts pull it tight; rest, streams or easing relax it. */
+  private updateTension(delta: number): void {
+    if (this.phase !== 'play') return;
+    let ease = this.spaceDown;
+    if (!ease && (this.dragHand === 'left' || this.dragHand === 'right')) {
+      ease = this.readPinch(this.dragHand === 'left' ? 'right' : 'left');
+    }
+    this.easing = ease;
+    const up = 0.03 + this.speed * 0.35 + Math.abs(this.windAt(this.roundT)) * 1.0;
+    const down = ease ? 0.95 : this.inStream ? 0.5 : 0.22;
+    const before = this.tension;
+    this.tension = Math.max(0, Math.min(1, this.tension + (up - down) * delta));
+    if (this.tension > 0.85 && before <= 0.85 && this.flashTimer <= 0) {
+      this.flash('String is tight! Ease it', 1.2);
+    }
+    if (this.tension >= 1 && this.hurtCooldown <= 0) {
+      this.lives -= 1;
+      this.hurtCooldown = 2;
+      this.combo = 0;
+      this.comboTimer = 0;
+      this.tension = 0.35;
+      sfx.cut();
+      emitBurst(this.mine.pos.x, this.mine.pos.y, this.mine.pos.z, 1, 1, 1, 18, 0.5);
+      this.flash('String snapped! +1 mistake', 1.4);
+      if (this.lives <= 0) this.endRound();
+      this.hudDirty = true;
+    }
+    // live bar
+    const t = this.tension;
+    const w = TENSION_BAR_W * Math.max(0.001, t);
+    this.barFill.scale.x = w;
+    this.barFill.position.x = TENSION_BAR_X - TENSION_BAR_W / 2 + w / 2;
+    const m = this.barFill.material as MeshBasicMaterial;
+    m.color.setRGB(Math.min(1, 0.4 + t * 1.2), Math.max(0.2, 0.9 - t * 0.9), 0.3);
+  }
+
+  private hurtPlayer(msg: string): void {
+    this.lives -= 1;
+    this.hurtCooldown = 2;
+    this.combo = 0;
+    this.comboTimer = 0;
+    sfx.hurt();
+    this.flash(msg, 1.3);
+    this.hudDirty = true;
+    if (this.lives <= 0) this.endRound();
+  }
+
+  /** Enemy manjha string sweeping across, and an eagle that dives at the kite. */
+  private updateHazards(delta: number): void {
+    if (this.phase !== 'play') {
+      this.manjhaOn = false;
+      this.manjha.visible = false;
+      this.eagleState = 0;
+      this.eagle.group.visible = false;
+      return;
+    }
+    const ramp = 1 + Math.min(this.roundT / 120, 1) * 0.4;
+    // --- enemy string: hangs from above or rises from below; fly under / over its end
+    if (!this.manjhaOn) {
+      this.nextManjha -= delta;
+      if (this.nextManjha <= 0 && this.roundT > 12) {
+        this.manjhaOn = true;
+        this.manjhaDir = Math.random() < 0.5 ? -1 : 1;
+        this.manjhaX = -this.manjhaDir * (BOX_X + 0.2);
+        if (Math.random() < 0.5) {
+          this.manjhaY0 = 2.3;
+          this.manjhaY1 = 1.55 + Math.random() * 0.2;
+          this.flash('Enemy string! Go UNDER it', 1.6);
+        } else {
+          this.manjhaY0 = 0.8;
+          this.manjhaY1 = 1.3 + Math.random() * 0.2;
+          this.flash('Enemy string! Go OVER it', 1.6);
+        }
+        this.manjha.visible = true;
+        sfx.whoosh();
+        this.nextManjha = (16 + Math.random() * 6) / ramp;
+      }
+    } else {
+      this.manjhaX += this.manjhaDir * 0.5 * ramp * delta;
+      for (let i = 0; i < 8; i++) {
+        const t = i / 7;
+        this.manjhaPos[i * 3] = this.manjhaX + Math.sin(this.elapsed * 3 + i) * 0.015 + Math.sin(t * Math.PI) * 0.04 * -this.manjhaDir;
+        this.manjhaPos[i * 3 + 1] = this.manjhaY0 + (this.manjhaY1 - this.manjhaY0) * t;
+        this.manjhaPos[i * 3 + 2] = SKY_Z + 0.02;
+      }
+      (this.manjha.geometry.getAttribute('position') as BA).needsUpdate = true;
+      const lo = Math.min(this.manjhaY0, this.manjhaY1) - 0.07;
+      const hi = Math.max(this.manjhaY0, this.manjhaY1) + 0.07;
+      const py = this.mine.pos.y;
+      if (Math.abs(this.manjhaX - this.mine.pos.x) < 0.07 && py > lo && py < hi && this.hurtCooldown <= 0) {
+        emitBurst(this.mine.pos.x, this.mine.pos.y, this.mine.pos.z, 1, 0.2, 0.2, 20, 0.5);
+        sfx.cut();
+        this.hurtPlayer('Enemy string cut you!');
+      }
+      if (Math.abs(this.manjhaX) > BOX_X + 0.35) {
+        this.manjhaOn = false;
+        this.manjha.visible = false;
+      }
+    }
+    // --- eagle: shakes at the edge (warning), then dives where your kite was
+    const ea = this.eagle;
+    if (this.eagleState === 0) {
+      this.nextEagle -= delta;
+      if (this.nextEagle <= 0 && this.roundT > 20) {
+        this.eagleState = 1;
+        this.eagleT = 1.3;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        ea.group.position.set(side * (BOX_X - 0.05), 2.2, SKY_Z);
+        ea.group.scale.x = 2.4 * -side;
+        ea.group.visible = true;
+        this.flash('Eagle! It will dive at you', 1.5);
+        sfx.whoosh();
+        this.nextEagle = (22 + Math.random() * 8) / ramp;
+      }
+    } else if (this.eagleState === 1) {
+      this.eagleT -= delta;
+      ea.flap(this.elapsed * 1.8);
+      ea.group.position.y += Math.sin(this.elapsed * 20) * 0.002;
+      if (this.eagleT <= 0) {
+        this.eagleState = 2;
+        this.eagleT = 1.4;
+        this.eagleVel.subVectors(this.mine.pos, ea.group.position).setZ(0).normalize().multiplyScalar(2.3 * ramp);
+        sfx.whoosh();
+      }
+    } else {
+      this.eagleT -= delta;
+      ea.flap(this.elapsed * 1.8);
+      ea.group.position.x += this.eagleVel.x * delta;
+      ea.group.position.y += this.eagleVel.y * delta;
+      const dx = ea.group.position.x - this.mine.pos.x;
+      const dy = ea.group.position.y - this.mine.pos.y;
+      if (dx * dx + dy * dy < 0.02 && this.hurtCooldown <= 0) {
+        emitBurst(ea.group.position.x, ea.group.position.y, SKY_Z, 0.3, 0.2, 0.1, 24, 0.6);
+        this.hurtPlayer('Eagle hit your kite!');
+        this.eagleState = 0;
+        ea.group.visible = false;
+      } else if (this.eagleT <= 0) {
+        this.eagleState = 0;
+        ea.group.visible = false;
+      }
+    }
+  }
+
   private endRound(): void {
     this.phase = 'over';
     this.overTimer = 5;
@@ -788,31 +1112,65 @@ export class KiteSystem extends createSystem({}) {
   private drawHud(): void {
     const h = this.hud;
     h.card();
-    h.text('Kite Alive', 62, 48);
+    h.text('Kite Alive', 46, 40);
+    const c = h.ctx;
     if (this.phase === 'over') {
-      h.text('Survived ' + this.fmt(this.time) + '   Score ' + this.score, 140, 36, '#8dff9d');
-      h.text('Best ' + this.fmt(this.bestTime) + ' / ' + this.best + '  •  back to menu...', 215, 26, '#cdb99a');
-    } else {
-      const mult = this.comboTimer > 0 ? '  x' + Math.min(this.combo, 5) : '';
-      h.text(
-        this.fmt(this.time) + '   Score ' + this.score + mult + '   ' + '♥'.repeat(this.lives),
-        140,
-        36,
-      );
-      let line = 'Keep your kite alive: dodge birds, cut fast';
-      let color = '#cdb99a';
-      if (this.flashTimer > 0) {
-        line = this.flashText;
-        color = '#ffe27a';
-      } else if (this.sharpT > 0) {
-        line = 'SHARP STRING ' + Math.ceil(this.sharpT) + 's';
-        color = '#ff8a8a';
-      } else if (this.gustT > 0) {
-        line = 'Wind gust!';
-        color = '#9fd8ff';
-      }
-      h.text(line, 215, 28, color);
+      h.text('Survived ' + this.fmt(this.time) + '   Score ' + this.score, 130, 36, '#8dff9d');
+      h.text('Best ' + this.fmt(this.bestTime) + ' / ' + this.best, 200, 28, '#cdb99a');
+      h.text('back to menu...', 260, 26, '#cdb99a');
+      h.commit();
+      return;
     }
+    const mult = this.comboTimer > 0 ? '  x' + Math.min(this.combo, 5) : '';
+    h.text(this.fmt(this.time) + '   Score ' + this.score + mult + '   ' + '♥'.repeat(this.lives), 96, 32);
+    // string tension track (the live fill is a separate mesh)
+    h.text('STRING', 156, 20, this.easing ? '#9fe8ff' : '#cdb99a', 80);
+    c.fillStyle = 'rgba(0,0,0,0.45)';
+    c.fillRect(160, 136, 434, 28);
+    c.strokeStyle = this.tension > 0.85 ? '#ff6a5a' : '#ffd9a0';
+    c.lineWidth = 3;
+    c.strokeRect(160, 136, 434, 28);
+    // wind forecast: what the wind will do over the next seconds
+    h.text('WIND', 218, 20, '#cdb99a', 80);
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.fillRect(160, 176, 434, 76);
+    c.beginPath();
+    c.moveTo(160, 252);
+    for (let x = 0; x <= 434; x += 6) {
+      const v = Math.abs(this.windAt(this.roundT + (x / 434) * FORECAST_S)) / GUST_PEAK;
+      c.lineTo(160 + x, 252 - v * 62);
+    }
+    c.lineTo(594, 252);
+    c.closePath();
+    c.fillStyle = 'rgba(255,200,90,0.45)';
+    c.fill();
+    c.strokeStyle = '#ffd66b';
+    c.lineWidth = 3;
+    c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,0.8)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(161, 176);
+    c.lineTo(161, 252);
+    c.stroke();
+    const nx = this.nextGustIn();
+    c.textAlign = 'right';
+    c.fillStyle = '#ffe9c4';
+    c.font = '700 20px ' + FONT;
+    c.fillText(this.gustT > 0 ? 'Gust now!' : nx >= 0 ? 'Gust in ' + Math.ceil(nx) + 's' : 'Calm', 586, 198);
+    let line = 'Cut fast, dodge crows, eagles, enemy strings';
+    let color = '#cdb99a';
+    if (this.flashTimer > 0) {
+      line = this.flashText;
+      color = '#ffe27a';
+    } else if (this.sharpT > 0) {
+      line = 'SHARP STRING ' + Math.ceil(this.sharpT) + 's';
+      color = '#ff8a8a';
+    } else if (this.inStream) {
+      line = 'In the golden stream: lift!';
+      color = '#ffd66b';
+    }
+    h.text(line, 300, 26, color);
     h.commit();
   }
 
@@ -849,29 +1207,29 @@ export class KiteSystem extends createSystem({}) {
       if (this.sharpT <= 0) this.hudDirty = true;
     }
 
-    // wind gusts push every kite sideways for a few seconds
+    // wind gusts push every kite sideways (pre-planned, so the forecast is true)
     let wind = 0;
     if (this.phase === 'play') {
-      this.nextGust -= delta;
-      if (this.nextGust <= 0 && this.gustT <= 0) {
-        this.gustT = 3;
-        this.gustDir = Math.random() < 0.5 ? -1 : 1;
-        this.nextGust = 13 + Math.random() * 5;
-        sfx.whoosh();
+      const gi = this.gustIndex(this.roundT);
+      if (gi !== this.lastGust) {
+        this.lastGust = gi;
         this.hudDirty = true;
+        if (gi >= 0) {
+          this.gustDir = this.gusts[gi].dir;
+          sfx.whoosh();
+        }
       }
-      if (this.gustT > 0) {
-        this.gustT -= delta;
-        wind = this.gustDir * 0.35 * Math.sin((1 - this.gustT / 3) * Math.PI);
-        if (this.gustT <= 0) this.hudDirty = true;
-      }
+      this.gustT = gi >= 0 ? 1 : 0;
+      wind = this.windAt(this.roundT);
+    } else {
+      this.gustT = 0;
     }
 
     if (this.phase === 'play') {
       this.updateInput();
       this.roundT += delta;
       this.time += delta;
-      const sec = Math.floor(this.time);
+      const sec = Math.floor(this.time * 4);
       if (sec !== this.lastSecond) {
         this.lastSecond = sec;
         this.hudDirty = true;
@@ -893,7 +1251,10 @@ export class KiteSystem extends createSystem({}) {
     this.speed += (inst - this.speed) * Math.min(1, delta * 12);
     k.group.rotation.z = Math.max(-0.5, Math.min(0.5, (this.target.x - k.pos.x) * -1.2));
 
+    this.updateStreams(delta);
+    this.updateTension(delta);
     this.updateBirds(delta);
+    this.updateHazards(delta);
     this.updateLeaves(delta, wind);
     for (const e of this.enemies) this.enemyUpdate(e, delta, wind);
     if (this.phase === 'play') this.checkContacts();

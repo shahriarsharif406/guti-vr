@@ -2,8 +2,10 @@ import {
   BackSide,
   BoxGeometry,
   BufferAttribute,
+  AdditiveBlending,
   BufferGeometry,
   CanvasTexture,
+  InstancedMesh,
   CircleGeometry,
   ConeGeometry,
   CylinderGeometry,
@@ -565,4 +567,128 @@ export function water(w: number, d: number, color = 0x3f7f8c): Mesh {
   );
   m.rotation.x = -Math.PI / 2;
   return m;
+}
+
+
+// ------------------------------------------------------------------ close-range detail
+let grassTex: CanvasTexture | null = null;
+function grassTexture(): CanvasTexture {
+  if (grassTex) return grassTex;
+  const [c, g] = canvas(128, 128);
+  for (let i = 0; i < 16; i++) {
+    const x = 10 + Math.random() * 108;
+    const lean = rnd(-26, 26);
+    const top = rnd(8, 60);
+    const grad = g.createLinearGradient(0, 128, 0, top);
+    grad.addColorStop(0, '#4a8a30');
+    grad.addColorStop(0.6, '#8fce52');
+    grad.addColorStop(1, '#d9e58a');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(x - 3, 128);
+    g.quadraticCurveTo(x + lean * 0.3, 128 - (128 - top) * 0.6, x + lean, top);
+    g.quadraticCurveTo(x + lean * 0.3 + 2, 128 - (128 - top) * 0.55, x + 3, 128);
+    g.fill();
+  }
+  grassTex = new CanvasTexture(c);
+  grassTex.colorSpace = SRGBColorSpace;
+  return grassTex;
+}
+
+/** Thousands of paddy/grass tufts around the player as one draw call (crossed quads). */
+export function grassField(count: number, rMin: number, rMax: number): InstancedMesh {
+  const a = new PlaneGeometry(0.32, 0.32);
+  a.translate(0, 0.16, 0);
+  const b = a.clone();
+  b.rotateY(Math.PI / 2);
+  const parts = [a, b];
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const nor: number[] = [];
+  const idx: number[] = [];
+  let base = 0;
+  for (const p of parts) {
+    const pp = p.getAttribute('position');
+    const uu = p.getAttribute('uv');
+    for (let i = 0; i < pp.count; i++) {
+      pos.push(pp.getX(i), pp.getY(i), pp.getZ(i));
+      uv.push(uu.getX(i), uu.getY(i));
+      nor.push(0, 1, 0);
+    }
+    const ii = p.getIndex();
+    if (ii) for (let i = 0; i < ii.count; i++) idx.push(ii.getX(i) + base);
+    base += pp.count;
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  geo.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  geo.setIndex(idx);
+  const mesh = new InstancedMesh(
+    geo,
+    new MeshStandardMaterial({ map: grassTexture(), alphaTest: 0.4, side: DoubleSide, roughness: 1 }),
+    count,
+  );
+  const m = new Matrix4();
+  const rot = new Matrix4();
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const r = rMin + Math.sqrt(Math.random()) * (rMax - rMin);
+    const sc = rnd(0.7, 1.3);
+    m.makeScale(sc, sc * rnd(0.7, 1.2), sc);
+    rot.makeRotationY(Math.random() * 6.28);
+    m.premultiply(rot);
+    m.setPosition(Math.sin(ang) * r, 0, -Math.cos(ang) * r);
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+/** A soft slanted sun shaft: bright near the sun, fading toward the ground. */
+export function sunShaft(len: number, width: number, color = '255,236,180'): Mesh {
+  const [c, g] = canvas(64, 256);
+  const h = g.createLinearGradient(0, 0, 64, 0);
+  h.addColorStop(0, 'rgba(' + color + ',0)');
+  h.addColorStop(0.5, 'rgba(' + color + ',1)');
+  h.addColorStop(1, 'rgba(' + color + ',0)');
+  g.fillStyle = h;
+  g.fillRect(0, 0, 64, 256);
+  g.globalCompositeOperation = 'destination-in';
+  const v = g.createLinearGradient(0, 0, 0, 256);
+  v.addColorStop(0, 'rgba(0,0,0,1)');
+  v.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = v;
+  g.fillRect(0, 0, 64, 256);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  const mesh = new Mesh(
+    new PlaneGeometry(width, len),
+    new MeshBasicMaterial({ map: t, transparent: true, opacity: 0.16, blending: AdditiveBlending, depthWrite: false, fog: false, side: DoubleSide }),
+  );
+  mesh.renderOrder = -5;
+  return mesh;
+}
+
+/** A low band of ground mist; drifts sideways for depth between the paddy and the trees. */
+export function mistBank(w: number, h: number, color = '255,236,205', alpha = 0.4): Mesh {
+  const [c, g] = canvas(256, 64);
+  const grad = g.createRadialGradient(128, 40, 4, 128, 40, 128);
+  grad.addColorStop(0, 'rgba(' + color + ',' + alpha + ')');
+  grad.addColorStop(0.6, 'rgba(' + color + ',' + alpha * 0.4 + ')');
+  grad.addColorStop(1, 'rgba(' + color + ',0)');
+  g.save();
+  g.scale(1, 0.5);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 128);
+  g.restore();
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  const mesh = new Mesh(
+    new PlaneGeometry(w, h),
+    new MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, fog: false }),
+  );
+  mesh.renderOrder = -4;
+  return mesh;
 }
