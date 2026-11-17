@@ -244,7 +244,6 @@ export class EnvSystem extends createSystem({}) {
     this.buildWinter();
     this.building = 'char';
     this.buildChar();
-    this.buildSkies();
     this.building = 'earth';
     this.showWorld('earth');
   }
@@ -470,26 +469,31 @@ export class EnvSystem extends createSystem({}) {
 
 
   // ------------------------------------------------------------ kite skies (time of day / weather)
-  private buildSkies(): void {
-    const skies: [SkyKey, Parameters<typeof paintedSky>[0]][] = [
-      ['sky_golden', { top: '#2c5ea6', mid: '#eeb98c', horizon: '#ffe0b4', sunU: 0.68, sunV: 0.34, sunColor: '#ffe6ae', clouds: 42, cloudAlpha: 0.7, cloudColor: '255,226,196' }],
-      ['sky_morning', { top: '#6a9bd6', mid: '#f4d3b8', horizon: '#fdeed8', sunU: 0.6, sunV: 0.4, sunColor: '#fff4d6', clouds: 22, cloudAlpha: 0.5, cloudColor: '255,238,222' }],
-      ['sky_noon', { top: '#2a78cc', mid: '#86c0ec', horizon: '#e6f1f7', sunU: 0.7, sunV: 0.16, sunColor: '#ffffff', clouds: 34, cloudAlpha: 0.75 }],
-      ['sky_cloudy', { top: '#76869a', mid: '#a5b2bd', horizon: '#d4dadc', clouds: 60, cloudAlpha: 0.8, cloudColor: '170,180,190' }],
-      ['sky_storm', { top: '#262f3f', mid: '#515c6b', horizon: '#98a1a8', clouds: 70, cloudAlpha: 0.88, cloudColor: '62,70,84' }],
-    ];
-    for (const [key, o] of skies) {
-      this.building = key;
-      this.put(paintedSky(o), 0, -0.5, 1, 0, 1.3);
+  private skyBuilt = new Set<SkyKey>();
+  private static readonly SKY_DEFS: Record<SkyKey, Parameters<typeof paintedSky>[0]> = {
+    sky_golden: { top: '#2c5ea6', mid: '#eeb98c', horizon: '#ffe0b4', sunU: 0.68, sunV: 0.34, sunColor: '#ffe6ae', clouds: 42, cloudAlpha: 0.7, cloudColor: '255,226,196' },
+    sky_morning: { top: '#6a9bd6', mid: '#f4d3b8', horizon: '#fdeed8', sunU: 0.6, sunV: 0.4, sunColor: '#fff4d6', clouds: 22, cloudAlpha: 0.5, cloudColor: '255,238,222' },
+    sky_noon: { top: '#2a78cc', mid: '#86c0ec', horizon: '#e6f1f7', sunU: 0.7, sunV: 0.16, sunColor: '#ffffff', clouds: 34, cloudAlpha: 0.75 },
+    sky_cloudy: { top: '#76869a', mid: '#a5b2bd', horizon: '#d4dadc', clouds: 60, cloudAlpha: 0.8, cloudColor: '170,180,190' },
+    sky_storm: { top: '#262f3f', mid: '#515c6b', horizon: '#98a1a8', clouds: 70, cloudAlpha: 0.88, cloudColor: '62,70,84' },
+  };
+
+  /** Skies are painted on first use: each is a 2048x1024 texture, so building all five up front would waste GPU memory on Quest. */
+  private ensureSky(key: SkyKey): void {
+    if (this.skyBuilt.has(key)) return;
+    this.skyBuilt.add(key);
+    const prev = this.building;
+    this.building = key;
+    this.put(paintedSky(EnvSystem.SKY_DEFS[key]), 0, -0.5, 1, 0, 1.3);
+    if (key === 'sky_storm') {
+      const stormRain = new LineSegments(
+        this.rainGeo,
+        new LineBasicMaterial({ color: 0xd8e6f2, transparent: true, opacity: 0.4, depthWrite: false }),
+      );
+      stormRain.frustumCulled = false;
+      this.put(stormRain, 0, 0);
     }
-    // storm rain shares the monsoon geometry
-    this.building = 'sky_storm';
-    const stormRain = new LineSegments(
-      this.rainGeo,
-      new LineBasicMaterial({ color: 0xd8e6f2, transparent: true, opacity: 0.4, depthWrite: false }),
-    );
-    stormRain.frustumCulled = false;
-    this.put(stormRain, 0, 0);
+    this.building = prev;
   }
 
   // ------------------------------------------------------------ monsoon beel: endless water, lilies, boats, stilt huts
@@ -652,6 +656,7 @@ export class EnvSystem extends createSystem({}) {
       want === 'field' || want === 'bil' || want === 'winter' || want === 'char'
         ? ((inKite ? 'sky_' + kiteCfg.time : 'sky_golden') as SkyKey)
         : '';
+    if (skyWant) this.ensureSky(skyWant);
     if (want !== this.shownWorld || skyWant !== this.shownSky) this.showWorld(want, skyWant);
     const open = want === 'field' || want === 'bil' || want === 'winter' || want === 'char';
     for (const sp of this.spinners) sp.rotation.y += dt * 0.02;
