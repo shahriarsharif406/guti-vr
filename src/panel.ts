@@ -67,6 +67,12 @@ export class TextPanel {
     c.fillStyle = color;
     c.textAlign = 'center';
     c.font = '700 ' + size + 'px ' + FONT;
+    // shrink to fit so long lines never clip at the card edges
+    const maxW = this.w - 24;
+    const m = c.measureText(s).width;
+    if (m > maxW && Math.abs(x - this.w / 2) < 1) {
+      c.font = '700 ' + Math.floor((size * maxW) / m) + 'px ' + FONT;
+    }
     c.fillText(s, x, y);
   }
   commit(): void {
