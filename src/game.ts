@@ -23,6 +23,7 @@ import {
   RayInteractable,
   RingGeometry,
   Quaternion,
+  Group,
   SphereGeometry,
   CircleGeometry,
   PMREMGenerator,
@@ -82,6 +83,7 @@ interface LevelDef {
   heavy: number;
   gold: number;
   rocks: [number, number][]; // x, z offsets from the ring center
+  pit?: { x: number; z: number; r: number }; // গর্ত: roll marbles into this hole
   tip: string;
 }
 
@@ -91,6 +93,10 @@ const LEVELS: LevelDef[] = [
   { world: 'earth', targets: 4, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Aim dots show where your shot will go' },
   { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[-0.085, 0.16], [0.085, 0.16]], tip: 'Rocks block the way: thread the gap' },
   { world: 'earth', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [], tip: 'Knock out the golden marble for a bonus shot' },
+  // ---- Gorto (গর্ত): the village hole game. Roll the marbles into the hole.
+  { world: 'earth', targets: 3, shots: 7, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [], pit: { x: 0, z: -0.2, r: 0.05 }, tip: 'Gorto: roll every marble into the hole' },
+  { world: 'earth', targets: 4, shots: 8, ring: 0.13, formation: 'line', heavy: 0, gold: 0, rocks: [[0.02, -0.1]], pit: { x: 0.12, z: -0.22, r: 0.045 }, tip: 'Gorto: go around the rock. Gentle taps drop in' },
+  { world: 'earth', targets: 5, shots: 9, ring: 0.13, formation: 'cluster', heavy: 0, gold: 1, rocks: [[-0.04, -0.12], [0.07, -0.1]], pit: { x: -0.1, z: -0.22, r: 0.04 }, tip: 'Gorto: smaller hole, golden bonus shot' },
   // ---- Harvest field (dry, slides far)
   { world: 'moon', targets: 5, shots: 6, ring: 0.13, formation: 'cluster', heavy: 0, gold: 0, rocks: [], tip: 'Dry ground: marbles slide far. Pull gently' },
   { world: 'moon', targets: 6, shots: 7, ring: 0.115, formation: 'ring', heavy: 0, gold: 0, rocks: [[-0.1, 0.12], [0.1, 0.12]], tip: 'The ring is smaller. Soft taps are enough' },
@@ -233,6 +239,10 @@ export class GameSystem extends createSystem({
   private bestStars: number[] = [];
   private modeObjects: Mesh[] = [];
   private ringMesh!: Mesh;
+  private pitMesh!: Group;
+  private pit: LevelDef['pit'] = undefined;
+  private potted: boolean[] = [];
+  private homes: [number, number][] = [];
   private ringR = RING_RADIUS;
   private kinds: MarbleType[] = [];
   private rocks: Entity[] = [];
@@ -402,6 +412,19 @@ export class GameSystem extends createSystem({
     ring.position.set(0, TABLE_Y + 0.002, TABLE_CENTER_Z);
     world.createTransformEntity(ring);
     this.ringMesh = ring;
+
+    // the gorto (hole) for the hole game: a dark pit with a raised rim, scaled per level
+    const pitG = new Group();
+    const pitDisc = new Mesh(new CircleGeometry(1, 40), new MeshStandardMaterial({ color: 0x140b06, roughness: 1 }));
+    pitDisc.rotation.x = -Math.PI / 2;
+    pitDisc.position.y = 0.0015;
+    const pitRim = new Mesh(new TorusGeometry(1, 0.07, 8, 48), new MeshStandardMaterial({ color: 0x8a6a48, roughness: 1 }));
+    pitRim.rotation.x = Math.PI / 2;
+    pitRim.position.y = 0.002;
+    pitG.add(pitDisc, pitRim);
+    pitG.visible = false;
+    world.createTransformEntity(pitG);
+    this.pitMesh = pitG;
 
     // shared marble geometry + a palette of glass-like colors
     this.marbleGeo = new SphereGeometry(MARBLE_R, 24, 16);
@@ -624,7 +647,7 @@ export class GameSystem extends createSystem({
   }
 
   private buildLevelMap(): void {
-    const cols = 5;
+    const cols = 6;
     for (let i = 0; i < LEVELS.length; i++) {
       const panel = new TextPanel(0.06, 0.06, 128);
       const c = i % cols;
@@ -689,7 +712,7 @@ export class GameSystem extends createSystem({
       h.text(this.messageText, 150, 44, this.won ? '#8dff9d' : '#ff9d8d');
     } else {
       h.text(
-        'Out ' + this.outCount + '/' + this.totalTargets + '   Shots ' + this.shotsLeft + '   ★ ' + this.totalStars() + '/' + LEVELS.length * 3,
+        (this.pit ? 'In hole ' : 'Out ') + this.outCount + '/' + this.totalTargets + '   Shots ' + this.shotsLeft + '   ★ ' + this.totalStars() + '/' + LEVELS.length * 3,
         148,
         36,
       );
@@ -739,6 +762,8 @@ export class GameSystem extends createSystem({
 
   private setModeVisible(on: boolean): void {
     for (const m of this.modeObjects) m.visible = on;
+    this.ringMesh.visible = on && !this.pit;
+    this.pitMesh.visible = on && !!this.pit;
   }
 
   // ------------------------------------------------------------------ worlds
@@ -779,6 +804,15 @@ export class GameSystem extends createSystem({
     this.shotOut = 0;
     const rs = def.ring / RING_RADIUS;
     this.ringMesh.scale.set(rs, rs, rs);
+    this.pit = def.pit;
+    this.ringMesh.visible = !def.pit;
+    this.pitMesh.visible = !!def.pit;
+    if (def.pit) {
+      this.pitMesh.position.set(def.pit.x, TABLE_Y, TABLE_CENTER_Z + def.pit.z);
+      this.pitMesh.scale.set(def.pit.r, def.pit.r, def.pit.r);
+    }
+    this.potted.length = 0;
+    this.homes.length = 0;
 
     for (const t of this.targets) t.dispose();
     for (const r of this.rocks) r.dispose();
@@ -798,6 +832,8 @@ export class GameSystem extends createSystem({
       this.kinds.push(type);
     }
     for (let i = 0; i < n; i++) {
+      this.homes.push([offs[i][0], offs[i][1]]);
+      this.potted.push(false);
       this.tmp.set(offs[i][0], TABLE_Y + MARBLE_R + 0.001, TABLE_CENTER_Z + offs[i][1]);
       const type = this.kinds[i];
       const mat =
@@ -1025,7 +1061,9 @@ export class GameSystem extends createSystem({
     for (let i = 0; i < this.targets.length; i++) {
       const t = this.targets[i];
       if (!t.object3D) continue;
+      if (this.pit && this.potted[i]) continue;
       const sp = this.speedOf(t);
+      if (this.pit && this.checkPot(i, sp)) continue;
       if (sp > 0.04 && !this.offTable(t)) moving = true;
       if (sp - this.prevSpeeds[i] > 0.12) {
         sfx.clack((sp - this.prevSpeeds[i]) / 1.5);
@@ -1047,12 +1085,45 @@ export class GameSystem extends createSystem({
     }
   }
 
+  /** Pit game: a slow-enough marble over the hole drops in and is gone. */
+  private checkPot(i: number, sp: number): boolean {
+    const pit = this.pit;
+    const t = this.targets[i];
+    if (!pit || !t.object3D) return false;
+    const p = t.object3D.position;
+    const d = Math.hypot(p.x - pit.x, p.z - (TABLE_CENTER_Z + pit.z));
+    if (d > pit.r - 0.004 || sp > 0.8) return false;
+    this.potted[i] = true;
+    const physics = this.world.getSystem(PhysicsSystem);
+    if (physics) {
+      this.tmp.set(pit.x, TABLE_Y - 0.3, TABLE_CENTER_Z + pit.z);
+      physics.setBodyTransform(t, { position: this.tmp, quaternion: this.identityQuat });
+    }
+    sfx.plop();
+    emitBurst(pit.x, TABLE_Y + 0.01, TABLE_CENTER_Z + pit.z, 0.9, 0.7, 0.4, 14, 0.35);
+    return true;
+  }
+
+  /** Pit game: marbles that left the table come back to where they started. */
+  private returnStrays(): void {
+    const physics = this.world.getSystem(PhysicsSystem);
+    if (!physics) return;
+    for (let i = 0; i < this.targets.length; i++) {
+      const t = this.targets[i];
+      if (this.potted[i] || !t.object3D) continue;
+      if (this.offTable(t) || t.object3D.position.y < TABLE_Y - 0.1) {
+        this.tmp.set(this.homes[i][0], TABLE_Y + MARBLE_R + 0.001, TABLE_CENTER_Z + this.homes[i][1]);
+        physics.setBodyTransform(t, { position: this.tmp, quaternion: this.identityQuat });
+      }
+    }
+  }
+
   /** Detects newly-out marbles: sparks, sound, combo, bonus shot. Returns how many are out. */
   private scanOut(): number {
     let out = 0;
     for (let i = 0; i < this.targets.length; i++) {
       const t = this.targets[i];
-      const o = this.isOut(t);
+      const o = this.pit ? this.potted[i] : this.isOut(t);
       if (o) out++;
       if (o && !this.wasOut[i] && t.object3D) {
         const pos = t.object3D.position;
@@ -1097,6 +1168,7 @@ export class GameSystem extends createSystem({
   }
 
   private resolveShot(): void {
+    if (this.pit) this.returnStrays();
     const out = this.scanOut();
     if (out >= this.totalTargets) {
       this.won = true;

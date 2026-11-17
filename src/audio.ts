@@ -407,6 +407,11 @@ export const sfx = {
   lose(): void {
     tone(330, 0.25, 0.2, 'sawtooth', 160);
   },
+  /** marble dropping into the hole */
+  plop(): void {
+    tone(420, 0.14, 0.18, 'sine', 140);
+    tone(180, 0.1, 0.1, 'triangle', 90, 0.08);
+  },
   select(): void {
     tone(520, 0.08, 0.15, 'triangle', 780);
   },
