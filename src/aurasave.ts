@@ -7,6 +7,11 @@ export interface AuraSettings {
   reducedMotion: boolean;
   labels: boolean; // colour-blind-friendly letter labels on beams and gates
   wisps: boolean; // guiding wisps
+  music: number; // 0..1 ambient music bus
+  sfx: number; // 0..1 effects bus
+  muted: boolean;
+  reducedFlash: boolean; // calmer pulses, no fast flicker
+  tutorial: boolean; // staged first-level hints and quicker wisps
 }
 export interface AuraSave {
   v: number;
@@ -24,7 +29,7 @@ export const defaultSave = (levels: number): AuraSave => ({
   solved: Array.from({ length: levels }, () => false),
   best: Array.from({ length: levels }, () => 0),
   stats: { moves: 0, connections: 0, hues: [0, 0, 0, 0, 0, 0, 0], plays: 0 },
-  settings: { volume: 0.9, reducedMotion: false, labels: false, wisps: true },
+  settings: { volume: 0.9, reducedMotion: false, labels: false, wisps: true, music: 1, sfx: 1, muted: false, reducedFlash: false, tutorial: true },
   finished: false,
 });
 
@@ -51,6 +56,11 @@ export function loadSave(levels: number): AuraSave {
       d.settings.reducedMotion = o.settings.reducedMotion === true;
       d.settings.labels = o.settings.labels === true;
       d.settings.wisps = o.settings.wisps !== false;
+      d.settings.music = num(o.settings.music, 0, 1, 1);
+      d.settings.sfx = num(o.settings.sfx, 0, 1, 1);
+      d.settings.muted = o.settings.muted === true;
+      d.settings.reducedFlash = o.settings.reducedFlash === true;
+      d.settings.tutorial = o.settings.tutorial !== false;
     }
     d.finished = o.finished === true;
     return d;

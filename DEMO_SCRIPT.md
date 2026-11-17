@@ -10,3 +10,6 @@ Record in the browser at https://shahriarsharif406.github.io/guti-vr/ (use the m
 2:40-3:00  Closing card: name, link, credits.
 
 Tips: wait for the AI line to appear before cutting; record each station twice and keep the better take.
+
+# Aura Weaver segment (add 25-40 s, or give it the whole demo)
+Menu: click Aura Weaver, START. Swing the first mirror, gate wakes (chord, wave, lotus). Jump to level 4 via Chapters if needed, show two colours mixing. End on the finale title card, then Photo mode.

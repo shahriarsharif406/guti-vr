@@ -6,11 +6,12 @@
 The best moments in VR are when your hands make something. Pocket Workshop is a cozy workshop on your table: you build first, then play with what you built.
 
 ## What it does
-Four stations, all driven by hand-tracking pinch:
+Five stations, all driven by hand-tracking pinch:
 - **GearShift:** a blueprint bench of 6 gear puzzles. Seat the right gears (some with two layers of teeth) so the output wheel spins the way the goal says.
 - **Pottery:** shape spinning clay into a pot, glaze it, fire it in a kiln and keep it on your shelf.
 - **Brick Builder:** snap bricks into a tower, then smash it with a wrecking ball.
 - **Domino Run:** stand dominoes in a chain and watch it fall.
+- **Aura Weaver:** turn mirrors and prisms, mix cyan, magenta and gold light, wake dark monoliths and watch a forgotten sanctuary bloom. 7 solver-verified puzzles, procedural adaptive music, save and photo mode.
 
 A small **AI Workshop Mentor** sets a fair challenge (the game verifies the goal) and comments on what you made in one friendly line. No personal data is sent, and it falls back to built-in lines when offline.
 

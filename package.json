@@ -12,7 +12,8 @@
     "reference:warmup": "iwsdk reference warmup",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:aura": "esbuild tests/aura.test.ts --bundle --platform=node --format=cjs --outfile=/tmp/aura-test.cjs --log-level=error && node /tmp/aura-test.cjs"
   },
   "dependencies": {
     "@fontsource/noto-sans-bengali": "^5.3.0",

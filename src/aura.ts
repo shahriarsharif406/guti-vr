@@ -3,6 +3,7 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  CanvasTexture,
   CircleGeometry,
   Color,
   ConeGeometry,
@@ -27,7 +28,7 @@ import {
   Vector3,
   createSystem,
 } from '@iwsdk/core';
-import { getMasterVolume, setMasterVolume, sfx, musicState } from './audio.js';
+import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, sfx, musicState } from './audio.js';
 import {
   CHAPTER_NAMES,
   CYAN,
@@ -63,6 +64,31 @@ const PINCH_START = 0.85;
 const PINCH_HOLD = 0.5;
 const MAX_SEG = 96;
 const HOLD_T = 0.8; // seconds of exact light needed to wake a gate
+let rayTex: CanvasTexture | null = null;
+/** Radial god-ray burst (cheap screen-space-style approximation: one additive quad per awake gate). */
+function rayTexture(): CanvasTexture {
+  if (rayTex) return rayTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  g.translate(128, 128);
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2 + ((i * 37) % 7) * 0.05;
+    const w = 0.05 + ((i * 13) % 5) * 0.02;
+    const gr = g.createRadialGradient(0, 0, 4, 0, 0, 126);
+    gr.addColorStop(0, 'rgba(255,255,255,0.9)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr;
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.arc(0, 0, 126, a - w, a + w);
+    g.closePath();
+    g.fill();
+  }
+  rayTex = new CanvasTexture(c);
+  return rayTex;
+}
+type Screen = 'title' | 'chapters' | 'game' | 'settings';
 const SERIF = 'Georgia, "Times New Roman", serif';
 
 type HandName = 'left' | 'right';
@@ -92,6 +118,7 @@ interface GateVis {
   disc: Mesh;
   discMat: MeshBasicMaterial;
   label: TextPanel;
+  rays: Mesh;
   fill: number;
   awake: boolean;
   impure: boolean;
@@ -163,6 +190,8 @@ export class AuraSystem extends createSystem({
   private optCooldown = 0;
   private time = 0;
   private paused = false;
+  private screen: Screen = 'title';
+  private confirmNew = false;
   private photo = false;
   private comp = 0;
   private shotPending = false;
@@ -227,6 +256,9 @@ export class AuraSystem extends createSystem({
   init(): void {
     this.save = loadSave(this.levels.length);
     setMasterVolume(this.save.settings.volume);
+    setMusicVolume(this.save.settings.music);
+    setSfxVolume(this.save.settings.sfx);
+    setMuted(this.save.settings.muted);
     this.root.position.set(0, BY, BZ);
     this.world.createTransformEntity(this.root);
 
@@ -281,7 +313,7 @@ export class AuraSystem extends createSystem({
       list.push(panel);
     };
     for (let i = 0; i < 4; i++) mkBtn(i, 0.2, 0.07, -0.33 + i * 0.22, 0.64, -0.5, -0.9, this.btns);
-    for (let i = 0; i < 8; i++) mkBtn(4 + i, 0.2, 0.055, i % 2 ? 0.115 : -0.115, 1.2 - Math.floor(i / 2) * 0.062, -0.5, -0.2, this.setBtns);
+    for (let i = 0; i < 12; i++) mkBtn(4 + i, 0.2, 0.055, i % 2 ? 0.115 : -0.115, 1.27 - Math.floor(i / 2) * 0.062, -0.5, -0.2, this.setBtns);
 
     this.cleanupFuncs.push(
       this.queries.opts.subscribe('qualify', (entity: Entity) => {
@@ -308,7 +340,7 @@ export class AuraSystem extends createSystem({
         this.buzz(40);
         this.save.stats.connections++;
         this.save.stats.hues[t.mask & 7]++;
-        this.flash = 1;
+        this.flash = this.save.settings.reducedFlash ? 0.3 : 1;
       } else if (e.t === 'impure') {
         sfx.auraImpure();
         const t = this.lv.targets[e.i];
@@ -344,6 +376,11 @@ export class AuraSystem extends createSystem({
     // keyboard accessibility (only while Aura Weaver is on screen)
     const kd = (e: KeyboardEvent): void => {
       if (modeState.mode !== 'aura') return;
+      if (this.screen !== 'game') {
+        if (e.key === 'Enter' && this.screen === 'title') this.press(4);
+        else if (e.key === 'Escape' && this.screen !== 'title') this.press(this.screen === 'chapters' ? 9 : 15);
+        return;
+      }
       const rots = this.rotIdx();
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -387,8 +424,9 @@ export class AuraSystem extends createSystem({
 
     // hooks for automated tests
     const w = window as unknown as Record<string, unknown>;
-    w.__aura = () => ({ mode: modeState.mode, level: this.level, solved: this.tr?.solved, ok: this.tr?.ok, got: this.tr?.got, awake: this.gates.map((g) => g.awake), saved: this.save.solved, restore: this.restore, moves: this.moves, paused: this.paused, finaleT: this.finaleT, sol: this.sol, ang: this.lv?.elems.map((e) => e.a) });
+    w.__aura = () => ({ screen: this.screen, settings: this.save.settings, mode: modeState.mode, level: this.level, solved: this.tr?.solved, ok: this.tr?.ok, got: this.tr?.got, awake: this.gates.map((g) => g.awake), saved: this.save.solved, restore: this.restore, moves: this.moves, paused: this.paused, finaleT: this.finaleT, sol: this.sol, ang: this.lv?.elems.map((e) => e.a) });
     w.__auraLevel = (i: number) => this.loadLevel(i);
+    w.__auraInfo = () => ({ geometries: this.world.renderer.info.memory.geometries, textures: this.world.renderer.info.memory.textures, programs: this.world.renderer.info.programs?.length ?? 0, children: this.elemGroup.children.length + this.srcGroup.children.length, listeners: this.cleanupFuncs.length });
     w.__auraSolve = () => {
       if (!this.sol) return;
       const r = this.rotIdx();
@@ -446,10 +484,12 @@ export class AuraSystem extends createSystem({
     disc.position.z = -0.004;
     const label = new TextPanel(0.05, 0.04, 128);
     label.mesh.position.set(0, -0.082, 0.02);
-    g.add(runes, disc, crystal, label.mesh);
+    const rays = new Mesh(new PlaneGeometry(0.34, 0.34), new MeshBasicMaterial({ map: rayTexture(), color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    rays.position.z = -0.008;
+    g.add(rays, runes, disc, crystal, label.mesh);
     g.visible = false;
     this.root.add(g);
-    return { g, crystal, mat, runes, disc, discMat, label, fill: 0, awake: false, impure: false, lastGot: 0 };
+    return { g, crystal, mat, runes, disc, discMat, label, rays, fill: 0, awake: false, impure: false, lastGot: 0 };
   }
 
   private buildSanctuary(): void {
@@ -522,6 +562,10 @@ export class AuraSystem extends createSystem({
 
   private loadLevel(i: number): void {
     this.level = Math.max(0, Math.min(this.levels.length - 1, i));
+    if (this.finaleT >= 0) {
+      this.finaleT = -1;
+      this.applyComposition();
+    }
     this.levels = makeLevels(); // fresh angles every load
     this.lv = this.levels[this.level];
     this.startAng = this.lv.elems.map((e) => e.a);
@@ -634,16 +678,31 @@ export class AuraSystem extends createSystem({
     for (const b of this.btns) b.mesh.visible = v;
     this.syncPanels();
   }
+  private menuSlots(): number {
+    return this.screen === 'title' ? 4 : this.screen === 'chapters' ? 6 : this.screen === 'settings' || this.paused ? 12 : 0;
+  }
   private syncPanels(): void {
     const on = modeState.mode === 'aura';
-    this.hud.mesh.visible = on && !this.photo;
+    const game = this.screen === 'game';
+    this.hud.mesh.visible = on && game && !this.photo;
     this.compass.mesh.visible = on && !this.photo;
-    this.card.mesh.visible = on && !this.photo && (this.completeT > 2.2 || this.finaleT > 6);
-    for (const b of this.setBtns) b.mesh.visible = on && this.paused && !this.photo;
-    this.btns.forEach((b, i) => (b.mesh.visible = on && (!this.photo || i < 3)));
+    this.card.mesh.visible = on && !this.photo && (this.screen === 'title' || this.screen === 'chapters' || (game && (this.completeT > 2.2 || this.finaleT > 6)));
+    const n = on && !this.photo ? this.menuSlots() : 0;
+    const row = this.screen === 'title' || this.screen === 'chapters';
+    this.setBtns.forEach((b, i) => {
+      b.mesh.visible = i < n;
+      if (row) b.mesh.position.set((i - (n - 1) / 2) * 0.22, 0.64, -0.5);
+      else b.mesh.position.set(i % 2 ? 0.115 : -0.115, 1.27 - Math.floor(i / 2) * 0.062, -0.5);
+      b.mesh.rotation.x = row ? -0.9 : -0.2;
+    });
+    this.btns.forEach((b, i) => (b.mesh.visible = on && game && (!this.photo || i < 3)));
   }
 
   // ================================================================ actions
+  private cycle(v: number): number {
+    const k = Math.round(v * 4);
+    return ((k + 1) % 5) / 4;
+  }
   private press(id: number): void {
     if (this.photo) {
       if (id === 0) this.shotPending = true;
@@ -653,6 +712,19 @@ export class AuraSystem extends createSystem({
       } else if (id === 2) this.setPhoto(false);
       return;
     }
+    if (id >= 4) {
+      const slot = id - 4;
+      if (slot >= this.menuSlots()) return;
+      if (this.screen === 'title') this.pressTitle(slot);
+      else if (this.screen === 'chapters') this.pressChapter(slot);
+      else this.pressSetting(slot);
+      this.persist();
+      this.drawBtns();
+      this.drawMenu();
+      this.syncPanels();
+      return;
+    }
+    if (this.screen !== 'game') return;
     if (id === 0) this.loadLevel(this.level - 1);
     else if (id === 1) this.loadLevel(this.level);
     else if (id === 2) {
@@ -664,25 +736,86 @@ export class AuraSystem extends createSystem({
       }
     } else if (id === 3) {
       this.paused = !this.paused;
-      this.syncPanels();
-      this.drawBtns();
-    } else if (id === 4) this.setVol(getMasterVolume() - 0.15);
-    else if (id === 5) this.setVol(getMasterVolume() + 0.15);
-    else if (id === 6) {
-      quality.manual = true;
-      quality.tier = (quality.tier + 3) % 4;
-    } else if (id === 7) this.save.settings.reducedMotion = !this.save.settings.reducedMotion;
-    else if (id === 8) {
-      this.save.settings.labels = !this.save.settings.labels;
-      this.gates.forEach((gv, k) => this.lv.targets[k] && this.drawLabel(gv.label, MASK_LETTER[this.lv.targets[k].mask & 7], MASK_HEX[this.lv.targets[k].mask & 7]));
-    } else if (id === 9) this.save.settings.wisps = !this.save.settings.wisps;
-    else if (id === 10) {
-      this.paused = false;
-      this.setPhoto(true);
-    } else if (id === 11) this.paused = false;
+    }
     this.persist();
     this.drawBtns();
     this.syncPanels();
+  }
+  private startLevel(i: number): void {
+    this.screen = 'game';
+    this.paused = false;
+    this.loadLevel(i);
+    this.hudDirty = true;
+  }
+  private pressTitle(slot: number): void {
+    if (slot === 0) {
+      let start = this.save.solved.findIndex((s) => !s);
+      if (start < 0) start = this.levels.length - 1;
+      this.startLevel(Math.min(start, this.save.unlocked));
+    } else if (slot === 1) this.screen = 'chapters';
+    else if (slot === 2) this.screen = 'settings';
+    else if (slot === 3) {
+      if (!this.confirmNew) {
+        this.confirmNew = true;
+        return;
+      }
+      this.confirmNew = false;
+      const keep = this.save.settings;
+      this.save = defaultSave(this.levels.length);
+      this.save.settings = keep;
+      this.restore = 0;
+      this.restoreShown = 0;
+      this.loadLevel(0);
+    }
+    if (slot !== 3) this.confirmNew = false;
+  }
+  private firstLevelOf(c: number): number {
+    return Math.max(0, this.levels.findIndex((l) => l.chapter === CHAPTER_NAMES[c]));
+  }
+  private pressChapter(slot: number): void {
+    if (slot === 5) {
+      this.screen = 'title';
+      return;
+    }
+    const li = this.firstLevelOf(slot);
+    if (li > this.save.unlocked) {
+      sfx.auraImpure();
+      return;
+    }
+    this.startLevel(li);
+  }
+  private pressSetting(slot: number): void {
+    const st = this.save.settings;
+    if (slot === 0) this.setVol(this.cycle(getMasterVolume()));
+    else if (slot === 1) {
+      st.music = this.cycle(st.music);
+      setMusicVolume(st.music);
+    } else if (slot === 2) {
+      st.sfx = this.cycle(st.sfx);
+      setSfxVolume(st.sfx);
+    } else if (slot === 3) {
+      st.muted = !st.muted;
+      setMuted(st.muted);
+    } else if (slot === 4) {
+      quality.manual = true;
+      quality.tier = (quality.tier + 3) % 4;
+    } else if (slot === 5) st.reducedMotion = !st.reducedMotion;
+    else if (slot === 6) st.reducedFlash = !st.reducedFlash;
+    else if (slot === 7) {
+      st.labels = !st.labels;
+      this.gates.forEach((gv, k) => this.lv.targets[k] && this.drawLabel(gv.label, MASK_LETTER[this.lv.targets[k].mask & 7], MASK_HEX[this.lv.targets[k].mask & 7]));
+    } else if (slot === 8) st.wisps = !st.wisps;
+    else if (slot === 9) st.tutorial = !st.tutorial;
+    else if (slot === 10) {
+      if (this.screen === 'game') {
+        this.paused = false;
+        this.setPhoto(true);
+      }
+    } else if (slot === 11) {
+      if (this.screen === 'settings') this.screen = 'title';
+      else this.paused = false;
+    }
+    this.hudDirty = true;
   }
   private setVol(v: number): void {
     setMasterVolume(v);
@@ -860,11 +993,15 @@ export class AuraSystem extends createSystem({
       if (on) {
         this.paused = false;
         this.photo = false;
+        this.screen = 'title';
+        this.confirmNew = false;
+        this.finaleT = -1;
         this.applyComposition();
         this.save.stats.plays++;
         let start = this.save.solved.findIndex((s) => !s);
         if (start < 0) start = this.levels.length - 1;
         this.loadLevel(Math.min(start, this.save.unlocked));
+        this.drawMenu();
       } else {
         sfx.auraBeams(0, 0, 0, 0);
         this.persist();
@@ -880,8 +1017,10 @@ export class AuraSystem extends createSystem({
     const reduced = this.save.settings.reducedMotion;
     const dt = this.paused ? 0 : Math.min(delta, 0.05);
     this.time += Math.min(delta, 0.05);
-    for (const pt of this.pointers) this.updatePointer(pt);
-    this.updateHover();
+    if (this.screen === 'game') {
+      for (const pt of this.pointers) this.updatePointer(pt);
+      this.updateHover();
+    }
 
     if (this.dirty) this.retrace();
     this.updateGates(dt);
@@ -1032,12 +1171,17 @@ export class AuraSystem extends createSystem({
       if (!t) return;
       const f = gv.fill;
       gv.mat.uniforms.uTime.value = this.time;
-      gv.mat.uniforms.uGlow.value = gv.awake ? 1.1 + 0.2 * Math.sin(this.time * 3 + i) : 0.28 + f * 0.9 + (gv.impure ? 0.2 * Math.sin(this.time * 18) : 0);
+      gv.mat.uniforms.uGlow.value = gv.awake ? 1.1 + 0.2 * Math.sin(this.time * 3 + i) : 0.28 + f * 0.9 + (gv.impure && !this.save.settings.reducedFlash ? 0.2 * Math.sin(this.time * 18) : 0);
       const c = gv.impure ? 0xffa040 : MASK_HEX[(gv.awake ? t.mask : gv.lastGot) & 7] || MASK_HEX[t.mask & 7];
       gv.discMat.color.setHex(c);
       gv.discMat.opacity = gv.awake ? 0.5 + 0.2 * Math.sin(this.time * 4) : f * 0.4 + (gv.lastGot ? 0.08 : 0);
       gv.runes.rotation.z += dt * (gv.awake ? 0.6 : 0.12) * (reduced ? 0.3 : 1);
       (gv.runes.material as MeshBasicMaterial).opacity = 0.32 + (gv.awake ? 0.5 : f * 0.35);
+      const rm = gv.rays.material as MeshBasicMaterial;
+      rm.opacity = tier === 0 ? 0 : (gv.awake ? 0.5 + (this.save.settings.reducedFlash ? 0 : 0.12 * Math.sin(this.time * 2 + i)) : f * 0.25) * (this.save.settings.reducedFlash ? 0.7 : 1);
+      rm.color.setHex(MASK_HEX[t.mask & 7]);
+      gv.rays.rotation.z += dt * (reduced ? 0.02 : 0.12);
+      gv.rays.scale.setScalar(1 + (gv.awake ? 0.25 : 0));
       gv.crystal.scale.y = 1 + (gv.awake ? 0.12 : f * 0.06);
       gv.crystal.rotation.y += dt * (gv.awake ? 0.8 : 0.1) * (reduced ? 0.3 : 1);
     });
@@ -1089,7 +1233,7 @@ export class AuraSystem extends createSystem({
       s.m.rotation.x += dt * 0.15 * (reduced ? 0.2 : 1);
     }
     // guiding wisps
-    const wisp = this.save.settings.wisps && this.idle > 14 && !this.tr.solved;
+    const wisp = this.save.settings.wisps && this.idle > (this.save.settings.tutorial && this.level === 0 ? 5 : 14) && !this.tr.solved;
     this.wisps.visible = wisp;
     if (wisp) {
       const wi = this.wrongElem();
@@ -1125,6 +1269,13 @@ export class AuraSystem extends createSystem({
         this.syncPanels();
       }
     }
+    if (this.finaleT >= 0 && !this.photo) {
+      const k = Math.min(1, this.finaleT / 9);
+      const e = k * k * (3 - 2 * k);
+      const amt = reduced ? 0.03 : 0.12;
+      this.root.scale.setScalar(1 + amt * e);
+      this.root.position.z = BZ + amt * 1.2 * e;
+    }
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2);
   }
 
@@ -1146,24 +1297,88 @@ export class AuraSystem extends createSystem({
       p.text(labels[i][0], p.h * 0.3, 22, '#9fc2ff');
       p.text(labels[i][1], p.h * 0.7, 30, '#eef4ff');
       p.commit();
-      p.mesh.visible = modeState.mode === 'aura' && !(this.photo && i === 3);
+      p.mesh.visible = modeState.mode === 'aura' && this.screen === 'game' && !(this.photo && i === 3);
     });
-    const st = [
-      ['VOLUME -', Math.round(getMasterVolume() * 100) + '%'],
-      ['VOLUME +', Math.round(getMasterVolume() * 100) + '%'],
-      ['QUALITY', ['Low', 'Medium', 'High', 'Ultra'][quality.tier]],
-      ['MOTION', this.save.settings.reducedMotion ? 'Reduced' : 'Full'],
-      ['COLOUR LABELS', this.save.settings.labels ? 'On' : 'Off'],
-      ['GUIDING WISPS', this.save.settings.wisps ? 'On' : 'Off'],
-      ['PHOTO MODE', 'Hide HUD'],
-      ['RESUME', 'Back to puzzle'],
-    ];
     this.setBtns.forEach((p, i) => {
-      p.card('rgba(10,8,26,0.94)', '#b48cff');
-      p.text(st[i][0], p.h * 0.32, 22, '#c9b6ff');
-      p.text(st[i][1], p.h * 0.74, 28, '#eef4ff');
+      const [a, b] = this.slotText(i);
+      p.card('rgba(10,8,26,0.94)', this.screen === 'chapters' || this.screen === 'title' ? '#7fb8ff' : '#b48cff');
+      p.text(a, p.h * 0.32, 22, '#c9b6ff');
+      p.text(b, p.h * 0.74, 28, '#eef4ff');
       p.commit();
     });
+  }
+
+  private slotText(i: number): [string, string] {
+    const st = this.save.settings;
+    const pct = (v: number): string => Math.round(v * 100) + '%';
+    if (this.screen === 'title') {
+      const started = this.save.solved.some(Boolean);
+      return ([
+        [started ? 'CONTINUE' : 'START', started ? 'Resume weaving' : 'Begin the experience'],
+        ['CHAPTERS', 'Unlocked chapters'],
+        ['SETTINGS', 'Audio and access'],
+        ['NEW GAME', this.confirmNew ? 'Press again to erase' : 'Erase progress'],
+      ] as [string, string][])[i] ?? ['', ''];
+    }
+    if (this.screen === 'chapters') {
+      if (i === 5) return ['BACK', 'Title'];
+      if (i > 4) return ['', ''];
+      const li = this.firstLevelOf(i);
+      const locked = li > this.save.unlocked;
+      const done = this.levels.filter((l) => l.chapter === CHAPTER_NAMES[i]).every((l) => this.save.solved[this.levels.indexOf(l)]);
+      return ['CHAPTER ' + (i + 1), locked ? 'Locked' : done ? 'Restored' : 'Open'];
+    }
+    return ([
+      ['MASTER', st.muted ? 'Muted' : pct(getMasterVolume())],
+      ['MUSIC', pct(st.music)],
+      ['EFFECTS', pct(st.sfx)],
+      ['MUTE', st.muted ? 'On' : 'Off'],
+      ['QUALITY', ['Low', 'Medium', 'High', 'Ultra'][quality.tier]],
+      ['MOTION', st.reducedMotion ? 'Reduced' : 'Full'],
+      ['FLASHES', st.reducedFlash ? 'Reduced' : 'Normal'],
+      ['COLOUR LABELS', st.labels ? 'On' : 'Off'],
+      ['GUIDING WISPS', st.wisps ? 'On' : 'Off'],
+      ['TUTORIAL', st.tutorial ? 'On' : 'Off'],
+      ['PHOTO MODE', this.screen === 'game' ? 'Hide HUD' : 'In puzzle only'],
+      [this.screen === 'settings' ? 'BACK' : 'RESUME', this.screen === 'settings' ? 'Title' : 'Back to puzzle'],
+    ] as [string, string][])[i] ?? ['', ''];
+  }
+
+  /** Title and chapter-select card (the same panel the completion card uses). */
+  private drawMenu(): void {
+    if (this.screen === 'game') return;
+    const c = this.card;
+    const g = c.ctx;
+    c.card('rgba(6,5,22,0.9)', '#b48cff');
+    g.textAlign = 'center';
+    if (this.screen === 'title') {
+      g.fillStyle = '#ffe9b0';
+      g.font = '700 70px ' + SERIF;
+      g.fillText('AURA WEAVER', c.w / 2, 120);
+      g.fillStyle = '#9fc2ff';
+      g.font = '600 26px ' + SERIF;
+      g.fillText('T H E   L I G H T   S A N C T U A R Y', c.w / 2, 168);
+      g.fillStyle = '#cfe4ff';
+      g.font = 'italic 28px ' + SERIF;
+      g.fillText('A sanctuary has lost its light.', c.w / 2, 240);
+      g.fillText('Turn mirrors and prisms. Mix cyan, magenta and gold.', c.w / 2, 280);
+      g.fillText('Wake the monoliths and bring it back to life.', c.w / 2, 320);
+      const n = this.save.solved.filter(Boolean).length;
+      g.font = '600 22px ' + SERIF;
+      g.fillStyle = '#ffd36b';
+      g.fillText(n ? 'Sanctuary ' + Math.round((n / this.levels.length) * 100) + '% restored' : 'Hands only. Pinch to turn light.', c.w / 2, 400);
+    } else {
+      g.fillStyle = '#ffe9b0';
+      g.font = '700 54px ' + SERIF;
+      g.fillText('CHAPTERS', c.w / 2, 100);
+      g.font = '600 26px ' + SERIF;
+      CHAPTER_NAMES.forEach((nm, i) => {
+        const locked = this.firstLevelOf(i) > this.save.unlocked;
+        g.fillStyle = locked ? '#5a6488' : '#cfe4ff';
+        g.fillText((i + 1) + '   ' + nm + (locked ? '   (locked)' : ''), c.w / 2, 190 + i * 48);
+      });
+    }
+    c.commit();
   }
 
   private drawHud(): void {
@@ -1173,7 +1388,11 @@ export class AuraSystem extends createSystem({
     h.card('rgba(8,6,24,0.88)', '#7fb8ff');
     h.text(lv.chapter + '   -   ' + lv.name, 50, 26, '#cfe4ff');
     h.text(lv.goal, 100, 26, this.tr?.solved ? '#8dffc2' : '#ffe6a8');
-    const hint = this.msgT > 0 ? this.msg : this.save.solved[this.level] ? 'Sanctuary ' + Math.round(this.restore * 100) + '% restored - NEXT continues' : 'Hint: ' + lv.hint;
+    let tip = 'Hint: ' + lv.hint;
+    if (this.save.settings.tutorial && this.level === 0 && !this.save.solved[0]) {
+      tip = this.moves === 0 ? 'Pinch the ringed mirror and swing it (mouse: drag; keys: Tab, arrows)' : 'Aim the beam into the crystal gate and hold it';
+    }
+    const hint = this.msgT > 0 ? this.msg : this.save.solved[this.level] ? 'Sanctuary ' + Math.round(this.restore * 100) + '% restored - NEXT continues' : tip;
     h.text(hint, 148, 23, this.msgT > 0 ? '#8dffc2' : '#b8c8ee');
     const need = lv.targets.map((t) => MASK_NAME[t.mask & 7]).join('  ');
     h.text('Gates: ' + need + '     Turns ' + this.moves, 196, 21, '#9fc2ff');

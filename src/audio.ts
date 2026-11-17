@@ -22,24 +22,55 @@ function ac(): AudioContext | null {
 }
 
 let master: GainNode | null = null;
+let sfxBus: GainNode | null = null;
 let masterVol = 0.9;
+let muted = false;
+let sfxVol = 1;
+let musicVol = 1;
+const applyMaster = (): void => {
+  if (master) master.gain.value = muted ? 0 : masterVol;
+};
 export function setMasterVolume(v: number): void {
   masterVol = Math.max(0, Math.min(1, v));
-  if (master) master.gain.value = masterVol;
+  applyMaster();
 }
 export const getMasterVolume = (): number => masterVol;
+export function setMuted(m: boolean): void {
+  muted = m;
+  applyMaster();
+}
+export const isMuted = (): boolean => muted;
+/** Effects bus volume (0..1), separate from the music bus. */
+export function setSfxVolume(v: number): void {
+  sfxVol = Math.max(0, Math.min(1, v));
+  if (sfxBus) sfxBus.gain.value = sfxVol;
+}
+export const getSfxVolume = (): number => sfxVol;
+/** Ambient music volume (0..1). */
+export function setMusicVolume(v: number): void {
+  musicVol = Math.max(0, Math.min(1, v));
+  if (musicGain && musicOn) musicGain.gain.value = 0.8 * musicVol;
+}
+export const getMusicVolume = (): number => musicVol;
 /** Single output bus: every sound goes through one master gain (volume keys). */
+function mainOut(c: AudioContext): AudioNode {
+  dest(c);
+  return master as GainNode;
+}
 function dest(c: AudioContext): AudioNode {
   if (!master) {
     master = c.createGain();
-    master.gain.value = masterVol;
+    master.gain.value = muted ? 0 : masterVol;
+    sfxBus = c.createGain();
+    sfxBus.gain.value = sfxVol;
+    sfxBus.connect(master);
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     master.connect(comp);
     comp.connect(c.destination);
   }
-  return master;
+  return sfxBus as GainNode;
 }
 /** Adaptive music/mix state driven by the GearShift bench (0..1). */
 export const musicState = { tension: 0, jam: 0, swell: 0 };
@@ -47,7 +78,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (e) => {
     if (e.key === '[' || e.key === ']') {
       masterVol = Math.max(0, Math.min(1, masterVol + (e.key === ']' ? 0.15 : -0.15)));
-      if (master) master.gain.value = masterVol;
+      applyMaster();
     }
   });
   document.addEventListener('visibilitychange', () => {
@@ -224,7 +255,7 @@ function colourFor(): Colour {
 function out(c: AudioContext): AudioNode {
   if (!musicGain) {
     musicGain = c.createGain();
-    musicGain.gain.value = musicOn ? 0.8 : 0;
+    musicGain.gain.value = musicOn ? 0.8 * musicVol : 0;
     // long, soft hall reverb from decaying noise
     const len = Math.floor(c.sampleRate * 3.4);
     const ir = c.createBuffer(2, len, c.sampleRate);
@@ -237,8 +268,8 @@ function out(c: AudioContext): AudioNode {
     const wet = c.createGain();
     wet.gain.value = 0.55;
     reverb.connect(wet);
-    wet.connect(dest(c));
-    musicGain.connect(dest(c));
+    wet.connect(mainOut(c));
+    musicGain.connect(mainOut(c));
     musicGain.connect(reverb);
   }
   return musicGain;
@@ -340,7 +371,7 @@ function schedule(): void {
     curColour = col;
     nextT = Math.max(nextT, c.currentTime + 0.15);
   }
-  if (musicGain && musicOn) musicGain.gain.setTargetAtTime(0.8 - 0.5 * Math.max(musicState.tension, musicState.jam), c.currentTime, 0.4);
+  if (musicGain && musicOn) musicGain.gain.setTargetAtTime(musicVol * (0.8 - 0.5 * Math.max(musicState.tension, musicState.jam)), c.currentTime, 0.4);
   const stepDur = 60 / BPM / 2; // eighth notes; 8 per bar (4 beats)
   while (nextT < c.currentTime + 0.3) {
     const s = step % 8;
@@ -414,7 +445,7 @@ function startMusic(): void {
   window.addEventListener('keydown', (e) => {
     if (e.key === 'm' || e.key === 'M') {
       musicOn = !musicOn;
-      if (musicGain) musicGain.gain.value = musicOn ? 0.8 : 0;
+      if (musicGain) musicGain.gain.value = musicOn ? 0.8 * musicVol : 0;
       if (musicOn && ctx) nextT = ctx.currentTime + 0.1;
     }
   });
