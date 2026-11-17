@@ -12,7 +12,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
-import { askMentor } from './mentor.js';
+import { askChallenge, askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -82,6 +82,8 @@ export class DominoSystem extends createSystem({
   private hudDirty = true;
   private optCooldown = 0;
   private msg = '';
+  private goal = 15;
+  private story = '';
   private msgT = 0;
   private mouseDown = false;
   private mouseX = 0;
@@ -91,6 +93,7 @@ export class DominoSystem extends createSystem({
   private clickT = 0;
 
   init(): void {
+    this.nextChallenge();
     const add = (o: Mesh | Group): void => {
       this.world.createTransformEntity(o);
       this.root.push(o);
@@ -308,6 +311,17 @@ export class DominoSystem extends createSystem({
     }
   }
 
+  private nextChallenge(): void {
+    this.goal = 12 + Math.floor(Math.random() * 19);
+    const g = 'Make a chain of ' + this.goal + ' dominoes that all fall';
+    this.story = g;
+    this.hudDirty = true;
+    askChallenge('dominoes', g, (t) => {
+      this.story = t === g ? t : t + ' (' + this.goal + ')';
+      this.hudDirty = true;
+    });
+  }
+
   private drawHud(): void {
     const h = this.hud;
     h.card();
@@ -316,7 +330,7 @@ export class DominoSystem extends createSystem({
     if (this.msgT > 0) h.text(this.msg, 150, 30, '#8dff9d');
     else
       h.text(
-        this.phase === 'build' ? 'Stand them in a line, then press Topple' : this.phase === 'run' ? 'Falling...' : 'Press Stand them up to go again',
+        this.phase === 'build' ? this.story || 'Stand them in a line, then press Topple' : this.phase === 'run' ? 'Falling...' : 'Press Stand them up to go again',
         150,
         26,
         '#ffe9c4',
@@ -471,6 +485,10 @@ export class DominoSystem extends createSystem({
         celebrate(0, TOP + 0.15, -0.55, this.total >= 30 ? 3 : this.total >= 20 ? 2 : 1);
         this.msg = 'All ' + this.total + ' fell!  ' + (this.total >= 30 ? '★★★' : this.total >= 20 ? '★★' : '★');
         for (const d of this.order) emitBurst(d.x, TOP + 0.05, d.z, 1, 0.85, 0.35, 3, 0.4);
+        if (this.total >= this.goal) {
+          this.msg = 'Challenge complete!  ' + this.total + ' fell';
+          this.nextChallenge();
+        }
       } else {
         sfx.lose();
         this.msg = 'The chain broke at ' + this.fell + ' of ' + this.total + '. Close the gap!';

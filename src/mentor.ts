@@ -33,3 +33,25 @@ export function askMentor(kind: 'dominoes' | 'bricks' | 'pottery', facts: string
       done(pick(kind));
     });
 }
+
+/** A one-sentence challenge story for a goal the game itself will verify (so it is always fair). */
+export function askChallenge(kind: 'dominoes' | 'bricks', goal: string, done: (line: string) => void): void {
+  const prompt =
+    'You are a playful craft mentor in a tiny VR workshop. Write ONE short sentence (max 12 words, no quotes, no emojis) that sets this challenge as a fun mini story: ' +
+    goal;
+  const ctl = new AbortController();
+  const timer = window.setTimeout(() => ctl.abort(), 5000);
+  const ok = (t: string): boolean => t.length >= 8 && t.length <= 90 && !t.startsWith('{') && !t.startsWith('<');
+  fetch('https://text.pollinations.ai/' + encodeURIComponent(prompt) + '?model=openai-fast', { signal: ctl.signal })
+    .then((r) => (r.ok ? r.text() : Promise.reject(new Error('http'))))
+    .then((t) => {
+      window.clearTimeout(timer);
+      const line = t.replace(/\s+/g, ' ').trim();
+      done(ok(line) ? line : goal);
+    })
+    .catch(() => {
+      window.clearTimeout(timer);
+      done(goal);
+    });
+  void kind;
+}

@@ -13,7 +13,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
-import { askMentor } from './mentor.js';
+import { askChallenge, askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
@@ -137,11 +137,14 @@ export class BrickSystem extends createSystem({
   private rope!: Mesh;
   private smashT = -1;
   private smashH = 0;
+  private goal = 8;
+  private story = '';
   private smashY = 0.8;
   private smashZ = CZ;
   private tmp = new Vector3();
 
   init(): void {
+    this.nextChallenge();
     const add = (o: Mesh | Group): void => {
       this.world.createTransformEntity(o);
       this.root.push(o);
@@ -369,6 +372,17 @@ export class BrickSystem extends createSystem({
     }
   }
 
+  private nextChallenge(): void {
+    this.goal = 6 + Math.floor(Math.random() * 7);
+    const g = 'Build a tower ' + this.goal + ' bricks high, then smash it';
+    this.story = g;
+    this.hudDirty = true;
+    askChallenge('bricks', g, (t) => {
+      this.story = t === g ? t : t + ' (' + this.goal + ' high)';
+      this.hudDirty = true;
+    });
+  }
+
   // ------------------------------------------------------------- actions
   private press(id: number): void {
     if (id === 0) {
@@ -420,7 +434,7 @@ export class BrickSystem extends createSystem({
     h.text('Bricks ' + this.placedOrder.length + '    Height ' + ht + '    Best ' + this.best, 100, 26, '#ffd9a0');
     const stars = ht >= 14 ? '★★★' : ht >= 10 ? '★★' : ht >= 6 ? '★' : '';
     if (this.msgT > 0) h.text(this.msg, 150, 30, '#8dff9d');
-    else h.text(stars ? 'Tower ' + stars + '  Now smash it!' : 'Build a tall tower: 6 high = ★', 150, 26, '#ffe9c4');
+    else h.text(ht >= this.goal ? 'Goal reached!  Now smash it' : this.story || 'Build a tall tower', 150, 24, '#ffe9c4');
     h.text('Pinch a brick from the tray, drop it on the plate', 195, 22, '#cdb99a');
     h.commit();
   }
@@ -591,14 +605,20 @@ export class BrickSystem extends createSystem({
     if (this.smashT > T + 0.4) {
       this.smashT = -1;
       celebrate(OX + (N * C) / 2, PLATE_Y + 0.1, OZ + (N * C) / 2, 2);
-      askMentor('bricks', 'a toy-brick tower ' + this.smashH + ' bricks high was just smashed with a wrecking ball', (t) => {
+      const won = this.smashH >= this.goal;
+      if (won) {
+        celebrate(OX + (N * C) / 2, PLATE_Y + 0.2, OZ + (N * C) / 2, 3);
+        sfx.win();
+      }
+      askMentor('bricks', 'a toy-brick tower ' + this.smashH + ' bricks high was just smashed with a wrecking ball' + (won ? ', the player completed their challenge' : ''), (t) => {
         this.msg = t;
         this.msgT = 9;
         this.hudDirty = true;
       });
       this.ball.visible = false;
       this.rope.visible = false;
-      this.msg = 'Boom!  Build again.';
+      this.msg = won ? 'Challenge complete!  New one coming' : 'Boom!  Build again.';
+      if (won) this.nextChallenge();
       this.msgT = 4;
       this.hudDirty = true;
     }
