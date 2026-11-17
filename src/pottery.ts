@@ -21,6 +21,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
+import { woodTexture } from './geo.js';
 import { askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
@@ -260,7 +261,7 @@ export class PotterySystem extends createSystem({
   private dirty = false;
 
   init(): void {
-    const wood = new MeshStandardMaterial({ map: woodTex(), roughness: 0.85 });
+    const wood = new MeshStandardMaterial({ map: woodTexture(26, 2, 2), roughness: 0.45 });
     const dark = new MeshStandardMaterial({ color: 0x3a2c22, roughness: 0.7 });
     this.clayMat = new MeshStandardMaterial({
       color: 0xffffff,

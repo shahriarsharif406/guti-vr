@@ -13,6 +13,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
+import { roundedBox, woodTexture } from './geo.js';
 import { askChallenge, askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
@@ -89,7 +90,7 @@ const mats = DEFS.map((d) => new MeshStandardMaterial({ color: d.color, roughnes
 function makeBrickGroup(type: number): Group {
   const { w, d } = DEFS[type];
   const g = new Group();
-  const body = new Mesh(new BoxGeometry(w * C - 0.0008, H, d * C - 0.0008), mats[type]);
+  const body = new Mesh(roundedBox(w * C - 0.0008, H, d * C - 0.0008, 0.0014), mats[type]);
   body.position.set((w * C) / 2, H / 2, (d * C) / 2);
   g.add(body);
   for (let i = 0; i < w; i++) {
@@ -149,7 +150,7 @@ export class BrickSystem extends createSystem({
       this.world.createTransformEntity(o);
       this.root.push(o);
     };
-    const wood = new MeshStandardMaterial({ color: 0x8b5e34, roughness: 0.85 });
+    const wood = new MeshStandardMaterial({ map: woodTexture(26, 2, 2), roughness: 0.45, metalness: 0.0 });
     const top = new Mesh(new CylinderGeometry(0.46, 0.46, 0.04, 56), wood);
     top.position.set(CX, 0.72, CZ);
     add(top);

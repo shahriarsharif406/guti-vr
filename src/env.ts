@@ -26,7 +26,13 @@ import {
   createSystem,
   AssetManager,
   Box3,
+  DirectionalLight,
+  PMREMGenerator,
+  PCFSoftShadowMap,
+  Scene,
+  Mesh as ThreeMesh,
 } from '@iwsdk/core';
+import type { Texture } from '@iwsdk/core';
 import { modeState } from './mode.js';
 import { kiteCfg } from './kitecfg.js';
 import {
@@ -771,6 +777,88 @@ export class EnvSystem extends createSystem({}) {
     this.groups.workshop.push(room);
   }
 
+  private roomEnv: Texture | null = null;
+  private prevEnv: Texture | null = null;
+  private envInRoom = false;
+  private lit = false;
+
+  /** A small bake of this very room (window light, warm walls, wood floor) so glossy things reflect it. */
+  private makeRoomEnv(): Texture | null {
+    try {
+      const sc = new Scene();
+      const face = (w: number, h: number, x: number, y: number, z: number, ry: number, color: number, basic = false): void => {
+        const m = new ThreeMesh(
+          new PlaneGeometry(w, h),
+          basic ? new MeshBasicMaterial({ color, side: DoubleSide }) : new MeshStandardMaterial({ color, side: DoubleSide }),
+        );
+        m.rotation.y = ry;
+        m.position.set(x, y, z);
+        sc.add(m);
+      };
+      const mb = (c: number) => new MeshBasicMaterial({ color: c, side: BackSide });
+      const room = new ThreeMesh(new BoxGeometry(8, 3, 8), mb(0xcdb28c));
+      room.position.y = 1.5;
+      sc.add(room);
+      const floor = new ThreeMesh(new PlaneGeometry(8, 8), new MeshBasicMaterial({ color: 0x9a6a3c }));
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = 0.01;
+      sc.add(floor);
+      const ceil = new ThreeMesh(new PlaneGeometry(8, 8), new MeshBasicMaterial({ color: 0x6b4a30 }));
+      ceil.rotation.x = Math.PI / 2;
+      ceil.position.y = 2.99;
+      sc.add(ceil);
+      face(2.8, 1.6, 0, 1.7, -3.9, 0, 0xffb878, true); // sunset window (strong, warm)
+      face(1.2, 0.6, 0, 1.9, -3.85, 0, 0xfff1d0, true); // bright sun disc
+      face(0.5, 0.5, 0, 2.7, 0, 0, 0xfff1c0, true); // pendant bulb glow
+      const pm = new PMREMGenerator(this.world.renderer);
+      const env = pm.fromScene(sc, 0, 0.1, 50).texture;
+      pm.dispose();
+      return env;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Soft sun shadows over the table area; everything standard-lit takes part. */
+  private lightingPass(): void {
+    this.lit = true;
+    try {
+      const r = this.world.renderer;
+      r.shadowMap.enabled = true;
+      r.shadowMap.type = PCFSoftShadowMap;
+      let sun: DirectionalLight | null = null;
+      this.world.scene.traverse((o) => {
+        if (!sun && (o as DirectionalLight).isDirectionalLight) sun = o as DirectionalLight;
+      });
+      const light = sun as DirectionalLight | null;
+      if (light) {
+        light.castShadow = true;
+        light.shadow.mapSize.set(1024, 1024);
+        const c = light.shadow.camera;
+        c.left = -0.8;
+        c.right = 0.8;
+        c.top = 0.8;
+        c.bottom = -0.8;
+        c.near = 0.5;
+        c.far = 6;
+        light.shadow.bias = -0.0004;
+        light.shadow.normalBias = 0.012;
+        light.target.position.set(0, 0.7, -0.55);
+        this.world.scene.add(light.target);
+      }
+      this.world.scene.traverse((o) => {
+        const m = o as ThreeMesh;
+        if (!m.isMesh) return;
+        const mat = m.material as MeshStandardMaterial;
+        if (!mat || !(mat as { isMeshStandardMaterial?: boolean }).isMeshStandardMaterial) return;
+        m.receiveShadow = true;
+        m.castShadow = true;
+      });
+    } catch {
+      // shadows are a nicety
+    }
+  }
+
   /** CC0 apartment props (Vuena) around the workshop corner */
   private decor(): void {
     const spots: [string, number, number, number, number, number][] = [
@@ -814,6 +902,23 @@ export class EnvSystem extends createSystem({}) {
         : '';
     if (skyWant) this.ensureSky(skyWant);
     if (want !== this.shownWorld || skyWant !== this.shownSky) this.showWorld(want, skyWant);
+    if (!this.lit && this.t > 1.5) this.lightingPass();
+    const inRoom = want === 'workshop';
+    if (inRoom !== this.envInRoom) {
+      this.envInRoom = inRoom;
+      const sc = this.world.scene;
+      if (inRoom) {
+        this.roomEnv ??= this.makeRoomEnv();
+        this.prevEnv = sc.environment;
+        if (this.roomEnv) {
+          sc.environment = this.roomEnv;
+          sc.environmentIntensity = 1;
+        }
+      } else {
+        sc.environment = this.prevEnv;
+        sc.environmentIntensity = 0.55;
+      }
+    }
     const open = want === 'field' || want === 'bil' || want === 'winter' || want === 'char';
     for (const sp of this.spinners) sp.rotation.y += dt * 0.02;
     for (const c of this.clouds) {

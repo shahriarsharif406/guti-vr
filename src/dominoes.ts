@@ -12,6 +12,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
+import { roundedBox, woodTexture } from './geo.js';
 import { askChallenge, askMentor } from './mentor.js';
 import { readPinchPoint } from './hand.js';
 import { modeState } from './mode.js';
@@ -98,7 +99,7 @@ export class DominoSystem extends createSystem({
       this.world.createTransformEntity(o);
       this.root.push(o);
     };
-    const wood = new MeshStandardMaterial({ color: 0x8b5e34, roughness: 0.85 });
+    const wood = new MeshStandardMaterial({ map: woodTexture(26, 2, 2), roughness: 0.45, metalness: 0.0 });
     const top = new Mesh(new CylinderGeometry(0.46, 0.46, 0.04, 56), wood);
     top.position.set(CX, 0.72, CZ);
     add(top);
@@ -116,7 +117,7 @@ export class DominoSystem extends createSystem({
     tray.position.set(TRAY.x, TOP + 0.008, TRAY.z);
     tray.rotation.y = 0.5;
     add(tray);
-    const geo = new BoxGeometry(DW, DH, DT);
+    const geo = roundedBox(DW, DH, DT, 0.0022);
     const lineGeo = new BoxGeometry(DW * 0.94, 0.0025, DT + 0.0006);
     const dotGeo = new BoxGeometry(0.004, 0.004, DT + 0.0008);
     const dark = new MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.6 });
