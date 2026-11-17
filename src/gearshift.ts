@@ -89,6 +89,7 @@ interface Lever {
   drag: boolean;
   vel: number;
   slammed: boolean;
+  tickPos: number;
   deco: Mesh[];
 }
 const TRAVEL = 0.16;
@@ -699,7 +700,7 @@ export class GearShiftSystem extends createSystem({
       const lab = new Mesh(new PlaneGeometry(0.1, 0.025), new MeshBasicMaterial({ map: labelTex(label), transparent: true }));
       lab.position.set(x, BY + top - TRAVEL - 0.05, BZ + 0.046);
       this.root.add(lab);
-      return { g, knob, x, top, pos: 0, target: 0, drag: false, vel: 0, slammed: false, deco: [slot, groove, lab] };
+      return { g, knob, x, top, pos: 0, target: 0, drag: false, vel: 0, slammed: false, tickPos: 0, deco: [slot, groove, lab] };
     };
     this.master = makeLever(BW / 2 + 0.1, 0.12, 'IGNITION', true);
     this.clutch = makeLever(-(BW / 2 + 0.1), 0.0, 'CLUTCH', false);
@@ -1391,10 +1392,13 @@ export class GearShiftSystem extends createSystem({
           l.vel = 0;
         }
       } else l.vel = 0;
-      if (l.pos > 0.92 && !l.slammed && l.target === 1) {
+      if (l.g.visible && Math.floor(l.pos * 8) !== Math.floor(l.tickPos * 8) && Math.abs(l.pos - l.tickPos) < 0.5) sfx.leverTick(l.pos < l.tickPos);
+      l.tickPos = l.pos;
+      if (l.pos > 0.92 && !l.slammed) {
         l.slammed = true;
         this.shake = Math.max(this.shake, 0.7);
         sfx.lever();
+        buzz(40);
       } else if (l.pos < 0.5) l.slammed = false;
       l.g.position.y = BY + l.top - l.pos * TRAVEL;
     }

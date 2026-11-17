@@ -327,6 +327,7 @@ function schedule(): void {
     curColour = col;
     nextT = Math.max(nextT, c.currentTime + 0.15);
   }
+  if (musicGain && musicOn) musicGain.gain.setTargetAtTime(0.8 - 0.5 * Math.max(musicState.tension, musicState.jam), c.currentTime, 0.4);
   const stepDur = 60 / BPM / 2; // eighth notes; 8 per bar (4 beats)
   while (nextT < c.currentTime + 0.3) {
     const s = step % 8;
@@ -367,19 +368,6 @@ function schedule(): void {
     if (col === 'gears' && ms.swell > 0.3 && s % 2 === 0) {
       mNote(c, nextT, midi(MELODY[(s + bar) % MELODY.length] + 12), 2.4, 0.05 * ms.swell, 'bell');
       if (s === 0) for (const n of chord.pad) mNote(c, nextT, midi(n + 12), stepDur * 8, 0.02 * ms.swell, 'pad');
-    }
-    // clockwork pulse for the GearShift bench: a soft tick on every beat
-    if (col === 'gears' && s % 2 === 0) {
-      const g = c.createGain();
-      const o = c.createOscillator();
-      o.type = 'square';
-      o.frequency.value = s % 4 === 0 ? 1900 : 1400;
-      g.gain.setValueAtTime(0.012, nextT);
-      g.gain.exponentialRampToValueAtTime(0.0001, nextT + 0.03);
-      o.connect(g);
-      g.connect(out(c));
-      o.start(nextT);
-      o.stop(nextT + 0.04);
     }
     nextT += stepDur;
     step += 1;
@@ -583,11 +571,11 @@ export const sfx = {
     w.o.frequency.setTargetAtTime(55 + rpm * 110, t, 0.1);
     w.o2.frequency.setTargetAtTime(110 + rpm * 220, t, 0.1);
     w.f.frequency.setTargetAtTime(300 + rpm * 700, t, 0.1);
-    w.nf.frequency.setTargetAtTime(500 + rpm * 1800, t, 0.1);
+    w.nf.frequency.setTargetAtTime(300 + rpm * 600, t, 0.1);
     w.lfo.frequency.setTargetAtTime(4 + rpm * 22, t, 0.1);
-    w.lg.gain.setTargetAtTime(150 + rpm * 700, t, 0.1);
-    w.g.gain.setTargetAtTime(rpm > 0.01 ? 0.016 + rpm * 0.028 : 0, t, 0.12);
-    w.ng.gain.setTargetAtTime(rpm > 0.01 ? 0.01 + rpm * 0.05 : 0, t, 0.12);
+    w.lg.gain.setTargetAtTime(60 + rpm * 200, t, 0.1);
+    w.g.gain.setTargetAtTime(rpm > 0.01 ? 0.02 + rpm * 0.03 : 0, t, 0.12);
+    w.ng.gain.setTargetAtTime(rpm > 0.01 ? 0.004 + rpm * 0.012 : 0, t, 0.12);
   },
   /**
    * Tooth-mesh voice: a gated noise train whose click rate is the tooth-passing frequency
@@ -634,18 +622,17 @@ export const sfx = {
       meshVoices[slot] = v;
     }
     const t = c.currentTime;
-    const cf = { brass: 3600, bronze: 2800, copper: 2100, iron: 650 }[kind];
-    v.lfo.frequency.setTargetAtTime(Math.max(0.1, clicksPerSec), t, 0.05);
+    const cf = { brass: 1700, bronze: 1400, copper: 1100, iron: 520 }[kind];
+    v.lfo.frequency.setTargetAtTime(Math.max(0.1, Math.min(9, clicksPerSec * 0.3)), t, 0.05);
     v.bp.frequency.setTargetAtTime(cf, t, 0.05);
-    v.bp.Q.setTargetAtTime(kind === 'iron' ? 1.4 : 4, t, 0.05);
-    v.level.gain.setTargetAtTime(clicksPerSec > 0.01 ? vol * (kind === 'iron' ? 0.7 : 0.35) : 0, t, 0.06);
+    v.bp.Q.setTargetAtTime(1.2, t, 0.05);
+    v.level.gain.setTargetAtTime(clicksPerSec > 0.01 ? vol * (kind === 'iron' ? 0.25 : 0.14) : 0, t, 0.06);
     if (v.sp) v.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.1);
   },
   /** gritty bite when teeth first engage or the train reverses */
   crunch(kind: 'brass' | 'bronze' | 'copper' | 'iron' = 'bronze', pan = 0): void {
     withPan(pan, () => {
-      burst(0.12, 0.22, kind === 'iron' ? 700 : 2400, 0.9);
-      burst(0.06, 0.18, 5200, 1.5);
+      burst(0.1, 0.12, kind === 'iron' ? 500 : 1200, 0.9);
       tone(kind === 'iron' ? 95 : 260, 0.12, 0.1, 'sawtooth', kind === 'iron' ? 60 : 140);
     });
   },
@@ -682,11 +669,17 @@ export const sfx = {
       tone(f * 2, 1.1, 0.03, 'sine', undefined, i * 0.13);
     });
   },
-  /** lever slammed down */
+  /** lever slammed home: heavy clunk with a mid body so laptop speakers carry it */
   lever(): void {
-    tone(70, 0.3, 0.3, 'triangle', 40);
-    burst(0.06, 0.25, 700, 2);
-    tone(1600, 0.2, 0.04, 'sine');
+    tone(150, 0.3, 0.3, 'triangle', 60);
+    tone(420, 0.18, 0.16, 'square', 200);
+    burst(0.08, 0.3, 1100, 1.4);
+    tone(760, 0.25, 0.05, 'sine');
+  },
+  /** ratchet click while a lever is dragged; up = release click */
+  leverTick(up = false): void {
+    tone(up ? 520 : 380, 0.05, 0.12, 'square', up ? 300 : 220);
+    burst(0.025, 0.12, 1500, 2);
   },
   /** finale: a swelling, cascading major-chord drone while the orrery unfolds (about 9 seconds) */
   finale(): void {
