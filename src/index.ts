@@ -6,6 +6,7 @@ import { GameSystem } from './game.js';
 import { KiteSystem } from './kite.js';
 import { DanguliSystem } from './danguli.js';
 import { KiteCraftSystem } from './kitecraft.js';
+import { MarbleRunSystem } from './marblerun.js';
 import { PotterySystem } from './pottery.js';
 import { LattimSystem } from './lattim.js';
 import { MenuSystem } from './menu.js';
@@ -23,4 +24,5 @@ World.create(
   world.registerSystem(DanguliSystem);
   world.registerSystem(PotterySystem);
   world.registerSystem(KiteCraftSystem);
+  world.registerSystem(MarbleRunSystem);
 });

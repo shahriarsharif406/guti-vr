@@ -1552,7 +1552,7 @@ export class GameSystem extends createSystem({
     if (modeState.mode !== this.lastMode) {
       const wasGuti = this.lastMode === 'guti';
       this.lastMode = modeState.mode;
-      const open = modeState.mode === 'kite' || modeState.mode === 'lattim' || modeState.mode === 'danguli' || modeState.mode === 'pottery' || modeState.mode === 'kitecraft';
+      const open = modeState.mode === 'kite' || modeState.mode === 'lattim' || modeState.mode === 'danguli' || modeState.mode === 'pottery' || modeState.mode === 'kitecraft' || modeState.mode === 'marblerun';
       this.floorMesh.visible = !open;
       this.tableMesh.visible = !open;
       if (open) {
