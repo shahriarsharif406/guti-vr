@@ -811,3 +811,98 @@ export function boulder(r: number, color: number): Mesh {
   geo.computeVertexNormals();
   return new Mesh(geo, new MeshStandardMaterial({ color, roughness: 1, flatShading: true }));
 }
+
+// ------------------------------------------------------------------ more places (beel, winter field, river char)
+export function sandTexture(): CanvasTexture {
+  const [c, g] = canvas(512, 512);
+  g.fillStyle = '#d9c79b';
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 14000; i++) {
+    const v = Math.random();
+    g.fillStyle = v < 0.5 ? 'rgba(240,226,184,0.5)' : 'rgba(170,146,100,0.35)';
+    g.fillRect(Math.random() * 512, Math.random() * 512, 1.5, 1.5);
+  }
+  // wind ripples
+  for (let i = 0; i < 60; i++) {
+    g.strokeStyle = 'rgba(150,126,86,0.18)';
+    g.lineWidth = rnd(1, 3);
+    const y = Math.random() * 512;
+    g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x <= 512; x += 32) g.lineTo(x, y + Math.sin(x * 0.04 + i) * 5);
+    g.stroke();
+  }
+  return tex(c, 1, 1);
+}
+
+/** Winter field: pale stubble with strips of yellow mustard in bloom. */
+export function winterTexture(): CanvasTexture {
+  const [c, g] = canvas(512, 512);
+  g.fillStyle = '#b9ab72';
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 9000; i++) {
+    const v = Math.random();
+    g.fillStyle = v < 0.5 ? 'rgba(214,198,130,0.55)' : 'rgba(128,112,70,0.4)';
+    g.fillRect(Math.random() * 512, Math.random() * 512, 1.5, 3 + Math.random() * 6);
+  }
+  // mustard strips
+  for (const y of [90, 300, 420]) {
+    g.fillStyle = 'rgba(244,208,40,0.9)';
+    g.fillRect(0, y, 512, 70);
+    for (let i = 0; i < 1800; i++) {
+      g.fillStyle = Math.random() < 0.5 ? 'rgba(255,226,70,0.9)' : 'rgba(120,150,40,0.6)';
+      g.fillRect(Math.random() * 512, y + Math.random() * 70, 2, 2);
+    }
+  }
+  return tex(c, 1, 1);
+}
+
+/** Kash flower (white plumes on tall reeds) that grows on river chars. */
+export function kashClump(n = 14, h = 1.6): Group {
+  const grp = new Group();
+  const stem = new CylinderGeometry(0.008, 0.014, 1, 4);
+  const plume = new ConeGeometry(0.07, 0.38, 6);
+  const sm = new MeshStandardMaterial({ color: 0xa7a46a, roughness: 1 });
+  const pm = new MeshStandardMaterial({ color: 0xf4f1e6, roughness: 1 });
+  for (let i = 0; i < n; i++) {
+    const hh = h * rnd(0.7, 1.15);
+    const a = rnd(0, 6.28);
+    const r = rnd(0.02, 0.45);
+    const g2 = new Group();
+    const s = new Mesh(stem, sm);
+    s.scale.y = hh;
+    s.position.y = hh / 2;
+    g2.add(s);
+    const p = new Mesh(plume, pm);
+    p.position.y = hh;
+    g2.add(p);
+    g2.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+    g2.rotation.set(Math.cos(a) * 0.2, 0, -Math.sin(a) * 0.2);
+    grp.add(g2);
+  }
+  return bake(grp);
+}
+
+/** Water-lily / hyacinth pads floating on the beel. */
+export function lilyPads(n: number, spread: number): Group {
+  const grp = new Group();
+  const pad = new CircleGeometry(0.28, 10);
+  pad.rotateX(-Math.PI / 2);
+  const pm = new MeshStandardMaterial({ color: 0x3f8a3c, roughness: 0.7, side: DoubleSide });
+  const fm = new MeshStandardMaterial({ color: 0xf2b6d0, roughness: 0.6 });
+  const fg = new SphereGeometry(0.07, 6, 4);
+  for (let i = 0; i < n; i++) {
+    const m = new Mesh(pad, pm);
+    const s = rnd(0.6, 1.8);
+    m.scale.set(s, 1, s);
+    m.position.set(rnd(-spread, spread), 0.012, rnd(-spread, spread));
+    grp.add(m);
+    if (i % 5 === 0) {
+      const f = new Mesh(fg, fm);
+      f.position.set(m.position.x, 0.06, m.position.z);
+      f.scale.y = 1.2;
+      grp.add(f);
+    }
+  }
+  return bake(grp);
+}

@@ -25,6 +25,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { modeState } from './mode.js';
+import { kiteCfg } from './kitecfg.js';
 import {
   bake,
   bambooClump,
@@ -35,6 +36,10 @@ import {
   mistBank,
   sunShaft,
   harvestTexture,
+  sandTexture,
+  winterTexture,
+  kashClump,
+  lilyPads,
   haystack,
   hazeDisc,
   hut,
@@ -54,7 +59,8 @@ import { WorldId, worldState } from './worlds.js';
 
 const RAIN = 260;
 const rnd = (a: number, b: number): number => a + Math.random() * (b - a);
-type SceneKey = WorldId | 'field';
+type SkyKey = 'sky_golden' | 'sky_morning' | 'sky_noon' | 'sky_cloudy' | 'sky_storm';
+type SceneKey = WorldId | 'field' | 'bil' | 'winter' | 'char' | SkyKey;
 const birdGeo = (() => {
   const g = new BufferGeometry();
   g.setAttribute(
@@ -84,7 +90,16 @@ export class EnvSystem extends createSystem({}) {
     ares: [],
     orbit: [],
     field: [],
+    bil: [],
+    winter: [],
+    char: [],
+    sky_golden: [],
+    sky_morning: [],
+    sky_noon: [],
+    sky_cloudy: [],
+    sky_storm: [],
   };
+  private shownSky: SkyKey | '' = '';
   private shownWorld: SceneKey | '' = '';
   private sway: { o: Object3D; phase: number }[] = [];
   private farKites: { m: Mesh; x: number; y: number; phase: number }[] = [];
@@ -217,15 +232,23 @@ export class EnvSystem extends createSystem({}) {
     this.buildRooftop();
     this.building = 'field';
     this.buildField();
+    this.building = 'bil';
+    this.buildBil();
+    this.building = 'winter';
+    this.buildWinter();
+    this.building = 'char';
+    this.buildChar();
+    this.buildSkies();
     this.building = 'earth';
     this.showWorld('earth');
   }
 
   // ------------------------------------------------------------ other worlds
-  private showWorld(id: SceneKey): void {
+  private showWorld(id: SceneKey, sky: SkyKey | '' = ''): void {
     this.shownWorld = id;
-    for (const k of Object.keys(this.groups) as WorldId[]) {
-      for (const m of this.groups[k]) m.visible = k === id;
+    this.shownSky = sky;
+    for (const k of Object.keys(this.groups) as SceneKey[]) {
+      for (const m of this.groups[k]) m.visible = k === id || k === sky;
     }
   }
 
@@ -439,10 +462,121 @@ export class EnvSystem extends createSystem({}) {
     this.distantKites(12, -22);
   }
 
+
+  // ------------------------------------------------------------ kite skies (time of day / weather)
+  private buildSkies(): void {
+    const skies: [SkyKey, Parameters<typeof paintedSky>[0]][] = [
+      ['sky_golden', { top: '#2c5ea6', mid: '#eeb98c', horizon: '#ffe0b4', sunU: 0.68, sunV: 0.34, sunColor: '#ffe6ae', clouds: 42, cloudAlpha: 0.7, cloudColor: '255,226,196' }],
+      ['sky_morning', { top: '#6a9bd6', mid: '#f4d3b8', horizon: '#fdeed8', sunU: 0.6, sunV: 0.4, sunColor: '#fff4d6', clouds: 22, cloudAlpha: 0.5, cloudColor: '255,238,222' }],
+      ['sky_noon', { top: '#2a78cc', mid: '#86c0ec', horizon: '#e6f1f7', sunU: 0.7, sunV: 0.16, sunColor: '#ffffff', clouds: 34, cloudAlpha: 0.75 }],
+      ['sky_cloudy', { top: '#76869a', mid: '#a5b2bd', horizon: '#d4dadc', clouds: 60, cloudAlpha: 0.8, cloudColor: '170,180,190' }],
+      ['sky_storm', { top: '#262f3f', mid: '#515c6b', horizon: '#98a1a8', clouds: 70, cloudAlpha: 0.88, cloudColor: '62,70,84' }],
+    ];
+    for (const [key, o] of skies) {
+      this.building = key;
+      this.put(paintedSky(o), 0, -0.5, 1, 0, 1.3);
+    }
+    // storm rain shares the monsoon geometry
+    this.building = 'sky_storm';
+    const stormRain = new LineSegments(
+      this.rainGeo,
+      new LineBasicMaterial({ color: 0xd8e6f2, transparent: true, opacity: 0.4, depthWrite: false }),
+    );
+    stormRain.frustumCulled = false;
+    this.put(stormRain, 0, 0);
+  }
+
+  // ------------------------------------------------------------ monsoon beel: endless water, lilies, boats, stilt huts
+  private buildBil(): void {
+    this.put(hazeDisc(70, mudTexture(), 0xcfe0e6, 0.55), 0, -1, 1, 0, -0.03);
+    this.put(water(140, 90, 0x4c8a98), 0, -32, 1, 0, 0.0);
+    for (let i = 0; i < 7; i++) this.put(lilyPads(26, 5), rnd(-14, 14), -rnd(3, 22), 1, 0, 0.0);
+    this.put(boat(), -4, -9, 1.5, 0.4, 0.02);
+    this.put(boat(), 7, -14, 1.4, -0.5, 0.02);
+    this.put(boat(), -12, -20, 1.3, 0.9, 0.02);
+    // islands of palms, banana and huts rising from the water
+    for (const [x, z] of [[-18, -26], [16, -30], [2, -42], [-30, -16]] as [number, number][]) {
+      const isle = new Mesh(new CylinderGeometry(rnd(3, 5), rnd(4, 6), 0.3, 20), new MeshStandardMaterial({ color: 0x5f7a38, roughness: 1 }));
+      this.put(isle, x, z, 1, 0, 0.05);
+      this.put(hut(), x + rnd(-1, 1), z + rnd(-1, 1), 1.1, rnd(0, 6), 0.2);
+      this.put(palm(rnd(6, 9), rnd(-0.2, 0.2)), x + 2, z, 1, 0, 0.2);
+      this.put(palm(rnd(5, 8), rnd(-0.2, 0.2)), x - 2, z + 1, 1, 0, 0.2);
+      this.put(bananaPlant(rnd(2, 2.6)), x + 1.2, z + 1.8, 1, 0, 0.2);
+    }
+    this.ring(10, 40, 60, () => palm(rnd(6, 9), rnd(-0.2, 0.2)), 1, 1.5, Math.PI * 0.4, Math.PI * 1.6);
+    for (let i = 0; i < 4; i++) {
+      const mb = mistBank(rnd(34, 48), rnd(3, 5), '230,240,244', 0.4);
+      this.put(mb, rnd(-12, 12), -12 - i * 8, 1, 0, 1.0 + i * 0.3);
+      this.mists.push({ m: mb, x: mb.position.x, s: rnd(0.04, 0.1) * (i % 2 ? 1 : -1) });
+    }
+    this.distantKites(8, -34);
+    const egretMat = new MeshBasicMaterial({ color: 0xfafaf4, side: DoubleSide });
+    for (let i = 0; i < 9; i++) {
+      const b = new Mesh(birdGeo, egretMat);
+      this.put(b, 0, -20, 1, 0, 3);
+      b.scale.set(2.4, 2.4, 2.4);
+      this.egrets.push({ m: b, a: Math.random() * 6.28, r: 8 + Math.random() * 12, h: 1.2 + Math.random() * 2.5, s: 0.08 + Math.random() * 0.06 });
+    }
+  }
+
+  // ------------------------------------------------------------ winter field: stubble, mustard, haystacks, mist
+  private buildWinter(): void {
+    this.put(hazeDisc(70, winterTexture(), 0xe4dfcc), 0, -1, 1, 0, -0.012);
+    this.put(grassField(700, 1.5, 9), 0, 0, 1, 0, 0);
+    for (let i = 0; i < 6; i++) this.put(haystack(rnd(0.8, 1.1), rnd(1.5, 1.9)), rnd(-16, 16), -rnd(6, 26), 1);
+    this.ring(7, 28, 46, () => shadeTree(rnd(4.5, 6), rnd(2, 3)), 1, 1.8);
+    this.ring(8, 22, 40, () => palm(rnd(6, 9), rnd(-0.2, 0.2)), 1, 1.4, Math.PI * 0.45, Math.PI * 1.55);
+    this.ring(4, 12, 24, () => bambooClump(8, rnd(5, 7)), 1, 1.4, Math.PI * 0.55, Math.PI * 1.45);
+    this.put(hut(), 12, -14, 1.2, -0.8);
+    this.put(hut(), -14, -18, 1.2, 0.7);
+    for (let i = 0; i < 6; i++) {
+      const mb = mistBank(rnd(36, 50), rnd(3, 5), '245,242,232', 0.55);
+      this.put(mb, rnd(-12, 12), -8 - i * 6, 1, 0, 0.6 + i * 0.25);
+      this.mists.push({ m: mb, x: mb.position.x, s: rnd(0.04, 0.1) * (i % 2 ? 1 : -1) });
+    }
+    this.distantKites(10, -28);
+    for (let i = 0; i < 9; i++) {
+      const b = new Mesh(birdGeo, birdMat);
+      this.put(b, 0, -30, 1, 0, 9);
+      this.farBirds.push({ m: b, a: Math.random() * 6.28, r: 22 + Math.random() * 10, h: 8 + Math.random() * 6, s: 0.12 + Math.random() * 0.08 });
+    }
+  }
+
+  // ------------------------------------------------------------ river char: wide sand, kash flowers, river, strong wind
+  private buildChar(): void {
+    this.put(hazeDisc(70, sandTexture(), 0xe9dcc0), 0, -1, 1, 0, -0.012);
+    this.put(water(140, 34, 0x5d8fa0), 0, -34, 1, 0, 0.006);
+    this.put(water(40, 12, 0x5d8fa0), 22, -12, 1, 0.5, 0.004);
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 2 + Math.random() * 22;
+      const k = this.put(kashClump(rnd(10, 18), rnd(1.1, 1.9)), Math.sin(a) * r, -Math.cos(a) * r - 1, 1, Math.random() * 6);
+      k.userData.crown = k.children[0] ?? k;
+      this.sway.push({ o: k, phase: Math.random() * 6 });
+    }
+    this.put(boat(), -6, -28, 1.7, 0.2, 0.02);
+    this.put(boat(), 10, -30, 1.5, -0.4, 0.02);
+    this.put(hut(), -16, -8, 1.1, 0.6);
+    this.put(haystack(0.9, 1.6), -13, -6, 1);
+    this.ring(8, 50, 64, () => shadeTree(rnd(5, 7), rnd(2.4, 3.4)), 1.2, 2, Math.PI * 0.3, Math.PI * 1.7);
+    this.ring(6, 40, 56, () => palm(rnd(6, 9), rnd(-0.2, 0.2)), 1, 1.5, Math.PI * 0.3, Math.PI * 1.7);
+    for (let i = 0; i < 3; i++) {
+      const mb = mistBank(rnd(34, 46), rnd(2, 4), '250,238,214', 0.3);
+      this.put(mb, rnd(-12, 12), -10 - i * 10, 1, 0, 0.8 + i * 0.3);
+      this.mists.push({ m: mb, x: mb.position.x, s: rnd(0.08, 0.16) * (i % 2 ? 1 : -1) });
+    }
+    this.distantKites(12, -26);
+    const egretMat = new MeshBasicMaterial({ color: 0xfafaf4, side: DoubleSide });
+    for (let i = 0; i < 8; i++) {
+      const b = new Mesh(birdGeo, egretMat);
+      this.put(b, 0, -20, 1, 0, 3);
+      b.scale.set(2.4, 2.4, 2.4);
+      this.egrets.push({ m: b, a: Math.random() * 6.28, r: 9 + Math.random() * 12, h: 1.5 + Math.random() * 2.5, s: 0.1 + Math.random() * 0.06 });
+    }
+  }
+
   // ------------------------------------------------------------ open countryside (kite + lattim)
   private buildField(): void {
-    // golden-hour sky: sun low in front of the player, over the paddy
-    this.put(paintedSky({ top: '#2c5ea6', mid: '#eeb98c', horizon: '#ffe0b4', sunU: 0.68, sunV: 0.34, sunColor: '#ffe6ae', clouds: 42, cloudAlpha: 0.7, cloudColor: '255,226,196' }), 0, -0.5, 1, 0, 1.3);
     this.put(hazeDisc(70, paddyTexture(), 0xf2dcb4), 0, -1, 1, 0, -0.012);
     // close-range paddy tufts: gives the ground real depth next to the player
     this.put(grassField(1100, 1.5, 10), 0, 0, 1, 0, 0);
@@ -500,9 +634,20 @@ export class EnvSystem extends createSystem({}) {
 
   update(dt: number): void {
     this.t += dt;
-    const want: SceneKey =
-      modeState.mode === 'kite' || modeState.mode === 'lattim' ? 'field' : worldState.id;
-    if (want !== this.shownWorld) this.showWorld(want);
+    const inKite = modeState.mode === 'kite';
+    const want: SceneKey = inKite
+      ? kiteCfg.place === 'village'
+        ? 'field'
+        : kiteCfg.place
+      : modeState.mode === 'lattim'
+        ? 'field'
+        : worldState.id;
+    const skyWant: SkyKey | '' =
+      want === 'field' || want === 'bil' || want === 'winter' || want === 'char'
+        ? ((inKite ? 'sky_' + kiteCfg.time : 'sky_golden') as SkyKey)
+        : '';
+    if (want !== this.shownWorld || skyWant !== this.shownSky) this.showWorld(want, skyWant);
+    const open = want === 'field' || want === 'bil' || want === 'winter' || want === 'char';
     for (const sp of this.spinners) sp.rotation.y += dt * 0.02;
     for (const c of this.clouds) {
       c.position.x += dt * 0.15;
@@ -513,14 +658,14 @@ export class EnvSystem extends createSystem({}) {
       crown.rotation.z = Math.sin(this.t * 0.9 + s.phase) * 0.05;
       crown.rotation.x = Math.sin(this.t * 0.7 + s.phase * 1.7) * 0.04;
     }
-    if (want === 'field' || want === 'moon' || want === 'station') {
+    if (open || want === 'moon' || want === 'station') {
       for (const k of this.farKites) {
         k.m.position.x = k.x + Math.sin(this.t * 0.35 + k.phase) * 1.6;
         k.m.position.y = k.y + Math.sin(this.t * 0.5 + k.phase * 2) * 0.9;
         k.m.rotation.z = Math.sin(this.t * 0.6 + k.phase) * 0.25;
       }
     }
-    if (want === 'field') {
+    if (open) {
       for (const b of this.farBirds) {
         const a = b.a + this.t * b.s;
         b.m.position.set(Math.sin(a) * b.r, b.h + Math.sin(this.t * 0.8 + b.a) * 0.6, -Math.cos(a) * b.r - 4);
@@ -529,7 +674,7 @@ export class EnvSystem extends createSystem({}) {
         b.m.rotation.z = Math.sin(this.t * 9 + b.a * 7) * 0.5;
       }
     }
-    if (want === 'field') {
+    if (open) {
       for (const mi of this.mists) {
         mi.x += mi.s * dt;
         if (Math.abs(mi.x) > 22) mi.s = -mi.s;
@@ -542,7 +687,7 @@ export class EnvSystem extends createSystem({}) {
         b.m.rotation.z = Math.sin(this.t * 4 + b.a * 7) * 0.35;
       }
     }
-    if (want === 'mars' && this.rain) {
+    if ((want === 'mars' || skyWant === 'sky_storm') && this.rain) {
       for (let i = 0; i < RAIN; i++) {
         const fall = (this.rainBase[i * 3 + 1] - this.t * 7.5) % 7;
         const y = fall < 0 ? fall + 7 : fall;

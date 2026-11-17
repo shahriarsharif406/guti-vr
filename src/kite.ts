@@ -26,6 +26,24 @@ import { emitBurst } from './fx.js';
 import { SphereGeometry } from '@iwsdk/core';
 import { modeState, setMode } from './mode.js';
 import { FONT, isFontReady, TextPanel } from './panel.js';
+import { Entity, Pressed, RayInteractable, TorusGeometry } from '@iwsdk/core';
+import { KiteOpt } from './ui-components.js';
+import {
+  K_COLORS,
+  K_MODES,
+  K_PLACES,
+  K_SHAPES,
+  K_TAILS,
+  K_TIMES,
+  kiteCfg,
+  loadKiteCfg,
+  saveKiteCfg,
+} from './kitecfg.js';
+
+const RING_COUNT = 8;
+const RING_R = 0.15;
+const SKY_TIME_LIMIT = 110;
+const RESCUES_NEEDED = 3;
 
 // ---- Sky layout (meters, in front of the seated player)
 const TABLE_Y = 0.72;
@@ -164,6 +182,7 @@ class Kite {
   readonly anchor = new Vector3();
   readonly mat: MeshBasicMaterial;
   readonly bows: Mesh[] = [];
+  tailLen = 1;
 
   constructor(color: number, readonly size: number) {
     const geo = new CircleGeometry(size * 0.5, 4);
@@ -195,6 +214,14 @@ class Kite {
     }
   }
 
+  applyDesign(sx: number, sy: number, color: number, tailLen: number): void {
+    this.body.scale.set(sx / 0.8, sy / 1.15, 1);
+    this.mat.color.set(color);
+    this.tailLen = tailLen;
+    this.tail.visible = tailLen > 0;
+    for (const b of this.bows) b.visible = tailLen > 0;
+  }
+
   setSharp(on: boolean): void {
     (this.string.material as LineBasicMaterial).color.set(on ? 0xff5050 : 0xf2f2f2);
     (this.tail.material as LineBasicMaterial).color.set(on ? 0xff5050 : 0xffffff);
@@ -216,14 +243,14 @@ class Kite {
     for (let i = 0; i < TAIL_PTS; i++) {
       const t = i / (TAIL_PTS - 1);
       this.tailPos[i * 3] = p.x + Math.sin(time * 6 + i * 0.9) * 0.025 * t * 2;
-      this.tailPos[i * 3 + 1] = p.y - this.size * 0.6 - t * 0.25;
+      this.tailPos[i * 3 + 1] = p.y - this.size * 0.6 - t * 0.25 * this.tailLen;
       this.tailPos[i * 3 + 2] = p.z;
     }
     (this.tail.geometry.getAttribute('position') as BufferAttribute).needsUpdate = true;
     for (let i = 0; i < this.bows.length; i++) {
       const t = (i + 1) / (TAIL_PTS - 1);
       const b = this.bows[i];
-      b.position.set(Math.sin(time * 6 + (i + 1) * 0.9) * 0.025 * t * 2, -this.size * 0.6 - t * 0.25, 0.002);
+      b.position.set(Math.sin(time * 6 + (i + 1) * 0.9) * 0.025 * t * 2, -this.size * 0.6 - t * 0.25 * this.tailLen, 0.002);
       b.rotation.z = Math.sin(time * 7 + i) * 0.7;
     }
   }
@@ -278,7 +305,7 @@ interface Enemy {
   hitCooldown: number;
 }
 
-type Phase = 'play' | 'over';
+type Phase = 'setup' | 'play' | 'over';
 
 const TYPE_INFO: Record<EnemyType, { points: number; hp: number; scale: number; freq: number; amp: number; color: number }> = {
   normal: { points: 100, hp: 1, scale: 1, freq: 0.6, amp: 0.4, color: 0x4dd2ff },
@@ -287,7 +314,9 @@ const TYPE_INFO: Record<EnemyType, { points: number; hp: number; scale: number; 
   golden: { points: 500, hp: 1, scale: 0.9, freq: 1.6, amp: 0.6, color: 0xffd23f },
 };
 
-export class KiteSystem extends createSystem({}) {
+export class KiteSystem extends createSystem({
+  opts: { required: [KiteOpt, Pressed] },
+}) {
   private mine!: Kite;
   private enemies: Enemy[] = [];
   private hud!: TextPanel;
@@ -297,7 +326,21 @@ export class KiteSystem extends createSystem({}) {
   private orbActive = false;
   private nextOrb = 12;
 
-  private phase: Phase = 'play';
+  private phase: Phase = 'setup';
+  private windGain = 1;
+  private follow = 7;
+  private shapeWind = 1;
+  private setupBtns: { panel: TextPanel; entity: Entity; id: number }[] = [];
+  private setupObjs: { visible: boolean }[] = [];
+  private setupTitle!: TextPanel;
+  private optCooldown = 0;
+  private rings: Mesh[] = [];
+  private ringIdx = 0;
+  private rescues = 0;
+  private rescueHold = 0;
+  private overMsg = '';
+  private won = false;
+  private modeAcc = 0;
   private lastMode = '';
   private fontWasReady = false;
   private time = 0; // seconds survived
@@ -495,15 +538,66 @@ export class KiteSystem extends createSystem({}) {
     this.root.push(spool);
     this.setVisible(false);
 
+    loadKiteCfg();
+    // setup card: tap a row to cycle it, then FLY
+    this.setupTitle = new TextPanel(0.7, 0.14, 700);
+    this.setupTitle.mesh.position.set(0, 1.45, -0.85);
+    this.world.createTransformEntity(this.setupTitle.mesh);
+    this.setupObjs.push(this.setupTitle.mesh);
+    const layout: [number, number, number, number, number][] = [
+      // id, x, y, w, h
+      [0, -0.17, 1.33, 0.33, 0.085],
+      [1, 0.17, 1.33, 0.33, 0.085],
+      [2, -0.17, 1.235, 0.33, 0.085],
+      [3, 0.17, 1.235, 0.33, 0.085],
+      [4, -0.17, 1.14, 0.33, 0.085],
+      [5, 0.17, 1.14, 0.33, 0.085],
+      [6, 0, 1.03, 0.5, 0.1],
+    ];
+    for (const [id, x, y, w, h] of layout) {
+      const panel = new TextPanel(w, h, 512);
+      panel.mesh.position.set(x, y, -0.85);
+      const entity = this.world.createTransformEntity(panel.mesh);
+      entity.addComponent(RayInteractable);
+      entity.addComponent(KiteOpt, { id });
+      this.setupBtns.push({ panel, entity, id });
+      this.setupObjs.push(panel.mesh);
+    }
+    const ringMat = new MeshBasicMaterial({ color: 0xffd66b, transparent: true, opacity: 0.35 });
+    for (let i = 0; i < RING_COUNT; i++) {
+      const r = new Mesh(new TorusGeometry(RING_R, 0.012, 8, 36), ringMat.clone());
+      r.visible = false;
+      this.world.createTransformEntity(r);
+      this.rings.push(r);
+      this.root.push(r);
+    }
+    this.cleanupFuncs.push(
+      this.queries.opts.subscribe('qualify', (entity: Entity) => {
+        if (this.phase !== 'setup' || this.optCooldown > 0) return;
+        const id = entity.getValue(KiteOpt, 'id') as number;
+        this.optCooldown = 0.25;
+        sfx.select();
+        this.pressOpt(id);
+      }),
+    );
+    this.applyDesign();
+    this.drawSetup();
     try {
+      this.bests = JSON.parse(localStorage.getItem('guti-kite-bests') ?? '{}') as Record<string, number>;
       this.best = Number(localStorage.getItem('guti-kite-best') ?? '0') || 0;
+      if (this.best && this.bests.battle === undefined) this.bests.battle = this.best;
       this.bestTime = Number(localStorage.getItem('guti-kite-time') ?? '0') || 0;
     } catch {
       this.best = 0;
     }
 
+    (window as unknown as { __kitePress?: (id: number) => void }).__kitePress = (id) => this.pressOpt(id);
     (window as unknown as { __kite?: () => unknown }).__kite = () => ({
       phase: this.phase,
+      mode: kiteCfg.mode,
+      rings: this.ringIdx,
+      rescues: this.rescues,
+      score: this.score,
       lives: this.lives,
       snag: this.snagT,
       x: this.mine.pos.x,
@@ -617,6 +711,89 @@ export class KiteSystem extends createSystem({}) {
 
   private setVisible(on: boolean): void {
     for (const o of this.root) o.visible = on;
+    if (!on) for (const o of this.setupObjs) o.visible = false;
+  }
+
+  private applyDesign(): void {
+    const sh = K_SHAPES[kiteCfg.shape % K_SHAPES.length];
+    this.mine.applyDesign(sh.sx, sh.sy, K_COLORS[kiteCfg.color % K_COLORS.length], K_TAILS[kiteCfg.tail % K_TAILS.length].len);
+    this.mine.group.scale.setScalar(sh.scale);
+    this.follow = sh.follow;
+    this.shapeWind = sh.wind;
+  }
+
+  private pressOpt(id: number): void {
+    if (id === 0) kiteCfg.mode = K_MODES[(K_MODES.findIndex((m) => m.id === kiteCfg.mode) + 1) % K_MODES.length].id;
+    else if (id === 1) kiteCfg.place = K_PLACES[(K_PLACES.findIndex((p) => p.id === kiteCfg.place) + 1) % K_PLACES.length].id;
+    else if (id === 2) kiteCfg.time = K_TIMES[(K_TIMES.findIndex((t) => t.id === kiteCfg.time) + 1) % K_TIMES.length].id;
+    else if (id === 3) kiteCfg.shape = (kiteCfg.shape + 1) % K_SHAPES.length;
+    else if (id === 4) kiteCfg.color = (kiteCfg.color + 1) % K_COLORS.length;
+    else if (id === 5) kiteCfg.tail = (kiteCfg.tail + 1) % K_TAILS.length;
+    saveKiteCfg();
+    if (id === 6) {
+      this.startRound();
+      return;
+    }
+    this.applyDesign();
+    this.drawSetup();
+  }
+
+  private enterSetup(): void {
+    this.phase = 'setup';
+    for (const o of this.setupObjs) o.visible = true;
+    for (const r of this.rings) r.visible = false;
+    this.manjha.visible = false;
+    this.eagle.group.visible = false;
+    for (const b of this.birds) b.group.visible = false;
+    this.orb.visible = false;
+    for (const e of this.enemies) {
+      e.state = 'off';
+      e.kite.group.visible = false;
+    }
+    this.snagT = 0;
+    this.hud.mesh.visible = false;
+    this.target.set(0.62, 1.3, SKY_Z);
+    this.mine.pos.copy(this.target);
+    this.prevPos.copy(this.target);
+    this.drawSetup();
+  }
+
+  private drawSetup(): void {
+    const md = K_MODES.find((m) => m.id === kiteCfg.mode) ?? K_MODES[0];
+    const pl = K_PLACES.find((p) => p.id === kiteCfg.place) ?? K_PLACES[0];
+    const tm = K_TIMES.find((t) => t.id === kiteCfg.time) ?? K_TIMES[0];
+    const t = this.setupTitle;
+    t.card('rgba(30,18,10,0.82)', '#ffd9a0');
+    t.text('Kite Alive  ঘুড়ি', 62, 52, '#ffd9a0');
+    t.text(md.hint, 118, 28, '#ffe9c4');
+    t.commit();
+    const rows: [string, string, string][] = [
+      ['PLAY', md.name, md.bn],
+      ['PLACE', pl.name, pl.bn],
+      ['TIME', tm.name, ''],
+      ['SHAPE', K_SHAPES[kiteCfg.shape].name, ''],
+      ['COLOUR', '', ''],
+      ['TAIL', K_TAILS[kiteCfg.tail].name, ''],
+    ];
+    for (let i = 0; i < 6; i++) {
+      const p = this.setupBtns[i].panel;
+      p.card('rgba(40,24,12,0.9)', '#ffb56b');
+      p.text(rows[i][0], p.h * 0.3, 22, '#cdb99a');
+      if (i === 4) {
+        p.ctx.fillStyle = '#' + K_COLORS[kiteCfg.color].toString(16).padStart(6, '0');
+        p.ctx.beginPath();
+        p.ctx.arc(p.w / 2, p.h * 0.64, p.h * 0.2, 0, Math.PI * 2);
+        p.ctx.fill();
+      } else {
+        p.text(rows[i][1], p.h * 0.62, 34, '#ffe9c4');
+        if (rows[i][2]) p.text(rows[i][2], p.h * 0.88, 22, '#ffd9a0');
+      }
+      p.commit();
+    }
+    const f = this.setupBtns[6].panel;
+    f.card('rgba(36,92,44,0.95)', '#8dff9d');
+    f.text('FLY!  উড়াও', f.h * 0.64, 54, '#eaffea');
+    f.commit();
   }
 
   private flash(text: string, seconds = 1.3): void {
@@ -626,6 +803,17 @@ export class KiteSystem extends createSystem({}) {
   }
 
   private startRound(): void {
+    for (const o of this.setupObjs) o.visible = false;
+    this.hud.mesh.visible = true;
+    this.won = false;
+    this.overMsg = '';
+    this.modeAcc = 0;
+    this.ringIdx = 0;
+    this.rescues = 0;
+    this.rescueHold = 0;
+    const tm = K_TIMES.find((t) => t.id === kiteCfg.time) ?? K_TIMES[0];
+    const md = kiteCfg.mode;
+    this.windGain = tm.wind * (md === 'wind' ? 1.8 : md === 'rescue' ? 1.2 : md === 'free' ? 0.8 : 1);
     this.phase = 'play';
     this.time = 0;
     this.nextBird = 8;
@@ -634,7 +822,7 @@ export class KiteSystem extends createSystem({}) {
       b.group.visible = false;
     }
     this.roundT = 0;
-    this.lives = START_LIVES;
+    this.lives = kiteCfg.mode === 'free' ? 99 : START_LIVES;
     this.score = 0;
     this.cuts = 0;
     this.combo = 0;
@@ -642,10 +830,11 @@ export class KiteSystem extends createSystem({}) {
     this.sharpT = 0;
     this.gustT = 0;
     this.gusts.length = 0;
-    let gt = 11 + Math.random() * 4;
-    for (let i = 0; i < 30; i++) {
+    const fast = kiteCfg.mode === 'wind';
+    let gt = (fast ? 5 : 11) + Math.random() * 4;
+    for (let i = 0; i < 40; i++) {
       this.gusts.push({ t0: gt, dir: Math.random() < 0.5 ? -1 : 1 });
-      gt += 13 + Math.random() * 5;
+      gt += (fast ? 6 : 13) + Math.random() * (fast ? 3 : 5);
     }
     this.snagT = 0;
     this.warnedWire = false;
@@ -676,6 +865,116 @@ export class KiteSystem extends createSystem({}) {
     }
     this.flash('Pinch and move to fly. Hold 2nd hand or SPACE to ease the string', 5);
     this.hudDirty = true;
+    for (const r of this.rings) r.visible = false;
+    if (md === 'sky') {
+      for (let i = 0; i < RING_COUNT; i++) {
+        const r = this.rings[i];
+        const side = i % 2 ? 1 : -1;
+        r.position.set(side * (0.12 + Math.random() * 0.34), 1.3 + Math.random() * 0.32, SKY_Z - 0.03);
+        r.visible = true;
+      }
+      this.flash('Fly through the glowing rings in order', 4);
+    } else if (md === 'rescue') {
+      this.newRescue();
+    } else if (md === 'wind') {
+      this.flash('Strong wind! Ease the string and stay in the lift', 4);
+    } else if (md === 'free') {
+      this.flash('Free flight: no rivals, no timer. Press ← Menu to leave', 5);
+    }
+  }
+
+  private newRescue(): void {
+    const wire = this.rescues % 2 === 1;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const x = wire ? (Math.random() - 0.5) * 0.8 : side * (TREE_X + 0.12);
+    const y = wire ? WIRE_Y + 0.02 : 1.2 + Math.random() * 0.3;
+    this.target.set(x, y, SKY_Z);
+    this.mine.pos.set(x, y, SKY_Z);
+    this.prevPos.copy(this.mine.pos);
+    this.snagT = 8;
+    this.snagShake = 0;
+    this.snagPos.set(x, y, SKY_Z);
+    this.lastTx = x;
+    this.lastTy = y;
+    this.rescueHold = 0;
+    this.warnedWire = true;
+    this.warnedTree = true;
+    this.flash(wire ? 'Kite caught in the wire! Shake your hand to free it. Never touch real wires.' : 'Kite stuck in the tree! Shake your hand to free it', 4);
+  }
+
+  /** Extra rules for Sky Challenge, Rescue Mission and Wind Master. */
+  private updateModes(delta: number): void {
+    const md = kiteCfg.mode;
+    if (md === 'wind') {
+      this.modeAcc += delta * 10;
+      if (this.modeAcc >= 1) {
+        const add = Math.floor(this.modeAcc);
+        this.modeAcc -= add;
+        this.score += add;
+      }
+    } else if (md === 'sky') {
+      const t = this.time;
+      for (let i = 0; i < RING_COUNT; i++) {
+        const r = this.rings[i];
+        if (i < this.ringIdx) {
+          r.visible = false;
+          continue;
+        }
+        const mat = r.material as MeshBasicMaterial;
+        if (i === this.ringIdx) {
+          mat.opacity = 0.8 + Math.sin(this.elapsed * 6) * 0.2;
+          mat.color.set(0xffe27a);
+          r.scale.setScalar(1 + Math.sin(this.elapsed * 6) * 0.05);
+        } else {
+          mat.opacity = 0.3;
+          mat.color.set(0xffffff);
+          r.scale.setScalar(1);
+        }
+      }
+      const r = this.rings[this.ringIdx];
+      if (r && this.snagT <= 0) {
+        const dx = r.position.x - this.mine.pos.x;
+        const dy = r.position.y - this.mine.pos.y;
+        if (Math.hypot(dx, dy) < RING_R * 0.85) {
+          this.ringIdx++;
+          this.score += 100;
+          sfx.win();
+          emitBurst(r.position.x, r.position.y, r.position.z, 1, 0.85, 0.3, 26, 0.7);
+          this.hudDirty = true;
+          if (this.ringIdx >= RING_COUNT) {
+            this.won = true;
+            this.score += Math.max(0, Math.floor((SKY_TIME_LIMIT - t) * 5));
+            this.overMsg = 'All rings! ' + this.fmt(t);
+            this.endRound();
+          }
+        }
+      }
+      if (t >= SKY_TIME_LIMIT && this.phase === 'play') {
+        this.overMsg = 'Time up: ' + this.ringIdx + '/' + RING_COUNT + ' rings';
+        this.endRound();
+      }
+    } else if (md === 'rescue') {
+      if (this.snagT <= 0 && this.mine.pos.y > 1.62 && Math.abs(this.mine.pos.x) < 0.45) {
+        this.rescueHold += delta;
+        if (this.rescueHold >= 1.5) {
+          this.rescues++;
+          this.score += 300;
+          sfx.win();
+          this.hudDirty = true;
+          if (this.rescues >= RESCUES_NEEDED) {
+            this.won = true;
+            this.score += Math.max(0, 200 - Math.floor(this.time));
+            this.overMsg = 'Kite rescued ' + RESCUES_NEEDED + ' times!';
+            this.endRound();
+          } else {
+            this.flash('Safe in open sky! Another kite is stuck...', 2);
+            this.newRescue();
+          }
+        }
+      } else if (this.snagT <= 0) {
+        this.rescueHold = Math.max(0, this.rescueHold - delta);
+      }
+    }
   }
 
   // ------------------------------------------------------------------ input
@@ -730,6 +1029,7 @@ export class KiteSystem extends createSystem({}) {
 
   // ------------------------------------------------------------------ enemies
   private activeTarget(): number {
+    if (kiteCfg.mode !== 'battle') return 0;
     return this.roundT < 18 ? 3 : this.roundT < 38 ? 4 : 5;
   }
 
@@ -916,7 +1216,7 @@ export class KiteSystem extends createSystem({}) {
       return;
     }
     this.nextBird -= delta;
-    if (this.nextBird <= 0) {
+    if (this.nextBird <= 0 && kiteCfg.mode !== 'rescue') {
       const b = this.birds.find((o) => !o.active);
       if (b) {
         b.active = true;
@@ -991,7 +1291,7 @@ export class KiteSystem extends createSystem({}) {
     const i = this.gustIndex(t);
     if (i < 0) return 0;
     const g = this.gusts[i];
-    return g.dir * GUST_PEAK * Math.sin(((t - g.t0) / GUST_DUR) * Math.PI);
+    return g.dir * GUST_PEAK * this.windGain * Math.sin(((t - g.t0) / GUST_DUR) * Math.PI);
   }
 
   private nextGustIn(): number {
@@ -1013,7 +1313,7 @@ export class KiteSystem extends createSystem({}) {
       (st.mesh.material as MeshBasicMaterial).opacity = near ? 1 : 0.7;
       if (near) inside = true;
     }
-    if (inside && this.phase === 'play') {
+    if (inside && this.phase === 'play' && this.snagT <= 0) {
       this.streamScore += delta * 15;
       if (this.streamScore >= 1) {
         const add = Math.floor(this.streamScore);
@@ -1095,6 +1395,7 @@ export class KiteSystem extends createSystem({}) {
         this.snagT = 0;
         this.target.y = Math.max(this.target.y, 1.4);
         this.target.x *= 0.5;
+        this.hurtCooldown = Math.max(this.hurtCooldown, 1.2);
         sfx.win();
         this.flash('Free! Stay away from wires and trees', 1.5);
       }
@@ -1137,7 +1438,7 @@ export class KiteSystem extends createSystem({}) {
     // --- enemy string: hangs from above or rises from below; fly under / over its end
     if (!this.manjhaOn) {
       this.nextManjha -= delta;
-      if (this.nextManjha <= 0 && this.roundT > 12) {
+      if (this.nextManjha <= 0 && this.roundT > 12 && kiteCfg.mode === 'battle') {
         this.manjhaOn = true;
         this.manjhaDir = Math.random() < 0.5 ? -1 : 1;
         this.manjhaX = -this.manjhaDir * (BOX_X + 0.2);
@@ -1180,7 +1481,7 @@ export class KiteSystem extends createSystem({}) {
     const ea = this.eagle;
     if (this.eagleState === 0) {
       this.nextEagle -= delta;
-      if (this.nextEagle <= 0 && this.roundT > 20) {
+      if (this.nextEagle <= 0 && this.roundT > 20 && (kiteCfg.mode === 'battle' || kiteCfg.mode === 'wind')) {
         this.eagleState = 1;
         this.eagleT = 1.3;
         const side = Math.random() < 0.5 ? -1 : 1;
@@ -1223,10 +1524,10 @@ export class KiteSystem extends createSystem({}) {
   private endRound(): void {
     this.phase = 'over';
     this.overTimer = 5;
-    if (this.score > this.best) {
-      this.best = this.score;
+    if (this.score > this.bestOf()) {
+      this.bests[kiteCfg.mode] = this.score;
       try {
-        localStorage.setItem('guti-kite-best', String(this.best));
+        localStorage.setItem('guti-kite-bests', JSON.stringify(this.bests));
       } catch {
         /* ignore */
       }
@@ -1243,6 +1544,11 @@ export class KiteSystem extends createSystem({}) {
     this.hudDirty = true;
   }
 
+  private bests: Record<string, number> = {};
+  private bestOf(): number {
+    return this.bests[kiteCfg.mode] ?? 0;
+  }
+
   private fmt(t: number): string {
     const m = Math.floor(t / 60);
     const sec = Math.floor(t % 60);
@@ -1255,14 +1561,14 @@ export class KiteSystem extends createSystem({}) {
     h.text('Kite Alive', 46, 40);
     const c = h.ctx;
     if (this.phase === 'over') {
-      h.text('Survived ' + this.fmt(this.time) + '   Score ' + this.score, 130, 36, '#8dff9d');
-      h.text('Best ' + this.fmt(this.bestTime) + ' / ' + this.best, 200, 28, '#cdb99a');
-      h.text('back to menu...', 260, 26, '#cdb99a');
+      h.text(this.overMsg || 'Survived ' + this.fmt(this.time), 120, 34, this.won ? '#8dff9d' : '#ffb0a0');
+      h.text('Score ' + this.score + (this.score >= this.bestOf() && this.score > 0 ? '  NEW BEST' : '   Best ' + this.bestOf()), 190, 34, '#ffe9c4');
+      h.text('back to the setup...', 256, 26, '#cdb99a');
       h.commit();
       return;
     }
     const mult = this.comboTimer > 0 ? '  x' + Math.min(this.combo, 5) : '';
-    h.text(this.fmt(this.time) + '   Score ' + this.score + mult + '   ' + '♥'.repeat(this.lives), 96, 32);
+    h.text(this.fmt(this.time) + '   Score ' + this.score + mult + '   ' + (kiteCfg.mode === 'free' ? '∞' : '♥'.repeat(Math.min(this.lives, 9))), 96, 32);
     // string tension track (the live fill is a separate mesh)
     h.text('STRING', 156, 20, this.easing ? '#9fe8ff' : '#cdb99a', 80);
     c.fillStyle = 'rgba(0,0,0,0.45)';
@@ -1277,7 +1583,7 @@ export class KiteSystem extends createSystem({}) {
     c.beginPath();
     c.moveTo(160, 252);
     for (let x = 0; x <= 434; x += 6) {
-      const v = Math.abs(this.windAt(this.roundT + (x / 434) * FORECAST_S)) / GUST_PEAK;
+      const v = Math.min(1, Math.abs(this.windAt(this.roundT + (x / 434) * FORECAST_S)) / (GUST_PEAK * this.windGain));
       c.lineTo(160 + x, 252 - v * 62);
     }
     c.lineTo(594, 252);
@@ -1298,7 +1604,17 @@ export class KiteSystem extends createSystem({}) {
     c.fillStyle = '#ffe9c4';
     c.font = '700 20px ' + FONT;
     c.fillText(this.gustT > 0 ? 'Gust now!' : nx >= 0 ? 'Gust in ' + Math.ceil(nx) + 's' : 'Calm', 586, 198);
-    let line = 'Cut fast, dodge crows, eagles, enemy strings';
+    const md = kiteCfg.mode;
+    let line =
+      md === 'battle'
+        ? 'Cut fast, dodge crows, eagles, enemy strings'
+        : md === 'free'
+          ? 'Free flight: fly high, enjoy the sky'
+          : md === 'wind'
+            ? 'Wind Master: hold on through the gusts'
+            : md === 'sky'
+              ? 'Ring ' + Math.min(this.ringIdx + 1, RING_COUNT) + '/' + RING_COUNT + '   ' + Math.max(0, Math.ceil(SKY_TIME_LIMIT - this.time)) + 's left'
+              : 'Rescued ' + this.rescues + '/' + RESCUES_NEEDED + ': shake free, then climb above the wires';
     let color = '#cdb99a';
     if (this.flashTimer > 0) {
       line = this.flashText;
@@ -1320,7 +1636,7 @@ export class KiteSystem extends createSystem({}) {
       this.lastMode = modeState.mode;
       const on = modeState.mode === 'kite';
       this.setVisible(on);
-      if (on) this.startRound();
+      if (on) this.enterSetup();
       this.dragHand = null;
     }
     if (modeState.mode !== 'kite') return;
@@ -1328,7 +1644,9 @@ export class KiteSystem extends createSystem({}) {
     if (isFontReady() !== this.fontWasReady) {
       this.fontWasReady = isFontReady();
       this.hudDirty = true;
+      this.drawSetup();
     }
+    this.optCooldown = Math.max(0, this.optCooldown - delta);
 
     this.hurtCooldown = Math.max(0, this.hurtCooldown - delta);
     if (this.comboTimer > 0) {
@@ -1374,17 +1692,18 @@ export class KiteSystem extends createSystem({}) {
         this.lastSecond = sec;
         this.hudDirty = true;
       }
-      this.updateOrb(delta);
-    } else {
+      if (kiteCfg.mode === 'battle') this.updateOrb(delta);
+      this.updateModes(delta);
+    } else if (this.phase === 'over') {
       this.overTimer -= delta;
-      if (this.overTimer <= 0) setMode('menu');
+      if (this.overTimer <= 0) this.enterSetup();
     }
 
     // player kite follows the hand with a little lag, like a real one
     const k = this.mine;
-    const f = 1 - Math.exp(-7 * delta);
+    const f = 1 - Math.exp(-this.follow * delta);
     this.prevPos.copy(k.pos);
-    k.pos.x += (this.target.x + wind * 0.9 - k.pos.x) * f;
+    k.pos.x += (this.target.x + wind * 0.9 * this.shapeWind - k.pos.x) * f;
     k.pos.y += (this.target.y - k.pos.y) * f;
     k.pos.z = SKY_Z;
     if (this.snagT > 0) {

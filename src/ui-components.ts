@@ -15,3 +15,8 @@ export const MenuButton = createComponent('MenuButton', {
 export const LevelTile = createComponent('LevelTile', {
   level: { type: Types.Int8, default: 1 },
 });
+
+/** A pressable option on the Kite Alive setup card (mode, place, time, kite design, fly). */
+export const KiteOpt = createComponent('KiteOpt', {
+  id: { type: Types.Int8, default: 0 },
+});

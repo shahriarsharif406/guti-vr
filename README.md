@@ -47,5 +47,11 @@ Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 ## Credits
 All scenery, models, textures and sounds are procedural (code-generated). The sunset sky lighting is a CC0 HDRI from [Poly Haven](https://polyhaven.com).
 
-## Kite Alive extras
-Golden wind streams lift the kite, a forecast graph shows the next gusts, string tension eases with SPACE or your second hand, and the dangers are manjha string, an eagle, electric wires and trees that snag the kite. Procedural music; press M to mute.
+## Kite Alive
+Pick a setup card, then fly.
+* **Five ways to play:** Kite Festival (cut rival kites), Free Flight, Wind Master (strong gusts), Sky Challenge (rings), Rescue Mission (free a kite stuck in a tree or power wire; real wires are never to be touched).
+* **Four places:** village paddy, monsoon beel, winter mustard field, river char.
+* **Five skies:** golden evening, soft morning, warm noon, cloudy day, before the storm (rain). The weather changes how strong the wind is.
+* **Kite designer:** three kite shapes that handle differently (Pata is quick, Dhaka is steady), six colours, three tails.
+* Golden wind streams lift the kite, a forecast graph shows the next gusts, string tension eases with SPACE or your second hand; dangers are manjha string, an eagle, electric wires and trees.
+* Procedural music; press M to mute.
