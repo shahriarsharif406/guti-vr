@@ -23,6 +23,8 @@ import {
   Object3D,
   SRGBColorSpace,
   createSystem,
+  AssetManager,
+  Box3,
 } from '@iwsdk/core';
 import { modeState } from './mode.js';
 import { kiteCfg } from './kitecfg.js';
@@ -610,6 +612,7 @@ export class EnvSystem extends createSystem({}) {
       this.put(mb, rnd(-12, 12), -14 - i * 7, 1, 0, 1.0 + i * 0.3);
       this.mists.push({ m: mb, x: mb.position.x, s: rnd(0.05, 0.12) * (i % 2 ? 1 : -1) });
     }
+    this.decor();
     // calm lake
     this.put(water(44, 22, 0x4d8c98), -9, -22, 1, 0, -0.005);
     this.ring(10, 22, 38, () => shadeTree(rnd(5, 7), rnd(2.4, 3.4)), 1.0, 1.5, Math.PI * 0.45, Math.PI * 1.55);
@@ -631,6 +634,33 @@ export class EnvSystem extends createSystem({}) {
       this.put(b, 0, -30, 1, 0, 9);
       this.farBirds.push({ m: b, a: Math.random() * 6.28, r: 22 + Math.random() * 10, h: 8 + Math.random() * 6, s: 0.12 + Math.random() * 0.08 });
     }
+  }
+
+  /** CC0 apartment props (Vuena) around the workshop corner */
+  private decor(): void {
+    const spots: [string, number, number, number, number, number][] = [
+      ['floor_lamp', -1.35, 0, -1.0, 0.4, 1],
+      ['plant_small', 1.3, 0, -1.1, -0.3, 1],
+      ['side_table', 1.25, 0, -0.1, 0, 1],
+      ['basket', -1.2, 0, 0.25, 0.5, 1],
+    ];
+    const onTable: [string, number, number, number, number][] = [
+      ['mug', 1.2, 0, 0.05, 0],
+      ['book_stack', 1.32, 0, -0.12, 0.3],
+    ];
+    const tryAdd = (key: string, x: number, y: number, z: number, ry: number, sc: number): void => {
+      const g = AssetManager.getAsset(key) as { scene?: Object3D } | undefined;
+      if (!g?.scene) return;
+      const o = g.scene.clone(true);
+      o.rotation.y = ry;
+      o.scale.setScalar(sc);
+      this.add(o, x, y, z);
+    };
+    for (const [k, x, y, z, ry, sc] of spots) tryAdd(k, x, y, z, ry, sc);
+    // props sit on top of the side table; its height is measured from the model
+    const tb = AssetManager.getAsset('side_table') as { scene?: Object3D } | undefined;
+    const top = tb?.scene ? new Box3().setFromObject(tb.scene).max.y : 0.5;
+    for (const [k, x, , z, ry] of onTable) tryAdd(k, x, top, z, ry, 1);
   }
 
   update(dt: number): void {

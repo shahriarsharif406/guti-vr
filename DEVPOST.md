@@ -14,3 +14,6 @@ Making hand input reliable and readable for first-time players, and keeping perf
 
 ## What's next
 More workshop stations, more materials and shareable creations.
+
+## Credits
+SFX: "Oculus Audio Pack 01" by Oculus VR, LLC (CC BY 4.0). Props: Free Apartment Props by Vuena (CC0). HDRI: Poly Haven (CC0).

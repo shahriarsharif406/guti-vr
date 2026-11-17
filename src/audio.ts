@@ -71,6 +71,56 @@ function burst(dur: number, vol: number, freq: number, q = 1): void {
   s.stop(t0 + dur + 0.02);
 }
 
+
+// ------------------------------------------------------------ samples
+// Real recordings: "Oculus Audio Pack 01" by Oculus VR, LLC (CC BY 4.0).
+// Procedural sounds stay as the fallback until a sample has loaded.
+const SAMPLE_FILES: Record<string, string> = {
+  confirm: 'UIClick_CasualPopsConfirm_OS_01',
+  close: 'UIClick_CasualPopsClose_OS_01',
+  wood: 'WOODImpt_LargeWoodDrop_OS_01',
+  plastic: 'PLASImpt_PlasticObjDrop_OS_01',
+  ceramic: 'CERMImpt_CeramicSmallImpact_OS_01',
+  metal: 'METLImpt_MetalHitSurface_OS_01',
+  win: 'MUSCStngr_LevelUpMallet_OS_01',
+  lose: 'MUSCStngr_LossMallet_OS_01',
+  whoosh: 'WHSH_WhooshMedium_OS_01',
+  room: 'AMBHome_RoomTone_LOOP_01',
+};
+const samples: Record<string, AudioBuffer> = {};
+let loading = false;
+
+function loadSamples(): void {
+  const c = ac();
+  if (!c || loading) return;
+  loading = true;
+  for (const [k, f] of Object.entries(SAMPLE_FILES)) {
+    fetch(import.meta.env.BASE_URL + 'audio/' + f + '.ogg')
+      .then((r) => r.arrayBuffer())
+      .then((b) => c.decodeAudioData(b))
+      .then((buf) => {
+        samples[k] = buf;
+      })
+      .catch(() => {});
+  }
+}
+
+/** play a loaded sample; returns false when it is not available yet */
+function play(key: string, vol = 1, rate = 1, loop = false): boolean {
+  const c = ac();
+  const buf = samples[key];
+  if (!c || !buf) return false;
+  const s = c.createBufferSource();
+  s.buffer = buf;
+  s.playbackRate.value = rate;
+  s.loop = loop;
+  const g = c.createGain();
+  g.gain.value = vol;
+  s.connect(g).connect(c.destination);
+  s.start();
+  return true;
+}
+
 // ------------------------------------------------------------------ music
 // Procedural Bengali-folk style score: tanpura drone, bansuri flute or dotara
 // pluck, tabla/dhol, soft reverb. Every game screen has its own raga and rhythm.
@@ -350,6 +400,8 @@ function startAmbience(): void {
   const c = ac();
   if (!c) return;
   ambientOn = true;
+  loadSamples();
+  window.setTimeout(() => play('room', 0.35, 1, true), 1500);
   startMusic();
   for (const f of [110, 164.8, 220]) {
     const o = c.createOscillator();
@@ -388,6 +440,7 @@ export const sfx = {
   },
   /** glass-marble click; strength 0..1 */
   clack(strength: number): void {
+    if (play('plastic', 0.25 + 0.6 * Math.min(1, strength), 0.9 + Math.random() * 0.25)) return;
     const v = 0.08 + 0.25 * Math.min(1, strength);
     tone(1800 + Math.random() * 600, 0.07, v, 'triangle', 900);
     burst(0.03, v * 0.6, 4000, 2);
@@ -397,22 +450,27 @@ export const sfx = {
     burst(0.1, 0.12, 900, 0.8);
   },
   grab(): void {
+    if (play('close', 0.5, 1.2)) return;
     tone(660, 0.06, 0.1, 'sine', 880);
   },
   win(): void {
+    if (play('win', 0.8)) return;
     tone(523, 0.18, 0.2, 'triangle', undefined, 0);
     tone(659, 0.18, 0.2, 'triangle', undefined, 0.12);
     tone(784, 0.3, 0.22, 'triangle', undefined, 0.24);
   },
   lose(): void {
+    if (play('lose', 0.8)) return;
     tone(330, 0.25, 0.2, 'sawtooth', 160);
   },
   /** marble dropping into the hole */
   plop(): void {
+    if (play('ceramic', 0.9, 0.8)) return;
     tone(420, 0.14, 0.18, 'sine', 140);
     tone(180, 0.1, 0.1, 'triangle', 90, 0.08);
   },
   select(): void {
+    if (play('confirm', 0.7)) return;
     tone(520, 0.08, 0.15, 'triangle', 780);
   },
   /** slicing a kite string */
@@ -424,10 +482,12 @@ export const sfx = {
     tone(200, 0.3, 0.25, 'square', 80);
   },
   whoosh(): void {
+    if (play('whoosh', 0.5)) return;
     burst(0.25, 0.08, 600, 0.5);
   },
   /** wood on wood: a dry, hollow knock (danda hitting the guli); strength 0..1 */
   wood(strength: number): void {
+    if (play('wood', 0.2 + 0.6 * Math.min(1, strength), 1.1 + Math.random() * 0.4)) return;
     const v = 0.1 + 0.3 * Math.min(1, strength);
     tone(420 + Math.random() * 60, 0.09, v, 'triangle', 300);
     tone(1150 + Math.random() * 120, 0.05, v * 0.6, 'sine', 800);
@@ -445,6 +505,7 @@ export const sfx = {
   },
   /** the guli landing on packed earth */
   thud(strength: number): void {
+    if (play('metal', 0.3 + 0.6 * Math.min(1, strength), 0.7)) return;
     const v = 0.06 + 0.16 * Math.min(1, strength);
     tone(110, 0.14, v, 'sine', 60);
     burst(0.06, v * 0.7, 500, 0.8);

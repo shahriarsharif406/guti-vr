@@ -11,3 +11,9 @@ No controllers needed: hand tracking with pinch. Mouse works on desktop for quic
 Live: https://shahriarsharif406.github.io/guti-vr/ (open in the Quest Browser, tap "Enter VR").
 
 Built with IWSDK (WebXR), TypeScript, Three.js. All visuals and sounds are procedural.
+
+## Credits
+
+- Sound effects: "Oculus Audio Pack 01" by Oculus VR, LLC (https://developers.meta.com/vr/downloads/package/oculus-audio-pack-1/), licensed under CC BY 4.0. Files renamed to the UCS naming convention; OGG previews transcoded from the original WAVs.
+- 3D props (lamps, plants, side table, books, mug, basket): "Free Apartment Props" by Vuena, CC0 (https://github.com/Vuena/free-apartment-props-cc0).
+- Sunset HDRI: Poly Haven, CC0.
