@@ -121,11 +121,14 @@ export function elementDot(p: TextPanel, x: number, y: number, r: number, e: Ele
 }
 
 // ---------------------------------------------------------------- buttons
-export function drawButton(p: TextPanel, label: string, sub: string, accent: string, hot: boolean, disabled: boolean): void {
+export function drawButton(p: TextPanel, label: string, sub: string, accent: string, hot: boolean, disabled: boolean, xs = 1): void {
   const c = p.ctx;
-  const w = p.w;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, p.w, p.h);
+  // a stretched (wide) button is drawn in a squeezed coordinate space so text keeps its proportions
+  c.scale(1 / xs, 1);
+  const w = p.w * xs;
   const h = p.h;
-  c.clearRect(0, 0, w, h);
   const g = c.createLinearGradient(0, 0, w, 0);
   g.addColorStop(0, hot ? accent + 'cc' : 'rgba(40,26,80,0.92)');
   g.addColorStop(1, hot ? accent + '88' : 'rgba(20,12,48,0.92)');
@@ -142,9 +145,10 @@ export function drawButton(p: TextPanel, label: string, sub: string, accent: str
   c.restore();
   const col = disabled ? '#7a7090' : hot ? '#0c0618' : '#f2e8ff';
   if (sub) {
-    line(p, label, h * 0.46, h * 0.38, col);
-    line(p, sub, h * 0.82, h * 0.26, disabled ? '#6a6080' : hot ? '#201030' : '#c9b8ee', w / 2, 'center', 600);
-  } else line(p, label, h * 0.66, h * 0.44, col);
+    line(p, label, h * 0.46, h * 0.38, col, w / 2);
+    line(p, sub, h * 0.82, h * 0.25, disabled ? '#6a6080' : hot ? '#201030' : '#c9b8ee', w / 2, 'center', 600);
+  } else line(p, label, h * 0.66, h * 0.44, col, w / 2);
+  c.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ---------------------------------------------------------------- title

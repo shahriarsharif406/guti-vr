@@ -301,8 +301,8 @@ export class SpellforgeSystem extends createSystem({
     }
   }
   private buildCastVisuals(): void {
-    this.castCore = new Mesh(new IcosahedronGeometry(1, 2), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }));
-    this.castHalo = glowSprite(0xff7a1a, 1, 0.8);
+    this.castCore = new Mesh(new IcosahedronGeometry(1, 3), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 }));
+    this.castHalo = glowSprite(0xff7a1a, 1, 0.6);
     this.castRing = new Mesh(new TorusGeometry(1, 0.02, 6, 48), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false }));
     this.castSpear = new Mesh(new ConeGeometry(0.05, 0.6, 6), new MeshBasicMaterial({ color: 0xbfeaff, transparent: true, opacity: 0.95 }));
     this.castSpear.geometry.rotateX(Math.PI / 2); // tip points to -Z by default after the lookAt below
@@ -699,7 +699,7 @@ export class SpellforgeSystem extends createSystem({
     for (const b of this.btns) {
       b.panel.mesh.visible = b.shown && this.screen !== 'play' && modeState.mode === 'spell';
       if (b.shown) {
-        drawButton(b.panel, b.label, b.sub, b.accent, false, b.disabled);
+        drawButton(b.panel, b.label, b.sub, b.accent, false, b.disabled, b.panel.mesh.scale.x);
         b.panel.commit();
       }
     }
@@ -1946,13 +1946,13 @@ export class SpellforgeSystem extends createSystem({
     const reduced = this.save.settings.reducedIntensity;
     const pulse = 1 + Math.sin(t * (reduced ? 4 : 10)) * 0.06;
     if (v.mode === 'orb') {
-      const r = (0.03 + v.size * 0.14) * pulse * (1 + v.overcharge * 0.35);
+      const r = (0.025 + v.size * 0.11) * pulse * (1 + v.overcharge * 0.35);
       this.castCore.visible = this.castHalo.visible = this.castRing.visible = true;
       this.castCore.position.set(pos[0], pos[1], pos[2]);
-      this.castCore.scale.setScalar(r * 0.8);
+      this.castCore.scale.setScalar(r * 0.62);
       (this.castCore.material as MeshBasicMaterial).color.setHex(hex).lerp(new Color(0xffffff), 0.3);
       this.castHalo.position.copy(this.castCore.position);
-      this.castHalo.scale.setScalar(r * 3.4);
+      this.castHalo.scale.setScalar(r * 5);
       (this.castHalo.material as { color: Color }).color.setHex(hex);
       this.castRing.position.copy(this.castCore.position);
       this.castRing.scale.setScalar(r * 1.9);
