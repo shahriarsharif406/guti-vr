@@ -47,6 +47,8 @@ Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 ## Credits
 All scenery, models, textures and sounds are procedural (code-generated). The sunset sky lighting is a CC0 HDRI from [Poly Haven](https://polyhaven.com).
 
+* **ডাংগুলি (Danguli)** – pinch the stick, flick the tip of the guli to pop it up, then swing again to hit it in mid-air. Three tries per round; the flag shows how far it flew. Lift 10, mid-air hit 20, distance bonuses at 10/20/30 m.
+
 ## Kite Alive
 Pick a setup card, then fly.
 * **Five ways to play:** Kite Festival (cut rival kites), Free Flight, Wind Master (strong gusts), Sky Challenge (rings), Rescue Mission (free a kite stuck in a tree or power wire; real wires are never to be touched).

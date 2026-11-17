@@ -111,7 +111,7 @@ let reverb: ConvolverNode | null = null;
 
 function trackFor(): 'calm' | 'kite' | 'lattim' {
   const m = modeState.mode;
-  return m === 'kite' ? 'kite' : m === 'lattim' ? 'lattim' : 'calm';
+  return m === 'kite' ? 'kite' : m === 'lattim' || m === 'danguli' ? 'lattim' : 'calm';
 }
 
 function out(c: AudioContext): AudioNode {

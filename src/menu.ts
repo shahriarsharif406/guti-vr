@@ -80,6 +80,7 @@ export class MenuSystem extends createSystem({
     card(this.buttons[0].panel, 'Marbles', 'গুলি', 'Flick them out of the ring', '#7fd8ff');
     card(this.buttons[1].panel, 'Kite Alive', 'ঘুড়ি', 'Cut kites, dodge crows', '#ffb56b');
     card(this.buttons[2].panel, 'Lattim', 'লাটিম', 'Spin and knock them out', '#a6e08a');
+    card(this.buttons[3].panel, 'Danguli', 'ডাংগুলি', 'Strike twice, send it far', '#ffd966');
     const b = this.back.panel;
     b.card('rgba(40,24,12,0.88)', '#ffd9a0');
     b.text('← Menu', b.h * 0.62, 70, '#ffe9c4');
@@ -95,9 +96,10 @@ export class MenuSystem extends createSystem({
     const y = TABLE_Y + 0.2;
     const z = TABLE_CENTER_Z + 0.02;
     this.buttons.push(
-      this.makeButton(MenuTargets.Guti, 0.2, 0.2, -0.23, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Kite, 0.2, 0.2, 0, y, z, -0.5, () => {}),
-      this.makeButton(MenuTargets.Lattim, 0.2, 0.2, 0.23, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Guti, 0.19, 0.19, -0.345, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Kite, 0.19, 0.19, -0.115, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Lattim, 0.19, 0.19, 0.115, y, z, -0.5, () => {}),
+      this.makeButton(MenuTargets.Danguli, 0.19, 0.19, 0.345, y, z, -0.5, () => {}),
     );
     this.back = this.makeButton(
       MenuTargets.Menu,
@@ -125,7 +127,7 @@ export class MenuSystem extends createSystem({
       sfx.ambience();
       sfx.select();
       this.cooldown = 0.4;
-      setMode(target as 'menu' | 'guti' | 'kite' | 'lattim');
+      setMode(target as 'menu' | 'guti' | 'kite' | 'lattim' | 'danguli');
     };
     this.cleanupFuncs.push(this.queries.pressed.subscribe('qualify', onPress));
   }
@@ -163,7 +165,7 @@ export class MenuSystem extends createSystem({
         this.cooldown = 0.4;
         sfx.ambience();
         sfx.select();
-        setMode(hit === 0 ? 'guti' : hit === 1 ? 'kite' : 'lattim');
+        setMode(hit === 0 ? 'guti' : hit === 1 ? 'kite' : hit === 2 ? 'lattim' : 'danguli');
       }
     }
     // hover feedback: buttons lift a little

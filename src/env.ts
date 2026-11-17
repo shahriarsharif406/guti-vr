@@ -639,7 +639,7 @@ export class EnvSystem extends createSystem({}) {
       ? kiteCfg.place === 'village'
         ? 'field'
         : kiteCfg.place
-      : modeState.mode === 'lattim'
+      : modeState.mode === 'lattim' || modeState.mode === 'danguli'
         ? 'field'
         : worldState.id;
     const skyWant: SkyKey | '' =
