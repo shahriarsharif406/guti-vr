@@ -8,6 +8,8 @@ import {
   Entity,
   ExtrudeGeometry,
   Group,
+  LineBasicMaterial,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -28,7 +30,7 @@ import {
 } from '@iwsdk/core';
 import { sfx } from './audio.js';
 import { celebrate, emitBurst } from './fx.js';
-import { M, LEVELS, evaluate, fits, outerRadius, radius } from './gearlogic.js';
+import { CHAPTERS, M, LEVELS, chapterOf, evaluate, fits, needsClutch, outerRadius, radius } from './gearlogic.js';
 import type { Evaluation, GearDef, Level } from './gearlogic.js';
 import { roundedBox, woodTexture } from './geo.js';
 import { readPinchPoint } from './hand.js';
@@ -70,7 +72,19 @@ interface Pointer {
   down: boolean;
   was: boolean;
   held: Item | null;
+  lever: Lever | null;
 }
+interface Lever {
+  g: Group;
+  knob: Mesh;
+  x: number;
+  top: number; // board-space y of the knob when up
+  pos: number; // 0 up .. 1 down (engaged)
+  target: number;
+  drag: boolean;
+  deco: Mesh[];
+}
+const TRAVEL = 0.16;
 
 // brushed bronze, polished brass, oxidised copper, cast iron
 const COLORS: Record<number, number> = { 8: 0xb8863b, 10: 0xd6a94a, 12: 0x9a6334, 14: 0x5d8a78, 15: 0x6c6a70, 16: 0xa97442, 20: 0xc79a46, 24: 0x7b5a3a };
@@ -249,7 +263,7 @@ function blueprintTexture(): CanvasTexture {
   return t;
 }
 
-function gaugeTexture(label: string): CanvasTexture {
+function gaugeTexture(label: string, zone?: [number, number]): CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d') as CanvasRenderingContext2D;
@@ -260,6 +274,13 @@ function gaugeTexture(label: string): CanvasTexture {
   g.beginPath();
   g.arc(128, 128, 118, 0, Math.PI * 2);
   g.fill();
+  if (zone) {
+    g.strokeStyle = '#2f9a4a';
+    g.lineWidth = 12;
+    g.beginPath();
+    g.arc(128, 128, 84, Math.PI * 0.75 + zone[0] * Math.PI * 1.5, Math.PI * 0.75 + zone[1] * Math.PI * 1.5);
+    g.stroke();
+  }
   g.strokeStyle = '#3a2a18';
   g.lineWidth = 3;
   for (let k = 0; k <= 10; k++) {
@@ -307,9 +328,9 @@ export class GearShiftSystem extends createSystem({
   private msg = '';
   private msgT = 0;
   private pointers: Pointer[] = [
-    { src: 'left', pos: new Vector3(), down: false, was: false, held: null },
-    { src: 'right', pos: new Vector3(), down: false, was: false, held: null },
-    { src: 'mouse', pos: new Vector3(), down: false, was: false, held: null },
+    { src: 'left', pos: new Vector3(), down: false, was: false, held: null, lever: null },
+    { src: 'right', pos: new Vector3(), down: false, was: false, held: null, lever: null },
+    { src: 'mouse', pos: new Vector3(), down: false, was: false, held: null, lever: null },
   ];
   private pinching: Record<HandName, boolean> = { left: false, right: false };
   private mouseDown = false;
@@ -332,6 +353,25 @@ export class GearShiftSystem extends createSystem({
   private sparkT = 0;
   private progress = 0;
   private efficiency = 0;
+  private master!: Lever;
+  private clutch!: Lever;
+  private power = 0;
+  private angle = 0;
+  private runWin = 0;
+  private jamT = 0;
+  private grindT = 0;
+  private lastPlaced = -1;
+  private finaleT = -1;
+  private stars!: Group;
+  private piston = new Group();
+  private rod!: Mesh;
+  private tubeGlow!: Mesh;
+  private rpmFace!: Mesh;
+  private tockFlip = false;
+  private ringMats: LineBasicMaterial[] = [];
+  private lastP = -1;
+  private lastE = -1;
+  private outPhi = 0;
 
   private get lv(): Level {
     return LEVELS[this.level];
@@ -402,7 +442,7 @@ export class GearShiftSystem extends createSystem({
       this.root.add(light);
       this.lights.push(light);
     }
-    [['PROGRESS', -0.4], ['TORQUE', 0.4]].forEach(([label, gx], gi) => {
+    [['PROGRESS', -0.4], ['RPM', 0.4]].forEach(([label, gx], gi) => {
       const rim = new Mesh(new CylinderGeometry(0.06, 0.06, 0.016, 28), brassM);
       rim.rotation.x = Math.PI / 2;
       rim.position.set(gx as number, GAUGE_Y, BZ + 0.0);
@@ -410,6 +450,7 @@ export class GearShiftSystem extends createSystem({
       const face = new Mesh(new PlaneGeometry(0.1, 0.1), new MeshBasicMaterial({ map: gaugeTexture(label as string), transparent: true }));
       face.position.set(gx as number, GAUGE_Y, BZ + 0.0095);
       this.root.add(face);
+      if (gi === 1) this.rpmFace = face;
       const needle = new Mesh(new PlaneGeometry(0.004, 0.042), new MeshBasicMaterial({ color: 0x8a1f12 }));
       needle.geometry.translate(0, 0.016, 0);
       needle.position.set(gx as number, GAUGE_Y, BZ + 0.0105);
@@ -423,6 +464,114 @@ export class GearShiftSystem extends createSystem({
     this.dust = new Points(dg, new PointsMaterial({ size: 0.011, map: dotTexture(), transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false }));
     this.dust.frustumCulled = false;
     this.root.add(this.dust);
+
+    // physical levers (right: master ignition, left: clutch), aether tube, piston, constellation
+    const labelTex = (t: string): CanvasTexture => {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 64;
+      const g = c.getContext('2d') as CanvasRenderingContext2D;
+      g.fillStyle = '#e0b46a';
+      g.font = '600 30px serif';
+      g.textAlign = 'center';
+      g.fillText(t, 128, 42);
+      return new CanvasTexture(c);
+    };
+    const makeLever = (x: number, top: number, label: string, red: boolean): Lever => {
+      const slot = new Mesh(roundedBox(0.034, TRAVEL + 0.06, 0.02, 0.008), iron);
+      slot.position.set(x, BY + top - TRAVEL / 2, BZ + 0.035);
+      slot.receiveShadow = true;
+      this.root.add(slot);
+      const groove = new Mesh(new PlaneGeometry(0.008, TRAVEL + 0.02), new MeshBasicMaterial({ color: 0x050403 }));
+      groove.position.set(x, BY + top - TRAVEL / 2, BZ + 0.0455);
+      this.root.add(groove);
+      const g = new Group();
+      const stem = new Mesh(new CylinderGeometry(0.004, 0.004, 0.05, 8), brassM);
+      stem.rotation.x = Math.PI / 2;
+      stem.position.z = -0.025;
+      const knob = new Mesh(new SphereGeometry(0.02, 18, 14), new MeshStandardMaterial({ color: red ? 0xa22a1a : 0x2f6f86, roughness: 0.3, metalness: 0.35 }));
+      knob.castShadow = true;
+      g.add(stem, knob);
+      g.position.set(x, BY + top, BZ + 0.078);
+      this.root.add(g);
+      const lab = new Mesh(new PlaneGeometry(0.1, 0.025), new MeshBasicMaterial({ map: labelTex(label), transparent: true }));
+      lab.position.set(x, BY + top - TRAVEL - 0.05, BZ + 0.046);
+      this.root.add(lab);
+      return { g, knob, x, top, pos: 0, target: 0, drag: false, deco: [slot, groove, lab] };
+    };
+    this.master = makeLever(BW / 2 + 0.1, 0.12, 'IGNITION', true);
+    this.clutch = makeLever(-(BW / 2 + 0.1), 0.0, 'CLUTCH', false);
+    // aether glass tube above the ignition lever
+    const tubeX = BW / 2 + 0.1;
+    const glass = new Mesh(new CylinderGeometry(0.022, 0.022, 0.2, 16, 1, true), new MeshStandardMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.2, roughness: 0.05, metalness: 0.1, side: 2 }));
+    glass.position.set(tubeX, BY + 0.33, BZ + 0.03);
+    this.root.add(glass);
+    for (const dy of [-0.105, 0.105]) {
+      const cap = new Mesh(new CylinderGeometry(0.026, 0.026, 0.014, 16), brassM);
+      cap.position.set(tubeX, BY + 0.33 + dy, BZ + 0.03);
+      this.root.add(cap);
+    }
+    this.tubeGlow = new Mesh(new CylinderGeometry(0.006, 0.006, 0.18, 8), new MeshBasicMaterial({ color: 0xffb04a, transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false }));
+    this.tubeGlow.position.set(tubeX, BY + 0.33, BZ + 0.03);
+    this.root.add(this.tubeGlow);
+    // reciprocating piston on the left (pumps with the output wheel)
+    const px = -(BW / 2 + 0.1);
+    const sleeve = new Mesh(new CylinderGeometry(0.02, 0.02, 0.13, 16), iron);
+    sleeve.position.set(px, BY + 0.24, BZ + 0.03);
+    sleeve.castShadow = true;
+    this.piston.add(sleeve);
+    this.rod = new Mesh(new CylinderGeometry(0.009, 0.009, 0.12, 12), brassM);
+    this.rod.position.set(px, BY + 0.27, BZ + 0.03);
+    this.rod.castShadow = true;
+    this.piston.add(this.rod);
+    this.root.add(this.piston);
+    // holographic orrery for the finale: orbit rings with turning planets and a few linked stars
+    this.stars = new Group();
+    const sp = new Float32Array(70 * 3);
+    for (let i = 0; i < 70; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.12 + Math.random() * 0.3;
+      sp[i * 3] = Math.cos(a) * r;
+      sp[i * 3 + 1] = (Math.random() - 0.5) * 0.3;
+      sp[i * 3 + 2] = Math.sin(a) * r;
+    }
+    const sg = new BufferGeometry();
+    sg.setAttribute('position', new BufferAttribute(sp, 3));
+    this.stars.add(new Points(sg, new PointsMaterial({ size: 0.014, map: dotTexture(), color: 0xa8e4ff, transparent: true, blending: AdditiveBlending, depthWrite: false })));
+    const lp: number[] = [];
+    for (let i = 0; i < 70; i++) {
+      for (let j = i + 1; j < 70; j++) {
+        if (Math.hypot(sp[i * 3] - sp[j * 3], sp[i * 3 + 1] - sp[j * 3 + 1], sp[i * 3 + 2] - sp[j * 3 + 2]) < 0.075) lp.push(sp[i * 3], sp[i * 3 + 1], sp[i * 3 + 2], sp[j * 3], sp[j * 3 + 1], sp[j * 3 + 2]);
+      }
+    }
+    const lg = new BufferGeometry();
+    lg.setAttribute('position', new BufferAttribute(new Float32Array(lp), 3));
+    this.stars.add(new LineSegments(lg, new LineBasicMaterial({ color: 0x6fc8ff, transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false })));
+    const sun = new Mesh(new SphereGeometry(0.02, 16, 12), new MeshBasicMaterial({ color: 0xffd98a }));
+    this.stars.add(sun);
+    [0.07, 0.12, 0.18, 0.25].forEach((r, k) => {
+      const ring = new Group();
+      const pts: number[] = [];
+      for (let q = 0; q < 64; q++) {
+        const a0 = (q / 64) * Math.PI * 2;
+        const a1 = ((q + 1) / 64) * Math.PI * 2;
+        pts.push(Math.cos(a0) * r, 0, Math.sin(a0) * r, Math.cos(a1) * r, 0, Math.sin(a1) * r);
+      }
+      const rg = new BufferGeometry();
+      rg.setAttribute('position', new BufferAttribute(new Float32Array(pts), 3));
+      const ringMat = new LineBasicMaterial({ color: 0x8fd6ff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false });
+      ring.add(new LineSegments(rg, ringMat));
+      const planet = new Mesh(new SphereGeometry(0.009 + k * 0.002, 12, 10), new MeshBasicMaterial({ color: [0xffb04a, 0x6fc8ff, 0xff7a5a, 0xc4a0ff][k] }));
+      planet.position.set(r, 0, 0);
+      ring.add(planet);
+      ring.userData.speed = 0.9 / (k + 1);
+      this.stars.add(ring);
+      this.ringMats.push(ringMat);
+    });
+    this.stars.position.set(0, BY + 0.12, BZ + 0.42);
+    this.stars.rotation.x = 0.55;
+    this.stars.visible = false;
+    this.root.add(this.stars);
 
     // output lamp ring (lights when the goal is met)
     this.ring = new Mesh(new TorusGeometry(0.1, 0.004, 8, 48), new MeshBasicMaterial({ color: 0x66e0ff, transparent: true, opacity: 0.0, blending: AdditiveBlending, depthWrite: false }));
@@ -460,12 +609,23 @@ export class GearShiftSystem extends createSystem({
     this.setVisible(false);
 
     const w = window as unknown as Record<string, unknown>;
-    w.__gears = () => ({ mode: modeState.mode, level: this.level, solved: this.solved, placement: this.placement.slice(), win: this.ev?.win, ratio: this.ev?.ratio, unlocked: this.unlocked });
+    w.__gears = () => ({ mode: modeState.mode, level: this.level, solved: this.solved, placement: this.placement.slice(), win: this.ev?.win, ratio: this.ev?.ratio, unlocked: this.unlocked, power: this.power, jam: this.ev?.jam, finale: this.finaleT });
     w.__gearScreen = (x: number, y: number) => {
       const v = new Vector3(x, BY + y, BZ + 0.03).project(this.world.camera);
       return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
     };
     w.__gearLevel = (i: number) => this.loadLevel(i);
+    w.__gearJam = () => {
+      this.ev = { ...this.ev, jam: true, win: false };
+    };
+    w.__gearFinale = (t: number) => {
+      this.finaleT = t;
+      this.stars.visible = true;
+    };
+    w.__gearPull = (on: boolean) => {
+      this.master.target = this.master.pos = on ? 1 : 0;
+      this.clutch.target = this.clutch.pos = on ? 1 : 0;
+    };
     w.__gearPlace = (peg: number, item: number) => this.place(item, peg);
     w.__gearSolve = () => {
       this.lv.solution.forEach((it, p) => {
@@ -506,6 +666,27 @@ export class GearShiftSystem extends createSystem({
     this.level = Math.max(0, Math.min(LEVELS.length - 1, i));
     const lv = this.lv;
     this.solved = false;
+    this.power = 0;
+    this.angle = 0;
+    this.runWin = 0;
+    this.jamT = 0;
+    this.lastPlaced = -1;
+    this.finaleT = -1;
+    for (const l of [this.master, this.clutch]) {
+      l.pos = l.target = 0;
+      l.drag = false;
+    }
+    this.clutch.g.visible = needsClutch(this.level);
+    for (const d of this.clutch.deco) d.visible = this.clutch.g.visible;
+    this.piston.visible = this.level >= 2;
+    this.stars.visible = false;
+    for (const grp of [this.partsGroup, this.fixedGroup, this.conduits]) grp.position.set(0, 0, 0);
+    {
+      const top = lv.target.maxRatio * 1.5;
+      const m = this.rpmFace.material as MeshBasicMaterial;
+      m.map = gaugeTexture('RPM', [lv.target.minRatio / top, lv.target.maxRatio / top]);
+      m.needsUpdate = true;
+    }
     this.placement = lv.pegs.map(() => -1);
     for (const o of [...this.pegGroup.children]) this.pegGroup.remove(o);
     for (const o of [...this.partsGroup.children]) this.partsGroup.remove(o);
@@ -609,6 +790,7 @@ export class GearShiftSystem extends createSystem({
     if (!fits(this.lv, this.placement, peg, itemIdx)) return false;
     if (it.peg >= 0) this.placement[it.peg] = -1;
     this.placement[peg] = itemIdx;
+    this.lastPlaced = itemIdx;
     it.peg = peg;
     const p = this.lv.pegs[peg];
     it.x = p.x;
@@ -643,14 +825,14 @@ export class GearShiftSystem extends createSystem({
     const lv = this.lv;
     const need = lv.solution.filter((x) => x >= 0).length || 1;
     const have = this.placement.filter((x) => x >= 0).length;
-    this.progress = this.ev.win ? 1 : Math.min(0.95, have / need) * 0.95;
-    if (this.ev.win) this.efficiency = 1;
+    this.progress = this.solved ? 1 : Math.min(1, have / need) * 0.9;
+    if (this.solved || (this.ev.win && this.power > 0.9)) this.efficiency = 1;
     else if (this.ev.jam) this.efficiency = 0.04;
     else if (this.ev.ratio <= 0) this.efficiency = 0;
     else {
       const goal = Math.sqrt(lv.target.minRatio * lv.target.maxRatio);
       const c = Math.min(this.ev.ratio, goal) / Math.max(this.ev.ratio, goal);
-      this.efficiency = Math.min(0.9, c * (this.ev.dir === lv.target.dir ? 1 : 0.5));
+      this.efficiency = Math.min(0.9, c * (this.ev.dir === lv.target.dir ? 1 : 0.5)) * (this.power > 0.3 ? 1 : 0.7);
     }
   }
 
@@ -659,28 +841,59 @@ export class GearShiftSystem extends createSystem({
     this.phi = new Array(this.ev.parts.length).fill(0);
     this.rebuildConduits();
     this.measure();
-    const win = this.ev.win;
-    if (win && !this.solved) {
-      this.solved = true;
-      this.unlocked = Math.max(this.unlocked, Math.min(LEVELS.length - 1, this.level + 1));
-      try {
-        localStorage.setItem('pw-gear-level', String(this.unlocked));
-      } catch {
-        /* ignore */
-      }
-      const tp = this.lv.pegs[this.lv.target.peg];
-      celebrate(tp.x, BY + tp.y, BZ + 0.1, 3);
-      emitBurst(tp.x, BY + tp.y, BZ + 0.06, 1, 0.8, 0.35, 34, 0.9);
-      sfx.win();
-      this.msg = this.level === LEVELS.length - 1 ? 'Machine complete!  All levels solved' : 'Machine online!  Press NEXT';
-      this.msgT = 12;
-      askMentor('gears', 'a gear train that solves the puzzle "' + this.lv.name + '" with an output ratio of ' + this.ev.ratio.toFixed(1) + 'x', (t) => {
-        this.msg = t;
-        this.msgT = 12;
-        this.hudDirty = true;
-      });
-      this.drawBtns();
+    this.runWin = 0;
+    this.jamT = 0;
+    this.hudDirty = true;
+  }
+
+  /** Called once the machine has run the right way long enough. */
+  private finishWin(): void {
+    this.solved = true;
+    this.unlocked = Math.max(this.unlocked, Math.min(LEVELS.length - 1, this.level + 1));
+    try {
+      localStorage.setItem('pw-gear-level', String(this.unlocked));
+    } catch {
+      /* ignore */
     }
+    const tp = this.lv.pegs[this.lv.target.peg];
+    celebrate(tp.x, BY + tp.y, BZ + 0.1, 3);
+    emitBurst(tp.x, BY + tp.y, BZ + 0.06, 1, 0.8, 0.35, 34, 0.9);
+    sfx.chime();
+    sfx.hiss();
+    const last = this.level === LEVELS.length - 1;
+    if (last) {
+      this.finaleT = 0;
+      this.stars.visible = true;
+    }
+    this.msg = last ? 'The Orrery awakens!  Masterpiece complete' : 'Machine online!  Press NEXT';
+    this.msgT = 12;
+    askMentor('gears', 'a gear train that solves the puzzle "' + this.lv.name + '" with an output ratio of ' + this.ev.ratio.toFixed(1) + 'x', (t) => {
+      this.msg = t;
+      this.msgT = 12;
+      this.hudDirty = true;
+    });
+    this.drawBtns();
+    this.hudDirty = true;
+  }
+
+  private ejectLast(): void {
+    const idx = this.lastPlaced;
+    const it = this.items[idx];
+    if (!it || it.peg < 0) return;
+    const p = this.lv.pegs[it.peg];
+    emitBurst(p.x, BY + p.y, BZ + 0.06, 1, 0.25, 0.1, 30, 0.9);
+    this.placement[it.peg] = -1;
+    it.peg = -1;
+    it.x = it.home.x;
+    it.y = it.home.y;
+    this.syncItem(it);
+    this.lastPlaced = -1;
+    this.master.target = 0;
+    this.master.pos = Math.min(this.master.pos, 0.6);
+    sfx.thud(0.8);
+    this.evaluateNow();
+    this.msg = 'JAM!  The gear was ejected back to the rack';
+    this.msgT = 4;
     this.hudDirty = true;
   }
 
@@ -715,10 +928,10 @@ export class GearShiftSystem extends createSystem({
     const h = this.hud;
     const lv = this.lv;
     h.card('rgba(26,18,12,0.9)', '#d6a94a');
-    h.text('GEARSHIFT   Level ' + (this.level + 1) + ' / ' + LEVELS.length + '  -  ' + lv.name, 52, 30, '#e6f2ff');
+    h.text(CHAPTERS[chapterOf(this.level)] + '   -   ' + lv.name, 52, 28, '#fff1d6');
     h.text(lv.goal, 104, 28, this.solved ? '#8dff9d' : '#ffd9a0');
     if (this.msgT > 0) h.text(this.msg, 152, 28, '#8dff9d');
-    else h.text('Hint: ' + lv.hint, 152, 24, '#b9d6f5');
+    else h.text(this.placement.filter((x) => x >= 0).length >= lv.solution.filter((x) => x >= 0).length ? (needsClutch(this.level) ? 'Pull CLUTCH (left) and IGNITION (right) to test' : 'Pull the IGNITION lever (right) to test') : 'Hint: ' + lv.hint, 152, 24, '#e8d3a8');
     const r = this.ev && this.ev.ratio > 0 ? 'Output ' + this.ev.ratio.toFixed(2) + 'x  ' + (this.ev.dir === lv.target.dir ? 'right way' : 'wrong way') : 'Output not connected yet';
     h.text(r + '    Assembly ' + Math.round(this.progress * 100) + '%   Torque ' + Math.round(this.efficiency * 100) + '%', 198, 22, '#e0b46a');
     h.commit();
@@ -772,6 +985,25 @@ export class GearShiftSystem extends createSystem({
     const bx = pt.pos.x;
     const by = pt.pos.y - BY;
     if (pt.down && !pt.was) {
+      for (const l of [this.master, this.clutch]) {
+        if (!l.g.visible || Math.hypot(l.x - bx, BY + l.top - l.pos * TRAVEL - (by + BY)) > 0.05) continue;
+        l.drag = true;
+        pt.lever = l;
+        sfx.grab();
+      }
+    }
+    if (pt.down && pt.lever) {
+      const l = pt.lever;
+      l.pos = Math.max(0, Math.min(1, (l.top - by) / TRAVEL));
+      l.target = l.pos;
+    }
+    if (!pt.down && pt.lever) {
+      pt.lever.drag = false;
+      pt.lever.target = pt.lever.pos > 0.5 ? 1 : 0;
+      if (pt.lever.target === 1) sfx.clank();
+      pt.lever = null;
+    }
+    if (pt.down && !pt.was && !pt.lever) {
       let best: Item | null = null;
       let bd = 1e9;
       for (const it of this.items) {
@@ -817,7 +1049,7 @@ export class GearShiftSystem extends createSystem({
       });
       const idx = this.items.indexOf(it);
       if (bestPeg >= 0 && this.place(idx, bestPeg)) {
-        sfx.wood(0.5);
+        sfx.clank();
         const p = this.lv.pegs[bestPeg];
         emitBurst(p.x, BY + p.y, BZ + 0.05, 1, 0.78, 0.35, 16, 0.4);
       } else {
@@ -842,6 +1074,7 @@ export class GearShiftSystem extends createSystem({
       this.lastMode = modeState.mode;
       const on = modeState.mode === 'gears';
       this.setVisible(on);
+      if (!on) sfx.whirr(0);
       if (on) this.loadLevel(Math.min(this.unlocked, this.level));
     }
     if (modeState.mode !== 'gears') return;
@@ -855,26 +1088,71 @@ export class GearShiftSystem extends createSystem({
     this.time += dt;
     for (const pt of this.pointers) this.updatePointer(pt);
 
-    // spin the powered wheels
+    // levers ease toward their target; the ignition spins the motor up
+    for (const l of [this.master, this.clutch]) {
+      if (!l.drag) l.pos += Math.sign(l.target - l.pos) * Math.min(Math.abs(l.target - l.pos), dt * 5);
+      l.g.position.y = BY + l.top - l.pos * TRAVEL;
+    }
+    const masterOn = this.master.pos > 0.85;
+    const clutchOk = !needsClutch(this.level) || this.clutch.pos > 0.85;
+    this.power += ((masterOn ? 1 : 0) - this.power) * Math.min(1, dt * (masterOn ? 1.6 : 2.5));
     const parts = this.ev.parts;
-    const powered = parts.length > 1 && !this.ev.jam;
-    if (powered || parts.length === 1) {
-      for (let i = 0; i < parts.length; i++) {
-        const s = parts[i];
-        if (s.parent < 0) this.phi[i] = OMEGA * this.time * (this.ev.jam ? 0 : 1);
-        else if (s.sibling) this.phi[i] = this.phi[s.parent];
-        else this.phi[i] = -(s.parentN / s.n) * this.phi[s.parent] + s.c;
-        const m = this.meshFor(s.peg, s.layer);
-        if (m) m.rotation.z = this.phi[i];
+    const jamming = this.ev.jam && this.power > 0.3 && clutchOk && parts.length > 1;
+    const driven = parts.length > 1 && clutchOk && !this.ev.jam;
+    const powered = driven && this.power > 0.04;
+    if (!jamming) this.angle += OMEGA * this.power * dt;
+    let outPhi = this.outPhi;
+    for (let i = 0; i < parts.length; i++) {
+      const s = parts[i];
+      if (s.parent < 0) this.phi[i] = this.angle;
+      else if (!driven) continue;
+      else if (s.sibling) this.phi[i] = this.phi[s.parent];
+      else this.phi[i] = -(s.parentN / s.n) * this.phi[s.parent] + s.c;
+      const m = this.meshFor(s.peg, s.layer);
+      if (m) m.rotation.z = this.phi[i];
+      if (s.peg === this.lv.target.peg && s.layer === this.lv.target.layer) outPhi = this.phi[i];
+    }
+    this.outPhi = outPhi;
+    if (jamming) {
+      this.jamT += dt;
+      this.grindT -= dt;
+      if (this.grindT <= 0) {
+        this.grindT = 0.38;
+        sfx.grind();
       }
+      for (const s of parts) {
+        const m = this.meshFor(s.peg, s.layer);
+        if (m) m.rotation.z += (Math.random() - 0.5) * 0.09;
+      }
+      this.fixedGroup.position.x = this.partsGroup.position.x = (Math.random() - 0.5) * 0.004;
+      if (this.jamT > 1.4) this.ejectLast();
+    } else {
+      this.jamT = 0;
+      this.fixedGroup.position.x = this.partsGroup.position.x = 0;
+    }
+    if (powered && this.power > 0.9 && this.ev.win && !this.solved) {
+      this.runWin += dt;
+      if (this.runWin > 1.2) this.finishWin();
+    } else if (!this.solved) this.runWin = 0;
+    if (powered && this.ev.ratio > this.lv.target.maxRatio && this.ev.dir === this.lv.target.dir && this.msgT <= 0.1) {
+      this.msg = 'Over-revving!  Too fast for the regulator';
+      this.msgT = 1.2;
+      this.hudDirty = true;
     }
     if (powered) {
-      this.tickT -= dt;
+      this.tickT -= dt * (0.5 + this.power * 1.5);
       if (this.tickT <= 0) {
-        this.tickT = 0.28;
-        sfx.tick();
+        this.tickT = 0.35;
+        this.tockFlip = !this.tockFlip;
+        sfx.tickTock(this.tockFlip, this.power * Math.min(1, this.ev.ratio / 2));
       }
     }
+    sfx.whirr(this.power > 0.02 && !jamming ? 0.15 + 0.6 * this.power * (powered ? Math.min(1, 0.4 + this.ev.ratio * 0.3) : 0.5) : 0);
+    // piston pumps with the output wheel; aether tube shows the machine's state
+    this.rod.position.y = BY + 0.27 + 0.035 * Math.sin(this.outPhi);
+    const tm = this.tubeGlow.material as MeshBasicMaterial;
+    tm.color.setHex(jamming ? 0xff3a22 : powered ? 0x55c8ff : 0xffb04a);
+    tm.opacity = jamming ? 0.6 + 0.4 * Math.random() : 0.25 + this.power * 0.5 + (powered ? 0.12 * Math.sin(this.time * 9) : 0);
     // crank follows the motor wheel
     const mm = this.fixed.get(this.lv.motor.peg + ':0');
     if (mm) this.crank.rotation.z = mm.rotation.z;
@@ -890,7 +1168,16 @@ export class GearShiftSystem extends createSystem({
       else if (powered && a && !s.sibling) emitBurst((pa.x + pb.x) / 2, BY + (pa.y + pb.y) / 2, BZ + 0.045, 1, 0.75, 0.3, 2, 0.22);
     }
     // gauges
-    const target = [this.progress, this.efficiency];
+    this.measure();
+    const rpm01 = powered ? Math.min(1, (this.ev.ratio * this.power) / (this.lv.target.maxRatio * 1.5)) : 0;
+    const target = [this.progress, rpm01];
+    const pp = Math.round(this.progress * 100);
+    const ee = Math.round(this.efficiency * 100);
+    if (pp !== this.lastP || ee !== this.lastE) {
+      this.lastP = pp;
+      this.lastE = ee;
+      this.hudDirty = true;
+    }
     for (let gi = 0; gi < 2; gi++) {
       this.needleVal[gi] += (target[gi] - this.needleVal[gi]) * Math.min(1, dt * 4);
       if (this.needles[gi]) this.needles[gi].rotation.z = Math.PI * 0.75 - this.needleVal[gi] * Math.PI * 1.5;
@@ -913,6 +1200,24 @@ export class GearShiftSystem extends createSystem({
     this.conduitMats.forEach((m) => (m.opacity = this.ev.win ? pulse : 0));
     const em = this.ev.win ? 0.12 + 0.1 * Math.sin(this.time * 7) : 0;
     for (const it of this.items) for (const m of it.meshes) (m.material as MeshStandardMaterial).emissive.setRGB(0, em * 0.7, em);
+    if (this.finaleT >= 0) {
+      this.finaleT += dt;
+      const e = Math.min(1, this.finaleT / 3);
+      const k = e * e * (3 - 2 * e);
+      for (const grp of [this.partsGroup, this.fixedGroup, this.conduits]) {
+        grp.position.y = k * 0.05 + Math.sin(this.time * 1.5) * 0.004 * k;
+        grp.position.z = k * 0.18;
+      }
+      this.stars.rotation.y = this.time * 0.25;
+      for (let i = 3; i < this.stars.children.length; i++) {
+        const rg = this.stars.children[i];
+        rg.rotation.y = this.time * (rg.userData.speed as number);
+      }
+      for (const m of this.ringMats) m.opacity = 0.45 * k;
+      ((this.stars.children[0] as Points).material as PointsMaterial).opacity = k;
+      ((this.stars.children[1] as LineSegments).material as LineBasicMaterial).opacity = 0.4 * k;
+      if (Math.random() < dt * 2) emitBurst((Math.random() - 0.5) * 0.7, BY + 0.1 + Math.random() * 0.3, BZ + 0.5, 0.4 + Math.random() * 0.6, 0.7, 1, 14, 0.5);
+    }
     // output lamp
     const glow = this.solved ? 0.55 + 0.25 * Math.sin(this.time * 6) : 0;
     (this.ring.material as MeshBasicMaterial).opacity += (glow - (this.ring.material as MeshBasicMaterial).opacity) * Math.min(1, dt * 6);

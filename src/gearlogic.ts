@@ -118,6 +118,12 @@ export const LEVELS: Level[] = [
   ),
 ];
 
+/** Campaign: three blueprints, two stages each. */
+export const CHAPTERS = ['I  CHRONOMETER ESCAPEMENT', 'II  AETHER PRESSURE REGULATOR', 'III  CELESTIAL ORRERY'];
+export const chapterOf = (level: number): number => Math.min(2, Math.floor(level / 2));
+/** The orrery needs the clutch lever pulled as well as the ignition lever. */
+export const needsClutch = (level: number): boolean => level >= 4;
+
 // ------------------------------------------------------------------ evaluating a placement
 export interface PartState {
   peg: number;

@@ -515,4 +515,64 @@ export const sfx = {
     if (play('metal', 0.07, 1.7 + Math.random() * 0.4)) return;
     burst(0.02, 0.03, 2500, 0.8);
   },
+  /** clock tick-tock: alternates pitch, quicker as rpm (0..1) rises */
+  tickTock(tock: boolean, rpm: number): void {
+    const f = (tock ? 1500 : 2100) * (0.9 + rpm * 0.3);
+    tone(f, 0.035, 0.09, 'square', f * 0.6);
+    burst(0.02, 0.05, f * 1.6, 2);
+    if (!play('metal', 0.05, (tock ? 1.3 : 1.8) + rpm * 0.3)) return;
+  },
+  /** continuous mechanical whirr whose pitch follows rpm (0..1); call every frame, 0 stops it */
+  whirr(rpm: number): void {
+    const c = ac();
+    if (!c) return;
+    if (!whirrNode) {
+      if (rpm <= 0.01) return;
+      const o = c.createOscillator();
+      const o2 = c.createOscillator();
+      const f = c.createBiquadFilter();
+      const g = c.createGain();
+      o.type = 'sawtooth';
+      o2.type = 'triangle';
+      f.type = 'lowpass';
+      f.frequency.value = 500;
+      g.gain.value = 0;
+      o.connect(f);
+      o2.connect(f);
+      f.connect(g).connect(c.destination);
+      o.start();
+      o2.start();
+      whirrNode = { o, o2, g, f };
+    }
+    const t = c.currentTime;
+    whirrNode.o.frequency.setTargetAtTime(55 + rpm * 110, t, 0.1);
+    whirrNode.o2.frequency.setTargetAtTime(110 + rpm * 220, t, 0.1);
+    whirrNode.f.frequency.setTargetAtTime(300 + rpm * 700, t, 0.1);
+    whirrNode.g.gain.setTargetAtTime(rpm > 0.01 ? 0.018 + rpm * 0.03 : 0, t, 0.12);
+  },
+  /** steam released */
+  hiss(): void {
+    burst(1.3, 0.12, 5200, 0.5);
+    burst(0.9, 0.08, 2600, 0.4);
+  },
+  /** heavy metallic clank when a gear seats on its shaft */
+  clank(): void {
+    if (!play('metal', 0.7, 0.6 + Math.random() * 0.15)) burst(0.05, 0.3, 900, 3);
+    tone(180, 0.25, 0.14, 'triangle', 90);
+    tone(1370, 0.3, 0.06, 'sine', 1300);
+    tone(2210, 0.2, 0.04, 'sine', 2100);
+  },
+  /** teeth grinding in a jam */
+  grind(): void {
+    burst(0.35, 0.2, 1800 + Math.random() * 600, 1.2);
+    tone(90 + Math.random() * 30, 0.35, 0.12, 'sawtooth', 70);
+  },
+  /** harmonic chime chord on success */
+  chime(): void {
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      tone(f, 1.6, 0.1, 'sine', undefined, i * 0.13);
+      tone(f * 2, 1.1, 0.03, 'sine', undefined, i * 0.13);
+    });
+  },
 };
+let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode } | null = null;
