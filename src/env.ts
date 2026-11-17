@@ -29,11 +29,14 @@ import {
   DirectionalLight,
   PMREMGenerator,
   PCFSoftShadowMap,
+  FogExp2,
   Scene,
   Mesh as ThreeMesh,
 } from '@iwsdk/core';
 import type { Texture } from '@iwsdk/core';
 import { modeState } from './mode.js';
+import { buildCinematicRoom } from './room.js';
+import type { RoomFx } from './room.js';
 import { kiteCfg } from './kitecfg.js';
 import {
   bake,
@@ -651,125 +654,12 @@ export class EnvSystem extends createSystem({}) {
     }
   }
 
-  // ------------------------------------------------------------ cozy workshop room
-  private woodTex(): CanvasTexture {
-    const c = document.createElement('canvas');
-    c.width = c.height = 512;
-    const g = c.getContext('2d')!;
-    for (let i = 0; i < 8; i++) {
-      const l = 52 + Math.random() * 10;
-      g.fillStyle = `hsl(28,${42 + Math.random() * 8}%,${l}%)`;
-      g.fillRect(0, i * 64, 512, 62);
-      g.strokeStyle = 'rgba(70,40,20,0.25)';
-      for (let k = 0; k < 14; k++) {
-        g.beginPath();
-        const y = i * 64 + Math.random() * 60;
-        g.moveTo(0, y);
-        g.bezierCurveTo(150, y + (Math.random() - 0.5) * 6, 350, y + (Math.random() - 0.5) * 6, 512, y);
-        g.stroke();
-      }
-      g.fillStyle = 'rgba(40,22,10,0.55)';
-      g.fillRect(0, i * 64 + 62, 512, 2);
-      g.fillRect(((i * 173) % 480) + 10, i * 64, 2, 62);
-    }
-    const t = new CanvasTexture(c);
-    t.wrapS = t.wrapT = RepeatWrapping;
-    t.colorSpace = SRGBColorSpace;
-    return t;
-  }
+  // ------------------------------------------------------------ cinematic atelier
+  private roomFx: RoomFx | null = null;
 
   private buildWorkshop(): void {
     this.room = new Group();
-    const box = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, rough = 0.85): Mesh => {
-      const m = new Mesh(new BoxGeometry(w, h, d), new MeshStandardMaterial({ color, roughness: rough }));
-      this.add(m, x, y, z);
-      return m;
-    };
-    // floor
-    const wt = this.woodTex();
-    wt.repeat.set(4, 4);
-    const floor = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ map: wt, roughness: 0.7 }));
-    floor.rotation.x = -Math.PI / 2;
-    this.add(floor, 0, 0.02, 0);
-    // rug under the table
-    const rug = new Mesh(new CircleGeometry(1.25, 48), new MeshStandardMaterial({ color: 0x9c4a3c, roughness: 1 }));
-    rug.rotation.x = -Math.PI / 2;
-    this.add(rug, 0, 0.035, -0.5);
-    const rug2 = new Mesh(new CircleGeometry(0.95, 48), new MeshStandardMaterial({ color: 0xd9b36b, roughness: 1 }));
-    rug2.rotation.x = -Math.PI / 2;
-    this.add(rug2, 0, 0.045, -0.5);
-    // walls (plaster) and ceiling
-    const wall = (w: number, h: number, x: number, y: number, z: number, ry: number, color: number): void => {
-      const m = new Mesh(new PlaneGeometry(w, h), new MeshStandardMaterial({ color, roughness: 1 }));
-      m.rotation.y = ry;
-      this.add(m, x, y, z);
-    };
-    wall(8, 3, 0, 1.5, -3.4, 0, 0xe3cfae);
-    wall(8, 3, -3.4, 1.5, 0, Math.PI / 2, 0xd8c19d);
-    wall(8, 3, 3.4, 1.5, 0, -Math.PI / 2, 0xd8c19d);
-    wall(8, 3, 0, 1.5, 3.4, Math.PI, 0xd8c19d);
-    const ceil = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 }));
-    ceil.rotation.x = Math.PI / 2;
-    this.add(ceil, 0, 3, 0);
-    for (let i = -3; i <= 3; i += 1.5) box(0.16, 0.18, 7, 0x5b3d26, i, 2.9, 0);
-    // skirting
-    box(8, 0.12, 0.05, 0x6b4a30, 0, 0.06, -3.38);
-    // big window on the back wall with a sunset sky behind it
-    const sc = document.createElement('canvas');
-    sc.width = 8;
-    sc.height = 128;
-    const sg = sc.getContext('2d')!;
-    const gr = sg.createLinearGradient(0, 0, 0, 128);
-    gr.addColorStop(0, '#6f8fd6');
-    gr.addColorStop(0.55, '#ffcf9a');
-    gr.addColorStop(1, '#ff9a62');
-    sg.fillStyle = gr;
-    sg.fillRect(0, 0, 8, 128);
-    const st = new CanvasTexture(sc);
-    st.colorSpace = SRGBColorSpace;
-    const sky = new Mesh(new PlaneGeometry(2.6, 1.5), new MeshBasicMaterial({ map: st }));
-    this.add(sky, 0, 1.7, -3.36);
-    const fr = 0x5b3d26;
-    box(2.8, 0.1, 0.12, fr, 0, 2.5, -3.33);
-    box(2.8, 0.1, 0.12, fr, 0, 0.92, -3.33);
-    box(0.1, 1.7, 0.12, fr, -1.35, 1.7, -3.33);
-    box(0.1, 1.7, 0.12, fr, 1.35, 1.7, -3.33);
-    box(0.06, 1.5, 0.1, fr, 0, 1.7, -3.33);
-    box(2.6, 0.06, 0.1, fr, 0, 1.7, -3.33);
-    box(3.0, 0.06, 0.3, 0x6b4a30, 0, 0.9, -3.25);
-    // warm sun patch on the floor
-    const sun = new Mesh(new PlaneGeometry(1.6, 2.2), new MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.14, depthWrite: false }));
-    sun.rotation.x = -Math.PI / 2;
-    this.add(sun, 0, 0.06, -2.0);
-    // shelves on the left wall with pots, books and jars (no bottles)
-    const colors = [0xc8553d, 0x3d7ea6, 0xe0b04a, 0x6aa84f, 0x8e5ea2, 0xd98b5f];
-    for (let r = 0; r < 3; r++) {
-      const y = 0.9 + r * 0.55;
-      box(0.32, 0.05, 2.2, 0x6b4a30, -3.2, y, -0.4);
-      for (let i = 0; i < 6; i++) {
-        const z = -1.3 + i * 0.34 + Math.random() * 0.06;
-        if ((i + r) % 2) {
-          const pot = new Mesh(new CylinderGeometry(0.07, 0.05, 0.14, 16), new MeshStandardMaterial({ color: colors[(i + r * 2) % 6], roughness: 0.7 }));
-          this.add(pot, -3.2, y + 0.095, z);
-        } else {
-          box(0.18, 0.14 + Math.random() * 0.1, 0.07, colors[(i * 2 + r) % 6], -3.2, y + 0.1, z);
-        }
-      }
-    }
-    // pegboard with hanging tools on the right wall
-    box(0.03, 1.1, 2.0, 0x9a7b55, 3.36, 1.55, -0.6);
-    for (let i = 0; i < 6; i++) {
-      const z = -1.4 + i * 0.32;
-      box(0.05, 0.4 + (i % 3) * 0.12, 0.04, 0x4b4b52, 3.31, 1.5, z);
-      box(0.06, 0.12, 0.06, colors[i % 6], 3.3, 1.28 - (i % 3) * 0.05, z);
-    }
-    // pendant lamp over the table
-    const wire = new Mesh(new CylinderGeometry(0.006, 0.006, 1.2, 6), new MeshBasicMaterial({ color: 0x222222 }));
-    this.add(wire, 0, 2.4, -0.55);
-    const shade = new Mesh(new CylinderGeometry(0.09, 0.3, 0.22, 24, 1, true), new MeshStandardMaterial({ color: 0xd8a24a, side: DoubleSide, roughness: 0.6 }));
-    this.add(shade, 0, 1.78, -0.55);
-    const bulb = new Mesh(new SphereGeometry(0.07, 16, 12), new MeshBasicMaterial({ color: 0xfff1c0 }));
-    this.add(bulb, 0, 1.74, -0.55);
+    this.roomFx = buildCinematicRoom(this.room);
     this.decor();
     const room = this.room;
     this.room = null;
@@ -780,6 +670,7 @@ export class EnvSystem extends createSystem({}) {
   private roomEnv: Texture | null = null;
   private prevEnv: Texture | null = null;
   private envInRoom = false;
+  private prevFog: Scene['fog'] = null;
   private lit = false;
 
   /** A small bake of this very room (window light, warm walls, wood floor) so glossy things reflect it. */
@@ -796,18 +687,18 @@ export class EnvSystem extends createSystem({}) {
         sc.add(m);
       };
       const mb = (c: number) => new MeshBasicMaterial({ color: c, side: BackSide });
-      const room = new ThreeMesh(new BoxGeometry(8, 3, 8), mb(0xcdb28c));
+      const room = new ThreeMesh(new BoxGeometry(8, 3, 8), mb(0x5c6e66));
       room.position.y = 1.5;
       sc.add(room);
-      const floor = new ThreeMesh(new PlaneGeometry(8, 8), new MeshBasicMaterial({ color: 0x9a6a3c }));
+      const floor = new ThreeMesh(new PlaneGeometry(8, 8), new MeshBasicMaterial({ color: 0x3a2214 }));
       floor.rotation.x = -Math.PI / 2;
       floor.position.y = 0.01;
       sc.add(floor);
-      const ceil = new ThreeMesh(new PlaneGeometry(8, 8), new MeshBasicMaterial({ color: 0x6b4a30 }));
+      const ceil = new ThreeMesh(new PlaneGeometry(8, 8), new MeshBasicMaterial({ color: 0x24160d }));
       ceil.rotation.x = Math.PI / 2;
       ceil.position.y = 2.99;
       sc.add(ceil);
-      face(2.8, 1.6, 0, 1.7, -3.9, 0, 0xffb878, true); // sunset window (strong, warm)
+      face(2.3, 1.75, 0, 1.85, -3.9, 0, 0xff9a52, true); // dusk window (strong, warm)
       face(1.2, 0.6, 0, 1.9, -3.85, 0, 0xfff1d0, true); // bright sun disc
       face(0.5, 0.5, 0, 2.7, 0, 0, 0xfff1c0, true); // pendant bulb glow
       const pm = new PMREMGenerator(this.world.renderer);
@@ -912,13 +803,17 @@ export class EnvSystem extends createSystem({}) {
         this.prevEnv = sc.environment;
         if (this.roomEnv) {
           sc.environment = this.roomEnv;
-          sc.environmentIntensity = 1;
+          sc.environmentIntensity = 0.85;
         }
+        this.prevFog = sc.fog;
+        sc.fog = new FogExp2(0x1c100a, 0.045);
       } else {
         sc.environment = this.prevEnv;
         sc.environmentIntensity = 0.55;
+        sc.fog = this.prevFog;
       }
     }
+    if (inRoom) this.roomFx?.update(this.t);
     const open = want === 'field' || want === 'bil' || want === 'winter' || want === 'char';
     for (const sp of this.spinners) sp.rotation.y += dt * 0.02;
     for (const c of this.clouds) {

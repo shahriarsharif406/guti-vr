@@ -12,6 +12,7 @@ import {
   LineSegments,
   Mesh,
   MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Path,
   PlaneGeometry,
@@ -174,9 +175,42 @@ function wearTexture(hex: number): CanvasTexture {
 }
 
 /** Gear metal: brushed micro-roughness + bump + patina/worn-silver colour map. */
-function wornMetal(hex: number, rough = 0.42): MeshStandardMaterial {
+let grainTex: CanvasTexture | null = null;
+/** Direction field of concentric circles around the gear centre: highlights stretch along the turned grain. */
+function circularGrain(): CanvasTexture {
+  if (grainTex) return grainTex;
+  const S = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = x / S - 0.5;
+      const v = 0.5 - y / S; // canvas y is flipped relative to uv
+      const l = Math.hypot(u, v) || 1;
+      const tx = -v / l; // tangent of the circle
+      const ty = u / l;
+      const o = (y * S + x) * 4;
+      img.data[o] = Math.round((0.5 + 0.5 * tx) * 255);
+      img.data[o + 1] = Math.round((0.5 + 0.5 * ty) * 255);
+      img.data[o + 2] = 255;
+      img.data[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  grainTex = new CanvasTexture(c);
+  grainTex.repeat.set(5, 5); // gear uv spans about +-0.1 m around the axle
+  grainTex.offset.set(0.5, 0.5);
+  return grainTex;
+}
+
+function wornMetal(hex: number, rough = 0.42): MeshPhysicalMaterial {
   const t = scratchTexture();
-  return new MeshStandardMaterial({ color: 0xffffff, map: wearTexture(hex), metalness: 0.92, roughness: rough, roughnessMap: t, bumpMap: t, bumpScale: 0.6, envMapIntensity: 1.4 });
+  const m = new MeshPhysicalMaterial({ color: 0xffffff, map: wearTexture(hex), metalness: 0.92, roughness: rough, roughnessMap: t, bumpMap: t, bumpScale: 0.6, envMapIntensity: 1.0 });
+  m.anisotropy = 0.45; // brushed look: specular stretched along the circular grain
+  m.anisotropyMap = circularGrain();
+  return m;
 }
 
 let ironMapTex: CanvasTexture | null = null;
@@ -487,6 +521,12 @@ export class GearShiftSystem extends createSystem({
   private rpmFace!: Mesh;
   private tockFlip = false;
   private ringMats: LineBasicMaterial[] = [];
+  private wasPowered = false;
+  private wasOver = false;
+  private overHissT = 0;
+  private prevDir = 0;
+  private doors: Group[] = [];
+  private core!: Mesh;
   private lastP = -1;
   private lastE = -1;
   private outPhi = 0;
@@ -502,20 +542,37 @@ export class GearShiftSystem extends createSystem({
 
     // bench: walnut frame, blueprint board, a shelf for the rack
     const wood = new MeshStandardMaterial({ map: woodTexture(18, 2, 1), color: 0x7a5a48, roughness: 0.5 });
-    const frame = (w: number, h: number, x: number, y: number): void => {
-      const m = new Mesh(roundedBox(w, h, 0.05, 0.006), wood);
-      m.position.set(x, BY + y, BZ - 0.02);
-      m.receiveShadow = true;
-      this.root.add(m);
-    };
-    frame(BW + 0.12, 0.06, 0, BH / 2 + 0.03);
-    frame(BW + 0.12, 0.06, 0, -BH / 2 - 0.03);
-    frame(0.06, BH, -BW / 2 - 0.03, 0);
-    frame(0.06, BH, BW / 2 + 0.03, 0);
-    const board = new Mesh(new PlaneGeometry(BW, BH), new MeshStandardMaterial({ map: blueprintTexture(), roughness: 0.6, metalness: 0.35, roughnessMap: scratchTexture(), bumpMap: scratchTexture(), bumpScale: 0.5 }));
-    board.position.set(0, BY, BZ);
-    board.receiveShadow = true;
-    this.root.add(board);
+    // the chassis is two "doors" hinged at the outer edges so the finale can split it open
+    const tex = blueprintTexture();
+    const boardMat = new MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.35, roughnessMap: scratchTexture(), bumpMap: scratchTexture(), bumpScale: 0.5 });
+    [-1, 1].forEach((side, di) => {
+      const door = new Group();
+      door.position.set(side * (BW / 2 + 0.06), BY, BZ);
+      const bar = (y: number): void => {
+        const m = new Mesh(roundedBox((BW + 0.12) / 2, 0.06, 0.05, 0.006), wood);
+        m.position.set(-side * ((BW + 0.12) / 4), y, -0.02);
+        m.receiveShadow = true;
+        door.add(m);
+      };
+      bar(BH / 2 + 0.03);
+      bar(-BH / 2 - 0.03);
+      const edge = new Mesh(roundedBox(0.06, BH, 0.05, 0.006), wood);
+      edge.position.set(-side * 0.03, 0, -0.02);
+      door.add(edge);
+      const geo = new PlaneGeometry(BW / 2, BH);
+      const uv = geo.getAttribute('uv') as BufferAttribute;
+      for (let k = 0; k < uv.count; k++) uv.setX(k, di === 0 ? uv.getX(k) * 0.5 : 0.5 + uv.getX(k) * 0.5);
+      const half = new Mesh(geo, boardMat);
+      half.position.set(-side * (BW / 4 + 0.06), 0, 0);
+      half.receiveShadow = true;
+      door.add(half);
+      this.root.add(door);
+      this.doors.push(door);
+    });
+    // glowing core revealed behind the doors in the finale
+    this.core = new Mesh(new PlaneGeometry(BW, BH), new MeshBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    this.core.position.set(0, BY, BZ - 0.035);
+    this.root.add(this.core);
     const legM = ironMat();
     for (const x of [-0.5, 0.5]) {
       const leg = new Mesh(new BoxGeometry(0.05, BY - 0.35, 0.05), legM);
@@ -874,7 +931,9 @@ export class GearShiftSystem extends createSystem({
     for (const d of this.clutch.deco) d.visible = this.clutch.g.visible;
     this.piston.visible = this.level >= 2;
     this.stars.visible = false;
-    for (const grp of [this.partsGroup, this.fixedGroup, this.conduits]) grp.position.set(0, 0, 0);
+    for (const d of this.doors) d.rotation.y = 0;
+    (this.core.material as MeshBasicMaterial).opacity = 0;
+    for (const grp of [this.partsGroup, this.fixedGroup, this.conduits, this.pegGroup]) grp.position.set(0, 0, 0);
     {
       const top = lv.target.maxRatio * 1.5;
       const m = this.rpmFace.material as MeshBasicMaterial;
@@ -1035,6 +1094,8 @@ export class GearShiftSystem extends createSystem({
     this.phi = new Array(this.ev.parts.length).fill(0);
     this.rebuildConduits();
     this.measure();
+    if (this.prevDir !== 0 && this.ev.dir !== 0 && this.ev.dir !== this.prevDir && this.power > 0.2) sfx.crunch('bronze', 0);
+    this.prevDir = this.ev.dir;
     this.runWin = 0;
     this.jamT = 0;
     this.hudDirty = true;
@@ -1249,6 +1310,7 @@ export class GearShiftSystem extends createSystem({
       if (bestPeg >= 0 && this.place(idx, bestPeg)) {
         const p = this.lv.pegs[bestPeg];
         sfx.clank(kindOf(it.def.parts[0].n), p.x / 0.6);
+        sfx.crunch(kindOf(it.def.parts[0].n), p.x / 0.6);
         this.sparks.spray(p.x, BY + p.y, BZ + 0.05, 0, 1, 18, 1, 0.78, 0.35, 0.55);
         this.shake = Math.max(this.shake, 0.25);
       } else {
@@ -1273,7 +1335,10 @@ export class GearShiftSystem extends createSystem({
       this.lastMode = modeState.mode;
       const on = modeState.mode === 'gears';
       this.setVisible(on);
-      if (!on) sfx.whirr(0);
+      if (!on) {
+        sfx.whirr(0);
+        for (let i = 0; i < 3; i++) sfx.mesh(i, 0, 'bronze', 0);
+      }
       if (on) this.loadLevel(Math.min(this.unlocked, this.level));
     }
     if (modeState.mode !== 'gears') return;
@@ -1363,6 +1428,27 @@ export class GearShiftSystem extends createSystem({
         sfx.tickTock(this.tockFlip, this.power * Math.min(1, this.ev.ratio / 2), this.lv.pegs[this.lv.target.peg].x / 0.6);
       }
     }
+    // tooth-mesh sound: clicks per second = rpm x teeth / 60 for each meshing pair (three loudest voices)
+    let slot = 0;
+    for (let i = 1; i < parts.length && slot < 3; i++) {
+      const s = parts[i];
+      if (s.parent < 0 || s.sibling) continue;
+      const pa = parts[s.parent];
+      const rate = powered ? s.n * Math.abs(s.omega) * this.power : 0;
+      const kind = kindOf(s.n) === 'iron' && kindOf(pa.n) === 'iron' ? 'iron' : kindOf(s.n) === 'iron' ? kindOf(pa.n) : kindOf(s.n);
+      sfx.mesh(slot, rate, kind, 0.5, (s.x + pa.x) / 1.2);
+      slot++;
+    }
+    for (; slot < 3; slot++) sfx.mesh(slot, 0, 'bronze', 0);
+    if (powered && !this.wasPowered && parts.length > 1) sfx.crunch(kindOf(parts[1].n), parts[1].x / 0.6);
+    this.wasPowered = powered;
+    const overNow = powered && this.ev.ratio > this.lv.target.maxRatio;
+    this.overHissT -= dt;
+    if (overNow && (!this.wasOver || this.overHissT <= 0)) {
+      sfx.hiss(0.85);
+      this.overHissT = 2.5;
+    }
+    this.wasOver = overNow;
     sfx.whirr(this.power > 0.02 && !jamming ? 0.15 + 0.6 * this.power * (powered ? Math.min(1, 0.4 + this.ev.ratio * 0.3) : 0.5) : 0);
     // piston pumps with the output wheel; aether tube shows the machine's state
     this.rod.position.y = BY + 0.27 + 0.035 * Math.sin(this.outPhi);
@@ -1379,7 +1465,8 @@ export class GearShiftSystem extends createSystem({
     this.hazeGroup.visible = this.piston.visible;
     // juice: bench micro-shake (never the player's camera, which would be uncomfortable in VR)
     this.shake = jamming ? Math.max(this.shake, 0.45) : this.shake * Math.exp(-dt * 6);
-    this.root.position.set((Math.random() - 0.5) * 0.006 * this.shake, (Math.random() - 0.5) * 0.006 * this.shake, 0);
+    this.root.position.set((Math.random() - 0.5) * 0.006 * this.shake, (Math.random() - 0.5) * 0.006 * this.shake + Math.sin(this.time * 1.3) * 0.0014, 0);
+    this.root.rotation.z = Math.sin(this.time * 0.8) * 0.0018 + (Math.random() - 0.5) * 0.004 * this.shake;
     this.sparks.update(dt);
     // crank follows the motor wheel
     const mm = this.fixed.get(this.lv.motor.peg + ':0');
@@ -1427,13 +1514,16 @@ export class GearShiftSystem extends createSystem({
     // glowing conduits + emissive gears when the machine works
     const pulse = this.solved ? 0.55 + 0.35 * Math.sin(this.time * 7) : 0;
     this.conduitMats.forEach((m) => (m.opacity = this.ev.win ? pulse : 0));
-    const em = this.ev.win ? 0.12 + 0.1 * Math.sin(this.time * 7) : 0;
+    const em = this.solved ? 0.12 + 0.1 * Math.sin(this.time * 7) : 0;
     for (const it of this.items) for (const m of it.meshes) (m.material as MeshStandardMaterial).emissive.setRGB(0, em * 0.7, em);
     if (this.finaleT >= 0) {
       this.finaleT += dt;
       const e = Math.min(1, this.finaleT / 3);
       const k = e * e * (3 - 2 * e);
-      for (const grp of [this.partsGroup, this.fixedGroup, this.conduits]) {
+      this.doors[0].rotation.y = k * 1.25;
+      this.doors[1].rotation.y = -k * 1.25;
+      (this.core.material as MeshBasicMaterial).opacity = k * (0.5 + 0.12 * Math.sin(this.time * 3));
+      for (const grp of [this.partsGroup, this.fixedGroup, this.conduits, this.pegGroup]) {
         grp.position.y = k * 0.05 + Math.sin(this.time * 1.5) * 0.004 * k;
         grp.position.z = k * 0.18;
       }

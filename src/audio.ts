@@ -149,252 +149,177 @@ function play(key: string, vol = 1, rate = 1, loop = false): boolean {
 // pluck, tabla/dhol, soft reverb. Every game screen has its own raga and rhythm.
 import { modeState } from './mode.js';
 
-interface Track {
-  bpm: number;
-  root: number;
-  scale: number[];
-  lead: 'flute' | 'pluck';
-  density: number;
-  bass: number[]; // 16th steps with a deep drum hit
-  hi: number[]; // steps with a sharp drum hit
-  shaker: number;
-  drum: number; // drum loudness
-  leadVol: number;
-}
-
-const TRACKS: Record<'calm' | 'kite' | 'lattim', Track> = {
-  // marbles + menu: slow evening raga, bansuri over a drone
-  calm: { bpm: 62, root: 146.8, scale: [0, 2, 4, 6, 7, 9, 11], lead: 'flute', density: 0.34, bass: [0, 8], hi: [], shaker: 0, drum: 0.5, leadVol: 0.07 },
-  // kite: bright, playful Bhupali with keherwa tabla
-  kite: { bpm: 98, root: 164.8, scale: [0, 2, 4, 7, 9, 12, 14, 16], lead: 'flute', density: 0.62, bass: [0, 6, 8, 10], hi: [2, 4, 12, 14], shaker: 2, drum: 0.9, leadVol: 0.08 },
-  // lattim: folk dhol rhythm with a plucked dotara
-  lattim: { bpm: 112, root: 130.8, scale: [0, 1, 3, 5, 7, 8, 10, 12], lead: 'pluck', density: 0.55, bass: [0, 3, 6, 8, 11, 14], hi: [2, 4, 10, 12, 15], shaker: 2, drum: 1.1, leadVol: 0.09 },
-};
+// Cinematic score: warm string pad, felt-piano arpeggios, a sparse bell melody and a soft sub, in D minor.
+// Each screen gets its own colour (menu: open and gentle; gears: darker with a clockwork pulse; others: lighter).
+type Colour = 'menu' | 'gears' | 'play';
+const midi = (n: number): number => 440 * Math.pow(2, (n - 69) / 12);
+// Dm9 - Bb - F - C : bass note + pad voicing (MIDI)
+const PROG: { bass: number; pad: number[] }[] = [
+  { bass: 38, pad: [50, 57, 60, 64, 65] },
+  { bass: 34, pad: [46, 53, 58, 62, 65] },
+  { bass: 41, pad: [53, 57, 60, 64, 67] },
+  { bass: 36, pad: [48, 55, 60, 64, 67] },
+];
+const MELODY = [62, 65, 67, 69, 72, 74, 77]; // D minor pentatonic-ish, upper register
 
 let musicGain: GainNode | null = null;
 let musicOn = true;
 let musicStarted = false;
-let curTrack: Track = TRACKS.calm;
-let curKey = '';
+let curColour: Colour | '' = '';
 let step = 0;
 let nextT = 0;
-let lastDeg = 2;
-let phrase: number[] = [];
+let bar = 0;
 let reverb: ConvolverNode | null = null;
+let melodyIdx = 2;
 
-function trackFor(): 'calm' | 'kite' | 'lattim' {
+function colourFor(): Colour {
   const m = modeState.mode;
-  return m === 'kite' || m === 'kitecraft' ? 'kite' : m === 'lattim' || m === 'danguli' ? 'lattim' : 'calm';
+  return m === 'menu' ? 'menu' : m === 'gears' ? 'gears' : 'play';
 }
 
 function out(c: AudioContext): AudioNode {
   if (!musicGain) {
     musicGain = c.createGain();
-    musicGain.gain.value = musicOn ? 0.9 : 0;
-    // cheap reverb from decaying noise
-    const len = Math.floor(c.sampleRate * 2.2);
+    musicGain.gain.value = musicOn ? 0.8 : 0;
+    // long, soft hall reverb from decaying noise
+    const len = Math.floor(c.sampleRate * 3.4);
     const ir = c.createBuffer(2, len, c.sampleRate);
     for (let ch = 0; ch < 2; ch++) {
       const d = ir.getChannelData(ch);
-      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+      for (let k = 0; k < len; k++) d[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / len, 3.2);
     }
     reverb = c.createConvolver();
     reverb.buffer = ir;
     const wet = c.createGain();
-    wet.gain.value = 0.35;
-    reverb.connect(wet).connect(c.destination);
+    wet.gain.value = 0.55;
+    reverb.connect(wet);
+    wet.connect(c.destination);
     musicGain.connect(c.destination);
     musicGain.connect(reverb);
   }
   return musicGain;
 }
 
-function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: number, kind: 'flute' | 'pluck' | 'tanpura'): void {
-  const g = c.createGain();
+type Voice = 'pad' | 'piano' | 'bell' | 'sub';
+function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: number, kind: Voice): void {
   const dest = out(c);
-  if (kind === 'flute') {
+  const g = c.createGain();
+  g.connect(dest);
+  if (kind === 'pad') {
+    // three detuned saws through a slow lowpass: a warm string section
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(380, t);
+    f.frequency.linearRampToValueAtTime(1100, t + dur * 0.5);
+    f.frequency.linearRampToValueAtTime(420, t + dur);
+    f.connect(g);
+    for (const det of [-7, 0, 8]) {
+      const o = c.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = freq;
+      o.detune.value = det;
+      o.connect(f);
+      o.start(t);
+      o.stop(t + dur + 0.1);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + Math.min(1.6, dur * 0.4));
+    g.gain.setValueAtTime(vol, t + dur * 0.65);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  } else if (kind === 'piano') {
+    // felt piano: sine + soft octave, hammer tick, quick decay
     const o = c.createOscillator();
     const o2 = c.createOscillator();
+    const g2 = c.createGain();
     o.type = 'sine';
     o2.type = 'triangle';
     o.frequency.value = freq;
     o2.frequency.value = freq * 2;
-    const lfo = c.createOscillator();
-    const lg = c.createGain();
-    lfo.frequency.value = 5.2;
-    lg.gain.value = freq * 0.007;
-    lfo.connect(lg).connect(o.frequency);
-    const g2 = c.createGain();
-    g2.gain.value = 0.18;
+    g2.gain.value = 0.22;
     o.connect(g);
-    o2.connect(g2).connect(g);
+    o2.connect(g2);
+    g2.connect(g);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.07);
-    g.gain.setValueAtTime(vol, t + Math.max(0.08, dur - 0.18));
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    g.connect(dest);
-    // breath
-    const n = c.createBufferSource();
-    n.buffer = noise(c);
-    n.loop = true;
-    const bf = c.createBiquadFilter();
-    bf.type = 'bandpass';
-    bf.frequency.value = freq * 2.5;
-    bf.Q.value = 3;
-    const ng = c.createGain();
-    ng.gain.setValueAtTime(vol * 0.35, t);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t + Math.min(dur, 0.4));
-    n.connect(bf).connect(ng).connect(dest);
-    for (const x of [o, o2, lfo]) {
-      x.start(t);
-      x.stop(t + dur + 0.05);
-    }
-    n.start(t);
-    n.stop(t + Math.min(dur, 0.4) + 0.05);
-  } else if (kind === 'pluck') {
-    const o = c.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.value = freq;
-    const f = c.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.setValueAtTime(freq * 7, t);
-    f.frequency.exponentialRampToValueAtTime(freq * 1.5, t + 0.35);
-    o.connect(f).connect(g);
-    g.gain.setValueAtTime(vol * 0.8, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(0.4, dur));
-    g.connect(dest);
     o.start(t);
-    o.stop(t + Math.max(0.4, dur) + 0.05);
-  } else {
-    // tanpura string: two slightly detuned saws, dark and long
-    for (const det of [1, 1.004]) {
+    o2.start(t);
+    o.stop(t + dur + 0.05);
+    o2.stop(t + dur + 0.05);
+  } else if (kind === 'bell') {
+    // glassy bell: inharmonic partials with a long ring
+    [1, 2.76, 5.4].forEach((m, k) => {
       const o = c.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = freq * det;
-      const f = c.createBiquadFilter();
-      f.type = 'lowpass';
-      f.frequency.value = 700;
-      o.connect(f).connect(g);
+      const gg = c.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq * m;
+      gg.gain.setValueAtTime(vol / (1 + k * 1.8), t);
+      gg.gain.exponentialRampToValueAtTime(0.0001, t + dur / (1 + k * 0.7));
+      o.connect(gg);
+      gg.connect(dest);
       o.start(t);
       o.stop(t + dur + 0.05);
-    }
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.03);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    g.connect(dest);
-  }
-}
-
-function mDrum(c: AudioContext, t: number, kind: 'bass' | 'hi' | 'shake', vol: number): void {
-  const dest = out(c);
-  if (kind === 'shake') {
-    const n = c.createBufferSource();
-    n.buffer = noise(c);
-    const f = c.createBiquadFilter();
-    f.type = 'highpass';
-    f.frequency.value = 6500;
-    const g = c.createGain();
-    g.gain.setValueAtTime(vol * 0.05, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
-    n.connect(f).connect(g).connect(dest);
-    n.start(t);
-    n.stop(t + 0.07);
-    return;
-  }
-  const o = c.createOscillator();
-  const g = c.createGain();
-  o.type = 'sine';
-  if (kind === 'bass') {
-    o.frequency.setValueAtTime(130, t);
-    o.frequency.exponentialRampToValueAtTime(58, t + 0.22);
-    g.gain.setValueAtTime(vol * 0.28, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+    });
   } else {
-    o.frequency.setValueAtTime(420, t);
-    o.frequency.exponentialRampToValueAtTime(300, t + 0.08);
-    g.gain.setValueAtTime(vol * 0.16, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    const n = c.createBufferSource();
-    n.buffer = noise(c);
-    const f = c.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = 2400;
-    const ng = c.createGain();
-    ng.gain.setValueAtTime(vol * 0.06, t);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-    n.connect(f).connect(ng).connect(dest);
-    n.start(t);
-    n.stop(t + 0.06);
+    const o = c.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    o.connect(g);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t);
+    o.stop(t + dur + 0.05);
   }
-  o.connect(g).connect(dest);
-  o.start(t);
-  o.stop(t + 0.42);
 }
 
-/** New 16-step phrase: stepwise melody over the raga, repeated with small changes. */
-function newPhrase(tr: Track): void {
-  const prev = phrase;
-  const out2: number[] = [];
-  const keep = prev.length === 16 && Math.random() < 0.45;
-  for (let i = 0; i < 16; i++) {
-    if (keep) {
-      out2.push(Math.random() < 0.15 ? -1 : prev[i]);
-      continue;
-    }
-    const onBeat = i % 4 === 0;
-    if (Math.random() < (onBeat ? tr.density + 0.25 : tr.density * 0.5)) {
-      const move = Math.random() < 0.7 ? (Math.random() < 0.5 ? -1 : 1) : Math.floor(Math.random() * 5) - 2;
-      lastDeg = Math.max(0, Math.min(tr.scale.length - 1, lastDeg + move));
-      out2.push(lastDeg);
-    } else {
-      out2.push(-1);
-    }
-  }
-  // resolve to the tonic at the end of every second phrase
-  phrase = out2;
-}
-
-let bar = 0;
+const BPM = 66;
 function schedule(): void {
   const c = ctx;
   if (!c || !musicOn) return;
-  const key = trackFor();
-  if (key !== curKey) {
-    curKey = key;
-    curTrack = TRACKS[key];
-    step = 0;
-    bar = 0;
-    phrase = [];
-    lastDeg = 2;
-    nextT = c.currentTime + 0.15;
+  const col = colourFor();
+  if (col !== curColour) {
+    curColour = col;
+    nextT = Math.max(nextT, c.currentTime + 0.15);
   }
-  const tr = curTrack;
-  const stepDur = 60 / tr.bpm / 4;
-  while (nextT < c.currentTime + 0.25) {
-    const s = step % 16;
+  const stepDur = 60 / BPM / 2; // eighth notes; 8 per bar (4 beats)
+  while (nextT < c.currentTime + 0.3) {
+    const s = step % 8;
+    const chord = PROG[Math.floor(bar) % 4];
     if (s === 0) {
-      bar += 1;
-      newPhrase(tr);
-      // tanpura: Pa - Sa - Sa - low Sa, once per bar
-      const p = tr.root * 0.75;
-      mNote(c, nextT, p, stepDur * 6, 0.05, 'tanpura');
-      mNote(c, nextT + stepDur * 4, tr.root, stepDur * 6, 0.045, 'tanpura');
-      mNote(c, nextT + stepDur * 8, tr.root, stepDur * 6, 0.045, 'tanpura');
-      mNote(c, nextT + stepDur * 12, tr.root * 0.5, stepDur * 6, 0.055, 'tanpura');
+      const barDur = stepDur * 8;
+      for (const n of chord.pad) mNote(c, nextT, midi(n), barDur * 1.05, col === 'gears' ? 0.012 : 0.016, 'pad');
+      mNote(c, nextT, midi(chord.bass), barDur, 0.09, 'sub');
     }
-    const deg = phrase[s];
-    if (deg !== undefined && deg >= 0) {
-      let len = 1;
-      while (s + len < 16 && phrase[s + len] === -1 && len < 6) len++;
-      const semi = tr.scale[deg];
-      const f = tr.root * 2 * Math.pow(2, semi / 12);
-      mNote(c, nextT, f, stepDur * len * (tr.lead === 'flute' ? 0.95 : 1.4), tr.leadVol, tr.lead);
+    // piano arpeggio: rising pattern over the chord tones, with gaps so it breathes
+    const arp = [0, 2, 3, 1, 4, 2, 3, 4];
+    if (col !== 'gears' || s % 2 === 0) {
+      if (Math.random() < (col === 'menu' ? 0.82 : col === 'gears' ? 0.7 : 0.88)) {
+        const n = chord.pad[arp[s] % chord.pad.length] + 12;
+        mNote(c, nextT, midi(n), 1.8, col === 'gears' ? 0.03 : 0.04, 'piano');
+      }
     }
-    if (tr.bass.includes(s)) mDrum(c, nextT, 'bass', tr.drum);
-    if (tr.hi.includes(s)) mDrum(c, nextT, 'hi', tr.drum);
-    if (tr.shaker && s % tr.shaker === 0) mDrum(c, nextT, 'shake', tr.drum);
+    // sparse melody bell, wandering stepwise
+    if ((s === 0 || s === 4) && Math.random() < 0.55) {
+      melodyIdx = Math.max(0, Math.min(MELODY.length - 1, melodyIdx + Math.floor(Math.random() * 3) - 1));
+      mNote(c, nextT + (Math.random() < 0.4 ? stepDur : 0), midi(MELODY[melodyIdx] + 12), 3.2, 0.03, 'bell');
+    }
+    // clockwork pulse for the GearShift bench: a soft tick on every beat
+    if (col === 'gears' && s % 2 === 0) {
+      const g = c.createGain();
+      const o = c.createOscillator();
+      o.type = 'square';
+      o.frequency.value = s % 4 === 0 ? 1900 : 1400;
+      g.gain.setValueAtTime(0.012, nextT);
+      g.gain.exponentialRampToValueAtTime(0.0001, nextT + 0.03);
+      o.connect(g);
+      g.connect(out(c));
+      o.start(nextT);
+      o.stop(nextT + 0.04);
+    }
     nextT += stepDur;
     step += 1;
+    if (step % 8 === 0) bar += 1;
   }
 }
 
@@ -403,12 +328,12 @@ function startMusic(): void {
   const c = ac();
   if (!c) return;
   musicStarted = true;
-  nextT = c.currentTime + 0.2;
-  window.setInterval(schedule, 60);
+  nextT = c.currentTime + 0.3;
+  window.setInterval(schedule, 80);
   window.addEventListener('keydown', (e) => {
     if (e.key === 'm' || e.key === 'M') {
       musicOn = !musicOn;
-      if (musicGain) musicGain.gain.value = musicOn ? 0.9 : 0;
+      if (musicGain) musicGain.gain.value = musicOn ? 0.8 : 0;
       if (musicOn && ctx) nextT = ctx.currentTime + 0.1;
     }
   });
@@ -435,18 +360,6 @@ function startAmbience(): void {
     o.connect(g).connect(c.destination);
     o.start();
   }
-  window.setInterval(() => {
-    if (!inSpace && Math.random() < 0.6) {
-      const base = 4000 + Math.random() * 600;
-      for (let i = 0; i < 3; i++) tone(base, 0.035, 0.008, 'sine', undefined, i * 0.05);
-    }
-  }, 240);
-  window.setInterval(() => {
-    if (!inSpace && Math.random() < 0.5) {
-      tone(1500 + Math.random() * 400, 0.18, 0.02, 'sine', 2300);
-      tone(1800, 0.12, 0.015, 'sine', 2600, 0.22);
-    }
-  }, 6500);
 }
 
 export const sfx = {
@@ -612,6 +525,66 @@ export const sfx = {
     w.g.gain.setTargetAtTime(rpm > 0.01 ? 0.016 + rpm * 0.028 : 0, t, 0.12);
     w.ng.gain.setTargetAtTime(rpm > 0.01 ? 0.01 + rpm * 0.05 : 0, t, 0.12);
   },
+  /**
+   * Tooth-mesh voice: a gated noise train whose click rate is the tooth-passing frequency
+   * (rpm x teeth / 60). A fixed pool of three persistent voices is reused, so no nodes are created
+   * while the machine runs. Pass rate 0 to silence a slot. kind picks the metal's tone.
+   */
+  mesh(slot: number, clicksPerSec: number, kind: 'brass' | 'bronze' | 'copper' | 'iron', vol: number, pan = 0): void {
+    const c = ac();
+    if (!c || slot < 0 || slot >= 3) return;
+    let v = meshVoices[slot];
+    if (!v) {
+      if (clicksPerSec <= 0.01) return;
+      const n = c.createBufferSource();
+      n.buffer = noise(c);
+      n.loop = true;
+      const bp = c.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 3;
+      const gate = c.createGain(); // amplitude set by the square LFO below
+      gate.gain.value = 0;
+      const lfo = c.createOscillator();
+      lfo.type = 'square';
+      const depth = c.createGain();
+      depth.gain.value = 0.5;
+      const bias = c.createConstantSource();
+      bias.offset.value = 0.5;
+      lfo.connect(depth);
+      depth.connect(gate.gain);
+      bias.connect(gate.gain);
+      const level = c.createGain();
+      level.gain.value = 0;
+      const sp = c.createStereoPanner ? c.createStereoPanner() : null;
+      n.connect(bp);
+      bp.connect(gate);
+      gate.connect(level);
+      if (sp) {
+        level.connect(sp);
+        sp.connect(c.destination);
+      } else level.connect(c.destination);
+      n.start();
+      lfo.start();
+      bias.start();
+      v = { bp, lfo, level, sp };
+      meshVoices[slot] = v;
+    }
+    const t = c.currentTime;
+    const cf = { brass: 3600, bronze: 2800, copper: 2100, iron: 650 }[kind];
+    v.lfo.frequency.setTargetAtTime(Math.max(0.1, clicksPerSec), t, 0.05);
+    v.bp.frequency.setTargetAtTime(cf, t, 0.05);
+    v.bp.Q.setTargetAtTime(kind === 'iron' ? 1.4 : 4, t, 0.05);
+    v.level.gain.setTargetAtTime(clicksPerSec > 0.01 ? vol * (kind === 'iron' ? 0.7 : 0.35) : 0, t, 0.06);
+    if (v.sp) v.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.1);
+  },
+  /** gritty bite when teeth first engage or the train reverses */
+  crunch(kind: 'brass' | 'bronze' | 'copper' | 'iron' = 'bronze', pan = 0): void {
+    withPan(pan, () => {
+      burst(0.12, 0.22, kind === 'iron' ? 700 : 2400, 0.9);
+      burst(0.06, 0.18, 5200, 1.5);
+      tone(kind === 'iron' ? 95 : 260, 0.12, 0.1, 'sawtooth', kind === 'iron' ? 60 : 140);
+    });
+  },
   /** steam released; pan 1 = from the right-side valves */
   hiss(pan = 0.8): void {
     withPan(pan, () => {
@@ -666,6 +639,21 @@ export const sfx = {
     lp.frequency.exponentialRampToValueAtTime(5000, t0 + 6);
     master.connect(lp);
     lp.connect(c.destination);
+    // soft echo: delay line with feedback, torn down when the piece is over
+    const dl = c.createDelay(1.5);
+    dl.delayTime.value = 0.62;
+    const fb = c.createGain();
+    fb.gain.value = 0.42;
+    const wet = c.createGain();
+    wet.gain.value = 0.5;
+    lp.connect(dl);
+    dl.connect(fb);
+    fb.connect(dl);
+    dl.connect(wet);
+    wet.connect(c.destination);
+    window.setTimeout(() => {
+      for (const n of [master, lp, dl, fb, wet]) n.disconnect();
+    }, 18000);
     const notes = [65.41, 130.81, 196, 261.63, 329.63, 392, 523.25, 659.25, 783.99, 1046.5]; // C major stack
     notes.forEach((f, i) => {
       for (const det of [-4, 4]) {
@@ -685,4 +673,5 @@ export const sfx = {
     });
   },
 };
+const meshVoices: ({ bp: BiquadFilterNode; lfo: OscillatorNode; level: GainNode; sp: StereoPannerNode | null } | undefined)[] = [];
 let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode; nf: BiquadFilterNode; ng: GainNode; lfo: OscillatorNode; lg: GainNode } | null = null;
