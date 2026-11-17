@@ -4,6 +4,9 @@
 
 - **Pottery** – pinch and pull a spinning clay lump into a jug, bowl or vase, glaze it, fire it in the kiln and put it on your shelf.
 - **Kite Workshop** – assemble the frame, stretch the paper, add a tail and string, then fly the kite you built.
+- **Domino Run** – line up colourful dominoes by hand, push the first one, watch the chain.
+- **Brick Builder** – snap studded bricks into a tower, then smash it with a wrecking ball.
+- **Paper Plane** – fold a sheet with three pinch-drags, then throw it through the rings.
 - **Marble Run** – place ramps on the board to build a path, then release the marble and get it into the basket. Five levels, star ratings.
 
 No controllers needed: hand tracking with pinch. Mouse works on desktop for quick testing.
