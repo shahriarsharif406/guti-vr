@@ -125,7 +125,7 @@ export class MenuSystem extends createSystem({
       sfx.ambience();
       sfx.select();
       this.cooldown = 0.4;
-      setMode(target as 'menu' | 'guti' | 'kite' | 'pottery');
+      setMode(target === 'kite' ? 'kitecraft' : (target as 'menu' | 'guti' | 'pottery'));
     };
     this.cleanupFuncs.push(this.queries.pressed.subscribe('qualify', onPress));
   }
@@ -163,7 +163,7 @@ export class MenuSystem extends createSystem({
         this.cooldown = 0.4;
         sfx.ambience();
         sfx.select();
-        setMode(hit === 0 ? 'guti' : hit === 1 ? 'kite' : 'pottery');
+        setMode(hit === 0 ? 'guti' : hit === 1 ? 'kitecraft' : 'pottery');
       }
     }
     // hover feedback: buttons lift a little

@@ -35,3 +35,8 @@ export const LatOpt = createComponent('LatOpt', {
 export const PotOpt = createComponent('PotOpt', {
   id: { type: Types.Int8, default: 0 },
 });
+
+/** A pressable option in the kite workshop (fly, start over). */
+export const CraftOpt = createComponent('CraftOpt', {
+  id: { type: Types.Int8, default: 0 },
+});
