@@ -65,10 +65,21 @@ function dest(c: AudioContext): AudioNode {
     sfxBus.gain.value = sfxVol;
     sfxBus.connect(master);
     const comp = c.createDynamicsCompressor();
-    comp.threshold.value = -14;
-    comp.ratio.value = 4;
+    // gentle glue compressor (slow attack so tooth clicks do not pump the music), then a brick-wall limiter
+    comp.threshold.value = -10;
+    comp.knee.value = 24;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.02;
+    comp.release.value = 0.4;
+    const lim = c.createDynamicsCompressor();
+    lim.threshold.value = -2;
+    lim.knee.value = 0;
+    lim.ratio.value = 20;
+    lim.attack.value = 0.002;
+    lim.release.value = 0.1;
     master.connect(comp);
-    comp.connect(c.destination);
+    comp.connect(lim);
+    lim.connect(c.destination);
   }
   return sfxBus as GainNode;
 }
@@ -686,11 +697,11 @@ export const sfx = {
       const gate = c.createGain(); // amplitude set by the square LFO below
       gate.gain.value = 0;
       const lfo = c.createOscillator();
-      lfo.type = 'square';
+      lfo.type = 'sine'; // soft pulse: a square gate made harsh, crackly edges
       const depth = c.createGain();
-      depth.gain.value = 0.5;
+      depth.gain.value = 0.4;
       const bias = c.createConstantSource();
-      bias.offset.value = 0.5;
+      bias.offset.value = 0.6;
       lfo.connect(depth);
       depth.connect(gate.gain);
       bias.connect(gate.gain);
@@ -760,15 +771,14 @@ export const sfx = {
   },
   /** lever slammed home: heavy clunk with a mid body so laptop speakers carry it */
   lever(): void {
-    tone(150, 0.3, 0.3, 'triangle', 60);
-    tone(420, 0.18, 0.16, 'square', 200);
-    burst(0.08, 0.3, 1100, 1.4);
-    tone(760, 0.25, 0.05, 'sine');
+    tone(70, 0.3, 0.3, 'triangle', 40);
+    burst(0.06, 0.25, 700, 2);
+    tone(1600, 0.2, 0.04, 'sine');
   },
   /** ratchet click while a lever is dragged; up = release click */
   leverTick(up = false): void {
-    tone(up ? 520 : 380, 0.05, 0.12, 'square', up ? 300 : 220);
-    burst(0.025, 0.12, 1500, 2);
+    tone(up ? 520 : 380, 0.04, 0.05, 'triangle', up ? 300 : 220);
+    burst(0.02, 0.05, 1500, 2);
   },
   // ---------------------------------------------------------------- Aura Weaver
   /** Persistent colour voices: cyan = pure crystal, magenta = shimmering pair, gold = deep resonance. lv = 0..1 each. bend 0..1 shifts pitch with the selected element. */
