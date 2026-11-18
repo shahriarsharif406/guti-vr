@@ -44,3 +44,13 @@ Run the checks: `npx tsc --noEmit`, `npm test`, then `npm run build && npx vite 
 - TESTED: tsc clean for Aura files; npm test (81/64/39/48 pass); Aura browser e2e 35 checks pass (desktop, software GL).
 - TESTED (partly): headless run shows the AudioContext running, non-zero output, peak below 0 dBFS (sparse sampling at about 1 fps, so the true peak is not measured), music bus 0 after leaving Aura.
 - NOT VERIFIED: how it sounds (nobody listened), loudness balance, headset behaviour, FPS, the new look at real headset distance.
+
+## Round 3 (sound redesign: music only where light moves)
+IMPLEMENTED: src/auraaudio.ts rewritten. No looping music bed at all. aa.light(points) is called from retrace(): a glass-harp
+phrase (D lydian, pitch rises with each bounce, pan follows the beam, long reverb + dotted echo) every time the beam is
+re-routed. Gate wake = outward arpeggio; puzzle solved = warm swell + sparkle fan; finale = two swells + cascade. Tick,
+chime, impure, grab, cut, click use the same scale. Between events only the very quiet beam hum (silent with no light).
+Workshop music still steps aside in Aura (auraRoom.music).
+TESTED: peaks measured offline with OfflineAudioContext through the real master gain, compressor and limiter settings
+(hook window.__auraRender(kind)); npm test and the Aura e2e pass.
+NOT VERIFIED: how it sounds. Nobody on the build side can listen; only a human ear can judge taste and balance.

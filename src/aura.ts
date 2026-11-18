@@ -30,7 +30,7 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, musicState } from './audio.js';
-import { aa } from './auraaudio.js';
+import { aa, renderAuraEvent } from './auraaudio.js';
 import {
   CYAN,
   GOLD,
@@ -498,6 +498,7 @@ export class AuraSystem extends createSystem({
     w.__aura = () => ({ screen: this.screen, puzzle: this.pz?.id, stats: this.save.stats, msg: this.msgT > 0 ? this.msg : '', hints: this.save.hints, count: this.puzzles.length, unlocked: this.save.unlocked, time: this.save.time, settings: this.save.settings, mode: modeState.mode, level: this.level, solved: this.tr?.solved, ok: this.tr?.ok, got: this.tr?.got, awake: this.gates.map((g) => g.awake), saved: this.save.solved, restore: this.restore, moves: this.moves, paused: this.paused, finaleT: this.finaleT, sol: this.sol, ang: this.lv?.elems.map((e) => e.a) });
     w.__auraLevel = (i: number) => this.loadLevel(i);
     w.__auraAudio = () => ({ ...aa.state(), peak: aa.peak() });
+    w.__auraRender = renderAuraEvent;
     w.__auraInfo = () => ({ geometries: this.world.renderer.info.memory.geometries, textures: this.world.renderer.info.memory.textures, programs: this.world.renderer.info.programs?.length ?? 0, children: this.elemGroup.children.length + this.srcGroup.children.length, listeners: this.cleanupFuncs.length });
     w.__auraSolve = () => {
       if (!this.sol) return;
@@ -1477,6 +1478,11 @@ export class AuraSystem extends createSystem({
     this.beams.col.needsUpdate = true;
     this.beams.len.needsUpdate = true;
     this.hudDirty = true;
+    if (n > 0) {
+      const pts = [{ x: this.tr.segs[0].x1, y: this.tr.segs[0].y1 }];
+      for (let i = 0; i < n; i++) pts.push({ x: this.tr.segs[i].x2, y: this.tr.segs[i].y2 });
+      aa.light(pts);
+    }
   }
 
   private updateGates(dt: number): void {
@@ -1683,7 +1689,7 @@ export class AuraSystem extends createSystem({
 
   private updateAudio(): void {
     const flowNow = Math.min(1, this.beamLv[0] + this.beamLv[1] + this.beamLv[2] + this.threadLv[0] + this.threadLv[1] + this.threadLv[2]);
-    aa.update(flowNow);
+    aa.update();
     if (this.paused) return;
     this.bend += ((this.sel >= 0 ? this.lv.elems[this.sel].a / stepsOf(this.lv.elems[this.sel]) : 0) - this.bend) * 0.1;
     const awakeN = this.gates.filter((g) => g.awake).length;
