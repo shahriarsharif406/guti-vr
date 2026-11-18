@@ -9,7 +9,7 @@ import { ADVANCED_SPELLS, BASE_SPELLS, BOSSES, BOSS_ORDER, ELEMENTS, ELEMENT_CSS
 import type { Element } from './sfdata';
 
 export const CARD_W = 1.5;
-export const CARD_H = 1.14;
+export const CARD_H = 1.22;
 export const CARD_PX = 1280;
 export const LETTER: Record<Element, string> = { fire: 'F', ice: 'I', lightning: 'L', aether: 'A', nature: 'N', shadow: 'S' };
 
@@ -135,6 +135,11 @@ export function drawButton(p: TextPanel, label: string, sub: string, accent: str
   c.fillStyle = g;
   rr(c, 4, 4, w - 8, h - 8, h / 2 - 4);
   c.fill();
+  if (!hot && !disabled) {
+    c.fillStyle = accent + '2e'; // a tint of the button's own accent colour
+    rr(c, 4, 4, w - 8, h - 8, h / 2 - 4);
+    c.fill();
+  }
   c.save();
   c.shadowColor = accent;
   c.shadowBlur = hot ? 18 : 8;
@@ -145,9 +150,9 @@ export function drawButton(p: TextPanel, label: string, sub: string, accent: str
   c.restore();
   const col = disabled ? '#7a7090' : hot ? '#0c0618' : '#f2e8ff';
   if (sub) {
-    line(p, label, h * 0.46, h * 0.38, col, w / 2);
-    line(p, sub, h * 0.82, h * 0.25, disabled ? '#6a6080' : hot ? '#201030' : '#c9b8ee', w / 2, 'center', 600);
-  } else line(p, label, h * 0.66, h * 0.44, col, w / 2);
+    line(p, label, h * 0.44, h * 0.42, col, w / 2);
+    line(p, sub, h * 0.8, h * 0.28, disabled ? '#6a6080' : hot ? '#201030' : '#c9b8ee', w / 2, 'center', 600);
+  } else line(p, label, h * 0.66, h * 0.5, col, w / 2);
   c.setTransform(1, 0, 0, 1, 0, 0);
 }
 

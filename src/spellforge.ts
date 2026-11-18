@@ -49,10 +49,11 @@ import { Sparks, glowSprite, sigilTexture } from './sfvfx.js';
 // ================================================================== constants
 type Screen = 'title' | 'modes' | 'trials' | 'library' | 'bestiary' | 'settings' | 'settings2' | 'credits' | 'play' | 'pause' | 'result';
 type RunKind = 'campaign' | 'training' | 'endless' | 'bossrush' | 'sandbox' | 'trial' | 'tutorial';
-const CARD_POS = new Vector3(0, 1.5, -1.6);
-const ROW_H = 0.105;
+const CARD_POS = new Vector3(0, 1.5, -1.0);
+const SLOT_ACCENTS = ['#ffc857', '#5fe0ff', '#ff7aa8', '#7dffb0', '#c59bff', '#ff9a5a'];
+const ROW_H = 0.118;
 const BTN_W = 0.72;
-const BTN_H = 0.095;
+const BTN_H = 0.106;
 const BOT = 1.0; // y of the lowest button row
 const ELIDX: Record<Element, number> = { fire: 0, ice: 1, lightning: 2, aether: 3, nature: 4, shadow: 5 };
 const V = (a: V3): Vector3 => new Vector3(a[0], a[1], a[2]);
@@ -264,11 +265,11 @@ export class SpellforgeSystem extends createSystem({
     this.hudBoss = new TextPanel(1.2, 0.26, 1024);
     this.hudBoss.mesh.position.set(0, 2.95, -3.4);
     this.hudBoss.mesh.scale.setScalar(1.15);
-    this.hudStatus = new TextPanel(0.46, 0.5, 512);
-    this.hudStatus.mesh.position.set(-0.66, 1.18, -0.78);
-    this.hudStatus.mesh.rotation.y = 0.55;
-    this.hudHint = new TextPanel(1.0, 0.2, 1024);
-    this.hudHint.mesh.position.set(0, 0.62, -0.95);
+    this.hudStatus = new TextPanel(0.56, 0.6, 512);
+    this.hudStatus.mesh.position.set(-0.34, 1.2, -1.3);
+    this.hudStatus.mesh.rotation.y = 0.3;
+    this.hudHint = new TextPanel(1.1, 0.22, 1024);
+    this.hudHint.mesh.position.set(0, 0.7, -1.05);
     this.hudHint.mesh.rotation.x = -0.55;
     this.hudBanner = new TextPanel(1.3, 0.36, 1024);
     this.hudBanner.mesh.position.set(0, 2.0, -1.9);
@@ -277,10 +278,10 @@ export class SpellforgeSystem extends createSystem({
       this.world.createTransformEntity(p.mesh);
     }
     // small in-play buttons: 40 pause, 41 skip tutorial, 42 spawn, 43 clear
-    this.extra.push(this.mkButton(40, 0.17, 0.085, 256, -0.66, 1.58, -0.7, 0.55));
-    this.extra.push(this.mkButton(41, 0.3, 0.085, 384, 0.7, 1.58, -0.75, -0.5));
-    this.extra.push(this.mkButton(42, 0.22, 0.085, 256, 0.7, 1.46, -0.75, -0.5));
-    this.extra.push(this.mkButton(43, 0.22, 0.085, 256, 0.7, 1.34, -0.75, -0.5));
+    this.extra.push(this.mkButton(40, 0.22, 0.11, 256, -0.34, 1.62, -1.3, 0.3));
+    this.extra.push(this.mkButton(41, 0.38, 0.11, 384, 0.36, 1.62, -1.3, -0.3));
+    this.extra.push(this.mkButton(42, 0.3, 0.115, 256, 0.36, 1.48, -1.3, -0.3));
+    this.extra.push(this.mkButton(43, 0.3, 0.115, 256, 0.36, 1.34, -1.3, -0.3));
     // element sigil rails: left hand on the left, right hand on the right
     ELEMENTS.forEach((e, i) => {
       for (const side of ['left', 'right'] as Side[]) {
@@ -458,7 +459,7 @@ export class SpellforgeSystem extends createSystem({
     const b = this.btns[slot];
     b.label = label;
     b.sub = o.sub ?? '';
-    b.accent = o.accent ?? ACCENT;
+    b.accent = o.accent ?? SLOT_ACCENTS[slot % SLOT_ACCENTS.length];
     b.disabled = o.disabled ?? false;
     b.act = o.disabled ? null : act;
     b.shown = true;
@@ -2184,15 +2185,18 @@ export class SpellforgeSystem extends createSystem({
     }
     this.sigilCd = Math.max(0, this.sigilCd - dt);
     // reposition the status, hint, extra buttons around the head
-    this.hudStatus.mesh.position.set(hx - 0.66, hy - 0.2, hz - 0.78);
-    // in a headset the hint sits low, under the action; on a flat screen it must stay inside the frame
+    // in a headset the panels sit wide of the action; on a flat screen the field of view is narrow (about +-27 deg), so they are pulled in and pushed back to stay whole
     const flat = !this.presenting && !this.handsXr;
-    this.hudHint.mesh.position.set(hx, hy - (flat ? 0.4 : 0.72), hz - 0.95);
+    const sx = flat ? 0.46 : 0.66;
+    const dz = flat ? 1.3 : 0.8;
+    this.hudStatus.mesh.position.set(hx - sx, hy - (flat ? 0.1 : 0.2), hz - dz);
+    // in a headset the hint sits low, under the action; on a flat screen it must stay inside the frame
+    this.hudHint.mesh.position.set(hx, hy - (flat ? 0.45 : 0.72), hz - (flat ? 1.05 : 0.95));
     this.hudHint.mesh.rotation.x = flat ? -0.25 : -0.55;
-    this.extra[0].panel.mesh.position.set(hx - 0.66, hy + 0.2, hz - 0.7);
-    this.extra[1].panel.mesh.position.set(hx + 0.7, hy + 0.2, hz - 0.75);
-    this.extra[2].panel.mesh.position.set(hx + 0.7, hy + 0.08, hz - 0.75);
-    this.extra[3].panel.mesh.position.set(hx + 0.7, hy - 0.04, hz - 0.75);
+    this.extra[0].panel.mesh.position.set(hx - sx, hy + (flat ? 0.3 : 0.2), hz - dz);
+    this.extra[1].panel.mesh.position.set(hx + sx, hy + (flat ? 0.3 : 0.2), hz - dz);
+    this.extra[2].panel.mesh.position.set(hx + sx, hy + (flat ? 0.16 : 0.08), hz - dz);
+    this.extra[3].panel.mesh.position.set(hx + sx, hy + (flat ? 0.02 : -0.04), hz - dz);
     if (this.statusAcc > 0.08) {
       this.statusAcc = 0;
       this.drawStatus(b, v);

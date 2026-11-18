@@ -465,18 +465,40 @@ export function buildEnemy(def: EnemyDef): Rig {
       });
     }
     default: {
-      // training dummy: a wooden post with straw and a target
-      add(new Mesh(new CylinderGeometry(0.12, 0.16, 1.5, 8), M(0x7a5a38, 0, 0, 0.9, 0)), 0, 0.75, 0);
-      add(new Mesh(new BoxGeometry(0.9, 0.14, 0.14), M(0x6a4a2c, 0, 0, 0.9, 0)), 0, 1.15, 0);
-      const ball = add(new Mesh(new SphereGeometry(0.3, 12, 10), M(0xc8a85a, 0x6a5020, 0.2, 0.9, 0)), 0, 1.65, 0) as Mesh;
-      const ringM = new MeshBasicMaterial({ color: 0xff5a4a });
-      for (let i = 0; i < 3; i++) {
-        const r = new Mesh(new TorusGeometry(0.1 + i * 0.1, 0.018, 6, 24), i % 2 ? new MeshBasicMaterial({ color: 0xffffff }) : ringM);
-        r.position.set(0, 1.0, 0.1);
-        g.add(r);
+      // training dummy: a floating rune-crystal construct (no humanoid shape): crystal core, two orbiting rune rings, a stone plinth
+      const cry = add(new Mesh(new OctahedronGeometry(0.4, 0), M(0x3b2a6e, 0x9a7bff, 0.75, 0.25, 0.6)), 0, 0.75, 0) as Mesh;
+      cry.scale.set(0.85, 1.3, 0.85);
+      const inner = add(new Mesh(new OctahedronGeometry(0.2, 0), glow(0xf2e8ff, 1)), 0, 0.75, 0) as Mesh;
+      const ringA = add(new Mesh(new TorusGeometry(0.62, 0.025, 8, 48), M(0x2a2250, 0x6fe0ff, 1.1, 0.3, 0.6)), 0, 0.75, 0) as Mesh;
+      const ringB = add(new Mesh(new TorusGeometry(0.5, 0.02, 8, 40), M(0x2a2250, 0xff7ad8, 1.1, 0.3, 0.6)), 0, 0.75, 0) as Mesh;
+      ringA.rotation.x = Math.PI / 2.3;
+      ringB.rotation.y = Math.PI / 2.4;
+      const shards: Mesh[] = [];
+      for (let i = 0; i < 5; i++) {
+        const sh = new Mesh(new OctahedronGeometry(0.09, 0), M(0x2a2250, 0xb09aff, 0.9));
+        shards.push(sh);
+        g.add(sh);
       }
-      return finish(g, mats, () => {
-        ball.rotation.y += 0.002;
+      add(new Mesh(new CylinderGeometry(0.34, 0.46, 0.16, 8), M(0x23202e, 0x4a3a88, 0.25, 0.7, 0.3)), 0, 0.08, 0);
+      add(new Mesh(new TorusGeometry(0.4, 0.02, 6, 32), glow(0x9a7bff, 0.9)), 0, 0.17, 0).rotation.x = Math.PI / 2;
+      add(glowSprite(0x9a7bff, 1.5, 0.45), 0, 0.75, 0);
+      const wrap = new Group();
+      while (g.children.length) wrap.add(g.children[0]);
+      wrap.scale.setScalar(1.25);
+      g.add(wrap);
+      return finish(g, mats, (dt, t) => {
+        const bob = Math.sin(t * 1.6) * 0.07;
+        cry.position.y = inner.position.y = 0.75 + bob;
+        cry.rotation.y += dt * 0.7;
+        inner.rotation.y -= dt * 1.4;
+        ringA.position.y = ringB.position.y = 0.75 + bob;
+        ringA.rotation.z += dt * 0.9;
+        ringB.rotation.z -= dt * 0.7;
+        shards.forEach((sh, i) => {
+          const a = t * 0.9 + (i / shards.length) * Math.PI * 2;
+          sh.position.set(Math.cos(a) * 0.72, 0.75 + bob + Math.sin(a * 2 + i) * 0.25, Math.sin(a) * 0.72);
+          sh.rotation.y += dt * 2;
+        });
       });
     }
   }

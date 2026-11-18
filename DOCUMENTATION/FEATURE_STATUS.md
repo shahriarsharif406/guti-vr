@@ -23,6 +23,7 @@ Platform: WebXR (IWSDK + Three.js), run in a browser and in a headset browser. I
 | Onboarding: guided tutorial, one-time contextual tips (saved), fusion discovery nudges + count | yes | 3 logic tests + e2e (tips saved) | no | nudges shown in Training/Sandbox only |
 | 7 realms | no | - | - | 3 themed arenas built (Ember Forge, Frost, Void) |
 | Environment reacting to spells (ignite/freeze surfaces) | no | - | - | not built |
+| Nov 18 visual pass: crystal-construct training dummy, bigger menu card with per-button accent colours, HUD panels placed to stay on screen on a flat display | yes | desktop screenshots (title, modes, library, settings, pause, training, Ignar) | no | headset layout of the HUD not seen; panel placement in XR unchanged from before |
 
 ## GearShift
 | Area | I | T | V | Notes |
