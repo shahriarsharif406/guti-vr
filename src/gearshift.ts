@@ -605,6 +605,10 @@ export class GearShiftSystem extends createSystem({
   private jamT = 0;
   private grindT = 0;
   private lastPlaced = -1;
+  /** per-level scoring: seconds on the bench and jams (ejected parts) */
+  private levelT = 0;
+  private mistakes = 0;
+  private gradeLine = '';
   private finaleT = -1;
   private stars!: Group;
   private piston = new Group();
@@ -969,7 +973,7 @@ export class GearShiftSystem extends createSystem({
     this.setVisible(false);
 
     const w = window as unknown as Record<string, unknown>;
-    w.__gears = () => ({ mode: modeState.mode, level: this.level, solved: this.solved, placement: this.placement.slice(), win: this.ev?.win, ratio: this.ev?.ratio, unlocked: this.unlocked, power: this.power, jam: this.ev?.jam, finale: this.finaleT });
+    w.__gears = () => ({ stars: this.mistakes, levelT: this.levelT, mode: modeState.mode, level: this.level, solved: this.solved, placement: this.placement.slice(), win: this.ev?.win, ratio: this.ev?.ratio, unlocked: this.unlocked, power: this.power, jam: this.ev?.jam, finale: this.finaleT });
     w.__gearScreen = (x: number, y: number) => {
       const v = new Vector3(x, BY + y, BZ + 0.03).project(this.world.camera);
       return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
@@ -1030,6 +1034,9 @@ export class GearShiftSystem extends createSystem({
     orbitals.length = 0;
     const lv = this.lv;
     this.solved = false;
+    this.levelT = 0;
+    this.mistakes = 0;
+    this.gradeLine = '';
     this.power = 0;
     this.angle = 0;
     this.runWin = 0;
@@ -1238,7 +1245,27 @@ export class GearShiftSystem extends createSystem({
       this.finaleT = 0;
       this.stars.visible = true;
     }
-    this.msg = last ? 'The Orrery awakens!  Masterpiece complete' : 'Machine online!  Press NEXT';
+    const stars = this.mistakes === 0 ? 3 : this.mistakes <= 2 ? 2 : 1;
+    let bestNote = '';
+    try {
+      const raw = JSON.parse(localStorage.getItem('pw-gear-best') ?? '{}') as Record<string, { stars: number; time: number }>;
+      const prev = raw[this.level];
+      const newBest = !prev || stars > prev.stars || (stars === prev.stars && this.levelT < prev.time);
+      bestNote = prev ? (newBest ? '  NEW BEST' : '  best ' + Math.round(prev.time) + 's') : '  first clear';
+      if (newBest) {
+        raw[this.level] = { stars, time: Math.round(this.levelT * 10) / 10 };
+        localStorage.setItem('pw-gear-best', JSON.stringify(raw));
+      }
+    } catch {
+      /* ignore */
+    }
+    const grade = stars === 3 ? 'FLAWLESS BUILD' : stars === 2 ? 'CLEAN BUILD' : 'SOLVED';
+    this.gradeLine = grade + '  ' + stars + '/3 stars  ' + Math.round(this.levelT) + 's  ' + (this.mistakes ? this.mistakes + ' jam' + (this.mistakes > 1 ? 's' : '') : 'no jams') + bestNote;
+    this.msg = (last ? 'The Orrery awakens!  ' : '') + grade + '  ' + stars + '/3 stars  ' + Math.round(this.levelT) + 's  ' + (this.mistakes ? this.mistakes + ' jam' + (this.mistakes > 1 ? 's' : '') : 'no jams') + bestNote + (last ? '' : '  -  press NEXT');
+    if (stars === 3) {
+      celebrate(tp.x, BY + tp.y, BZ + 0.14, 4);
+      sfx.chime();
+    }
     this.msgT = 12;
     askMentor('gears', 'a gear train that solves the puzzle "' + this.lv.name + '" with an output ratio of ' + this.ev.ratio.toFixed(1) + 'x', (t) => {
       this.msg = t;
@@ -1250,6 +1277,7 @@ export class GearShiftSystem extends createSystem({
   }
 
   private ejectLast(): void {
+    this.mistakes += 1;
     const idx = this.lastPlaced;
     const it = this.items[idx];
     if (!it || it.peg < 0) return;
@@ -1305,7 +1333,7 @@ export class GearShiftSystem extends createSystem({
     const lv = this.lv;
     h.card('rgba(26,18,12,0.9)', '#d6a94a');
     h.text(CHAPTERS[chapterOf(this.level)] + '   -   ' + lv.name, 52, 28, '#fff1d6');
-    h.text(lv.goal, 104, 28, this.solved ? '#8dff9d' : '#ffd9a0');
+    h.text(this.solved && this.gradeLine ? this.gradeLine : lv.goal, 104, 28, this.solved ? '#8dff9d' : '#ffd9a0');
     if (this.msgT > 0) h.text(this.msg, 152, 28, '#8dff9d');
     else h.text(this.placement.filter((x) => x >= 0).length >= lv.solution.filter((x) => x >= 0).length ? (needsClutch(this.level) ? 'Pull CLUTCH (left) and IGNITION (right) to test' : 'Pull the IGNITION lever (right) to test') : 'Hint: ' + lv.hint, 152, 24, '#e8d3a8');
     const r = this.ev && this.ev.ratio > 0 ? 'Output ' + this.ev.ratio.toFixed(2) + 'x  ' + (this.ev.dir === lv.target.dir ? 'right way' : 'wrong way') : 'Output not connected yet';
@@ -1468,6 +1496,7 @@ export class GearShiftSystem extends createSystem({
     if (this.world.visibilityState.value === 'visible-blurred') return;
     const dt = Math.min(delta, 0.05);
     this.time += dt;
+    if (!this.solved && modeState.mode === 'gears') this.levelT += dt;
     for (const pt of this.pointers) this.updatePointer(pt);
     this.updateGuide(dt);
 

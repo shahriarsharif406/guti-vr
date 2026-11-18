@@ -1386,12 +1386,12 @@ export class SpellforgeSystem extends createSystem({
         sp.burst(e.pos[0], e.pos[1], e.pos[2], ELEMENT_HEX[e.element], 3, 1, 0.04, 0.35);
         break;
       case 'enemyDie': {
-        sfx.spellDie();
+        sfx.spellDie(this.pan(e.pos[0]));
         sp.burst(e.pos[0], e.pos[1], e.pos[2], ENEMIES[e.def] ? ENEMIES[e.def].hex : 0xffffff, 34, 2.2, 0.07, 0.9, 1);
         break;
       }
       case 'telegraph': {
-        sfx.spellTelegraph(e.kind.length);
+        sfx.spellTelegraph(e.kind.length, this.pan(e.pos[0]));
         this.say(this.telegraphText(e.who, e.kind, b, e.pos), 1.6);
         break;
       }

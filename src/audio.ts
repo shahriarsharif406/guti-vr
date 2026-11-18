@@ -996,18 +996,24 @@ export const sfx = {
     tone(110, 0.35, 0.12, 'sawtooth', 55);
     burst(0.25, 0.1, 400, 0.8);
   },
-  spellTelegraph(kind: number): void {
+  /** wind-up warning; pan places the threat in the room so players can hear where it comes from */
+  spellTelegraph(kind: number, pan = 0): void {
     const f = [330, 262, 392, 294][kind % 4];
-    tone(f, 0.5, 0.05, 'triangle', f * 1.6);
+    withPan(pan, () => {
+      tone(f, 0.5, 0.07, 'triangle', f * 1.6);
+      tone(f * 2, 0.35, 0.03, 'sine', f * 3, 0.12);
+    });
   },
   bossRoar(): void {
     tone(55, 1.6, 0.16, 'sawtooth', 28);
     tone(82, 1.4, 0.08, 'square', 41);
     burst(1.4, 0.09, 220, 0.6);
   },
-  spellDie(): void {
-    tone(300, 0.4, 0.06, 'triangle', 80);
-    burst(0.3, 0.06, 1200, 1);
+  spellDie(pan = 0): void {
+    withPan(pan, () => {
+      tone(300, 0.4, 0.06, 'triangle', 80);
+      burst(0.3, 0.06, 1200, 1);
+    });
   },
   spellStomp(): void {
     tone(70, 0.4, 0.15, 'sine', 30);
