@@ -950,8 +950,8 @@ export class GearShiftSystem extends createSystem({
     this.world.createTransformEntity(this.hud.mesh);
     this.root.userData.hud = true;
     for (let i = 0; i < 3; i++) {
-      const panel = new TextPanel(0.2, 0.07, 512);
-      panel.mesh.position.set(-0.22 + i * 0.22, 0.64, -0.5);
+      const panel = new TextPanel(0.32, 0.11, 640);
+      panel.mesh.position.set(-0.36 + i * 0.36, 0.66, -0.5);
       panel.mesh.rotation.x = -0.9;
       const entity = this.world.createTransformEntity(panel.mesh);
       entity.addComponent(RayInteractable);
@@ -1317,16 +1317,47 @@ export class GearShiftSystem extends createSystem({
 
   // ---------------------------------------------------------------- hud
   private drawBtns(): void {
-    const labels = [
-      ['BACK', 'Previous level'],
-      ['RETRY', 'Reset gears'],
-      ['NEXT', this.solved || this.level < this.unlocked ? 'Next level' : 'Locked'],
+    const nextOpen = this.solved || this.level < this.unlocked;
+    const spec: [string, string, string, boolean][] = [
+      ['\u25C0', 'PREVIOUS LEVEL', '#5fe0ff', this.level > 0],
+      ['\u21BA', 'RESET GEARS', '#ffc857', true],
+      ['\u25B6', nextOpen ? 'NEXT LEVEL' : 'LOCKED', '#7dff9b', nextOpen],
     ];
     for (let i = 0; i < 3; i++) {
       const p = this.btns[i];
-      p.card('rgba(34,24,16,0.94)', i === 2 && (this.solved || this.level < this.unlocked) ? '#8dff9d' : '#d6a94a');
-      p.text(labels[i][0], p.h * 0.3, 22, '#d6a94a');
-      p.text(labels[i][1], p.h * 0.7, 32, '#fff1d6');
+      const c = p.ctx;
+      const [icon, label, accent, on] = spec[i];
+      const W = p.w;
+      const H = p.h;
+      c.clearRect(0, 0, W, H);
+      const g = c.createLinearGradient(0, 0, W, H);
+      g.addColorStop(0, on ? '#141b33' : '#15151b');
+      g.addColorStop(1, on ? '#07091a' : '#0a0a0e');
+      c.fillStyle = g;
+      c.beginPath();
+      c.roundRect(5, 5, W - 10, H - 10, H / 2.4);
+      c.fill();
+      c.shadowColor = on ? accent : '#444';
+      c.shadowBlur = on ? 18 : 0;
+      c.strokeStyle = on ? accent : '#4a4a55';
+      c.lineWidth = 6;
+      c.stroke();
+      c.shadowBlur = 0;
+      c.fillStyle = on ? accent : '#5a5a66';
+      c.beginPath();
+      c.arc(H * 0.5, H / 2, H * 0.27, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#060814';
+      c.textAlign = 'center';
+      c.font = '800 ' + H * 0.3 + 'px "Segoe UI", Arial, sans-serif';
+      c.fillText(icon, H * 0.5, H * 0.62);
+      c.fillStyle = on ? '#ffffff' : '#7a7a86';
+      c.textAlign = 'left';
+      c.font = '800 ' + H * 0.27 + 'px "Segoe UI", Arial, sans-serif';
+      const max = W - H * 0.95 - 20;
+      const m = c.measureText(label).width;
+      if (m > max) c.font = '800 ' + Math.floor((H * 0.27 * max) / m) + 'px "Segoe UI", Arial, sans-serif';
+      c.fillText(label, H * 0.95, H * 0.6);
       p.commit();
     }
   }

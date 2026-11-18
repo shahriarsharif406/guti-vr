@@ -332,11 +332,25 @@ export class MenuSystem extends createSystem({
     drawPoster(this.buttons[1].panel, 'aura', 'AURA WEAVER', 'Compose the light.', '#5fe0ff');
     drawPoster(this.buttons[2].panel, 'spell', 'SPELLFORGE', 'Become the magic.', '#ff7a59');
     const b = this.back.panel;
-    b.card('rgba(24,14,8,0.92)', '#c79a46');
-    b.ctx.textAlign = 'center';
-    b.ctx.fillStyle = '#f2d38a';
-    b.ctx.font = '700 62px ' + SERIF;
-    b.ctx.fillText('‹  MENU', b.w / 2, b.h * 0.66);
+    const bc = b.ctx;
+    bc.clearRect(0, 0, b.w, b.h);
+    const bg2 = bc.createLinearGradient(0, 0, b.w, b.h);
+    bg2.addColorStop(0, '#141b33');
+    bg2.addColorStop(1, '#07091a');
+    bc.fillStyle = bg2;
+    bc.beginPath();
+    bc.roundRect(5, 5, b.w - 10, b.h - 10, b.h / 2.4);
+    bc.fill();
+    bc.shadowColor = '#ffffff';
+    bc.shadowBlur = 14;
+    bc.strokeStyle = '#e8ecff';
+    bc.lineWidth = 6;
+    bc.stroke();
+    bc.shadowBlur = 0;
+    bc.textAlign = 'center';
+    bc.fillStyle = '#ffffff';
+    bc.font = '800 ' + b.h * 0.34 + 'px "Segoe UI", Arial, sans-serif';
+    bc.fillText('\u25C0  MENU', b.w / 2, b.h * 0.64);
     b.commit();
     const t = this.title;
     const tc = t.ctx;
@@ -371,9 +385,9 @@ export class MenuSystem extends createSystem({
     );
     this.back = this.makeButton(
       MenuTargets.Menu,
-      0.14,
-      0.07,
-      0.34,
+      0.2,
+      0.085,
+      0.66,
       TABLE_Y + 0.07,
       TABLE_CENTER_Z + 0.2,
       -0.9,

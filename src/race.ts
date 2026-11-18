@@ -149,8 +149,8 @@ export class RaceSystem extends createSystem({
     this.hudTop = this.mk(1.2, 0.19, 1024, [0, 0.6, -1.7], [0, RACE_Y + 1.75, -1.6], 0);
     this.hudBot = this.mk(1.1, 0.37, 1024, [0, -0.62, -1.7], [0, RACE_Y + 0.95, -0.85], -0.55);
     for (const a of [this.card, this.hudTop, this.hudBot]) this.entities.push(this.world.createTransformEntity(a.p.mesh));
-    this.entry = this.mk(0.34, 0.09, 512, [0, 0, 0], [-0.68, 0.64, -0.5], -0.9);
-    this.entry.p.mesh.position.set(-0.68, 0.64, -0.5);
+    this.entry = this.mk(0.32, 0.11, 512, [0, 0, 0], [-0.74, 0.66, -0.5], -0.9);
+    this.entry.p.mesh.position.set(-0.74, 0.66, -0.5);
     this.entry.p.mesh.rotation.x = -0.9;
     this.makeButton(this.entry, 40, () => this.active === false && modeState.mode === 'gears' && gsStage.stage === 'bench', () => ['▶ RACER', '']);
 
