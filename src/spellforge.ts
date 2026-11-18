@@ -255,7 +255,8 @@ export class SpellforgeSystem extends createSystem({
     }
     // in-play panels
     this.hudBoss = new TextPanel(1.2, 0.26, 1024);
-    this.hudBoss.mesh.position.set(0, 2.72, -3.0);
+    this.hudBoss.mesh.position.set(0, 2.62, -3.0);
+    this.hudBoss.mesh.scale.setScalar(1.3);
     this.hudStatus = new TextPanel(0.46, 0.5, 512);
     this.hudStatus.mesh.position.set(-0.66, 1.18, -0.78);
     this.hudStatus.mesh.rotation.y = 0.55;
@@ -508,6 +509,7 @@ export class SpellforgeSystem extends createSystem({
         drawTitleArt(c, top);
         line(c, 'Shape fire, ice, lightning, aether, nature and shadow with your bare hands.', top + 252, 29, '#d9ccf2', c.w / 2, 'center', 600);
         line(c, 'Discover fusions nobody told you about. Face three bosses.', top + 288, 29, '#d9ccf2', c.w / 2, 'center', 600);
+        line(c, '6 ELEMENTS   -   15 FUSIONS   -   3 BOSSES', top + 352, 36, '#ffd98c', c.w / 2, 'center', 700);
         const known = save.discovered.length;
         line(c, 'Fusions discovered: ' + known + ' / ' + FUSIONS.length + '    Best wave: ' + save.bestWave + '    Bosses defeated: ' + save.campaign + ' / ' + BOSS_ORDER.length, bottom - 6, 26, '#a894d6', c.w / 2, 'center', 600);
       }, 4);
@@ -2190,8 +2192,15 @@ export class SpellforgeSystem extends createSystem({
     const p = this.hudBoss;
     const c = p.ctx;
     c.clearRect(0, 0, p.w, p.h);
-    line(p, bs.def.name + '  -  ' + bs.def.phases[bs.phase].name, 54, 46, '#fff3d0');
-    c.fillStyle = 'rgba(10,4,24,0.75)';
+    line(p, bs.def.name + '  -  ' + bs.def.phases[bs.phase].name, 56, 60, '#fff3d0');
+    c.fillStyle = 'rgba(10,4,24,0.92)';
+    rr(c, 36, 76, p.w - 72, 50, 25);
+    c.fill();
+    c.strokeStyle = 'rgba(255,230,170,0.85)';
+    c.lineWidth = 3;
+    rr(c, 36, 76, p.w - 72, 50, 25);
+    c.stroke();
+    c.fillStyle = 'rgba(10,4,24,0.0)';
     rr(c, 40, 78, p.w - 80, 44, 22);
     c.fill();
     const frac = Math.max(0, bs.hp / bs.maxHp);
