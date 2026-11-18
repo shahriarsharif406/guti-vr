@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { CHAPTER_NAMES, CYAN, GOLD, MAGENTA, MIRROR_STEPS, PRISM_STEPS, WHITE, makeLevels, solve, stepsOf, trace } from '../src/auralogic';
 import type { Elem, Level } from '../src/auralogic';
 import { defaultSave, loadSave, writeSave, SAVE_VERSION } from '../src/aurasave';
+import { ECHO_SUSTAIN, EchoTrack, brokenThreads, canWeave, echoReady, evaluate, freshState, holdLimit, latchMemories, node, nodePos, solveWeave } from '../src/threadlogic';
+import type { Weave, WeaveState } from '../src/threadlogic';
+import { MECH_NAME, V1_TO_V2, WORLDS, makePuzzles } from '../src/auralevels';
 
 let passed = 0;
 let failed = 0;
@@ -155,26 +158,234 @@ test('save round trip keeps progress and settings', () => {
   assert.equal(r.settings.music, 0.5);
 });
 test('corrupt JSON falls back to defaults', () => {
-  store.set('pw-aura-v1', '{not json');
+  store.set('pw-aura-v2', '{not json');
   assert.deepEqual(loadSave(7), defaultSave(7));
 });
 test('outdated or foreign save version is ignored', () => {
-  store.set('pw-aura-v1', JSON.stringify({ v: 0, unlocked: 5 }));
+  store.set('pw-aura-v2', JSON.stringify({ v: 0, unlocked: 5 }));
   assert.equal(loadSave(7).unlocked, 0);
 });
 test('out-of-range values are clamped, wrong types ignored', () => {
-  store.set('pw-aura-v1', JSON.stringify({ v: SAVE_VERSION, unlocked: 99, solved: [true, 'x'], best: [-5], settings: { volume: 9, sfx: 'loud' } }));
+  store.set('pw-aura-v2', JSON.stringify({ v: SAVE_VERSION, unlocked: 99, solved: [true, 'x'], best: [-5], settings: { volume: 9, sfx: 'loud', reach: 7, difficulty: -3 } }));
   const r = loadSave(7);
   assert.equal(r.unlocked, 6);
   assert.deepEqual(r.solved.slice(0, 2), [true, false]);
   assert.equal(r.best[0], 0);
   assert.equal(r.settings.volume, 1);
   assert.equal(r.settings.sfx, 1);
+  assert.equal(r.settings.reach, 2);
+  assert.equal(r.settings.difficulty, 0);
+});
+test('a version-1 save migrates: restored light puzzles keep their place in the new journey', () => {
+  store.clear();
+  store.set('pw-aura-v1', JSON.stringify({ v: 1, unlocked: 2, solved: [true, true, false, false, false, false, false], best: [3, 5, 0, 0, 0, 0, 0], settings: { muted: true } }));
+  const r = loadSave(15);
+  assert.equal(r.v, SAVE_VERSION);
+  assert.equal(r.solved[V1_TO_V2[0]], true);
+  assert.equal(r.solved[V1_TO_V2[1]], true);
+  assert.equal(r.best[V1_TO_V2[1]], 5);
+  assert.equal(r.solved[0], false, 'new thread puzzles start unsolved');
+  assert.equal(r.settings.muted, true);
+  assert.ok(r.unlocked >= V1_TO_V2[1]);
 });
 test('missing storage never throws', () => {
   (globalThis as unknown as { localStorage: unknown }).localStorage = undefined;
   assert.equal(loadSave(7).unlocked, 0);
   writeSave(defaultSave(7));
+});
+
+
+// ====================================================================== threads (mechanic A)
+const W = (o: Partial<Weave>): Weave => ({ nodes: [], rings: [], walls: [], fixed: [], maxLen: 0.5, eras: 1, echoSlots: 0, sockets: [], ...o });
+const st = (w: Weave, threads: WeaveState['threads'] = []): WeaveState => {
+  const s = freshState(w);
+  s.threads = threads;
+  s.lightOn = [true];
+  return s;
+};
+console.log('thread weaving');
+test('a thread carries energy from a source to a receiver', () => {
+  const w = W({ nodes: [node('source', -0.2, 0, { mask: CYAN }), node('receiver', 0.2, 0, { mask: CYAN })] });
+  assert.equal(evaluate(w, st(w)).solved, false);
+  assert.equal(evaluate(w, st(w, [{ a: 0, b: 1, era: 2 }])).solved, true);
+});
+test('direction matters: a reversed thread carries nothing', () => {
+  const w = W({ nodes: [node('source', -0.2, 0, { mask: CYAN }), node('receiver', 0.2, 0, { mask: CYAN })] });
+  assert.notEqual(canWeave(w, st(w), 1, 0), '', 'a receiver has no outgoing capacity');
+  const w2 = W({ nodes: [node('source', -0.3, 0, { mask: CYAN }), node('relay', 0, 0), node('receiver', 0.3, 0, { mask: CYAN })] });
+  assert.equal(evaluate(w2, st(w2, [{ a: 0, b: 1, era: 2 }, { a: 2, b: 1, era: 2 }])).solved, false);
+});
+test('tension: a thread longer than its reach cannot be woven; relaxed slack extends it', () => {
+  const w = W({ maxLen: 0.3, nodes: [node('source', -0.2, 0, { mask: CYAN }), node('receiver', 0.2, 0, { mask: CYAN })] });
+  assert.equal(canWeave(w, st(w), 0, 1), 'too-long');
+  const s = st(w);
+  s.slack = 0.4;
+  assert.equal(canWeave(w, s, 0, 1), '');
+});
+test('walls block threads; threads may not cross each other', () => {
+  const w = W({ nodes: [node('source', -0.2, 0, { mask: CYAN }), node('receiver', 0.2, 0, { mask: CYAN })], walls: [{ x1: 0, y1: -0.1, x2: 0, y2: 0.1, era: 0 }] });
+  assert.equal(canWeave(w, st(w), 0, 1), 'wall');
+  const w2 = W({ nodes: [node('source', -0.2, 0, { mask: CYAN }), node('receiver', 0.2, 0, { mask: CYAN }), node('source', 0, -0.2, { mask: CYAN }), node('receiver', 0, 0.2, { mask: CYAN })] });
+  assert.equal(canWeave(w2, st(w2, [{ a: 0, b: 1, era: 2 }]), 2, 3), 'crossing');
+});
+test('capacity: a relay feeds one thread, a splitter two', () => {
+  const w = W({ nodes: [node('source', -0.3, 0, { mask: CYAN }), node('relay', 0, 0), node('receiver', 0.2, 0.1, { mask: CYAN }), node('receiver', 0.2, -0.1, { mask: CYAN }), node('splitter', 0, 0.25)] });
+  assert.equal(canWeave(w, st(w, [{ a: 1, b: 2, era: 2 }]), 1, 3), 'capacity-out');
+  assert.equal(canWeave(w, st(w, [{ a: 4, b: 2, era: 2 }]), 4, 3), '');
+});
+test('colour: a receiver needs EXACTLY its colour (two threads mix)', () => {
+  const w = W({ nodes: [node('source', -0.3, 0.1, { mask: CYAN }), node('source', -0.3, -0.1, { mask: MAGENTA }), node('receiver', 0.2, 0, { mask: CYAN | MAGENTA })] });
+  assert.equal(evaluate(w, st(w, [{ a: 0, b: 2, era: 2 }])).solved, false);
+  assert.equal(evaluate(w, st(w, [{ a: 0, b: 2, era: 2 }, { a: 1, b: 2, era: 2 }])).solved, true);
+});
+test('a locked node conducts only while its seal node is powered', () => {
+  const w = W({ nodes: [node('source', -0.3, 0, { mask: CYAN }), node('splitter', -0.1, 0), node('receiver', 0.1, 0.2, { mask: CYAN }), node('locked', 0.1, -0.1, { lockBy: 2 }), node('receiver', 0.3, -0.1, { mask: CYAN })] });
+  const half = [{ a: 0, b: 1, era: 2 as const }, { a: 1, b: 3, era: 2 as const }, { a: 3, b: 4, era: 2 as const }];
+  assert.equal(evaluate(w, st(w, half)).receiverOk[4], false);
+  assert.equal(evaluate(w, st(w, half.concat([{ a: 1, b: 2, era: 2 }]))).solved, true);
+});
+test('a key conducts only while held; one living hand holds one key', () => {
+  const w = W({ nodes: [node('source', -0.3, 0, { mask: CYAN }), node('key', 0, 0), node('receiver', 0.3, 0, { mask: CYAN })], fixed: [{ a: 0, b: 1, era: 2, fixed: true }, { a: 1, b: 2, era: 2, fixed: true }] });
+  const s = st(w);
+  assert.equal(evaluate(w, s).solved, false);
+  s.held = [1];
+  assert.equal(evaluate(w, s).solved, true);
+  assert.equal(holdLimit(w, s, 1), 1, 'no memory charged, so no echo');
+});
+test('a memory node latches once powered and enables echoes', () => {
+  const w = W({ echoSlots: 1, nodes: [node('source', -0.3, 0, { mask: CYAN }), node('memory', 0, 0, { mask: CYAN }), node('relay', 0.3, 0)] });
+  const s = st(w, [{ a: 0, b: 1, era: 2 }]);
+  assert.equal(echoReady(w, s), false);
+  assert.equal(latchMemories(w, s), true);
+  s.threads = [];
+  assert.equal(echoReady(w, s), true);
+  s.threads = [{ a: 1, b: 2, era: 2 }];
+  assert.ok(evaluate(w, s).mask[1][2] !== 0, 'the latched memory still feeds energy after its thread is gone');
+  assert.equal(holdLimit(w, s, 1), 2);
+});
+test('fixed threads cannot be broken; woven ones snap when a ring turns them too far', () => {
+  const w = W({ maxLen: 0.25, rings: [{ cx: 0, cy: 0, r: 0.15, steps: 8, a: 0, motor: -1 }], nodes: [node('source', -0.3, 0, { mask: CYAN }), node('star', 0, 0, { ring: 0, phase: Math.PI })] });
+  const s = st(w, [{ a: 0, b: 1, era: 2 }]);
+  assert.equal(brokenThreads(w, s).length, 0);
+  w.rings[0].a = 4; // star swings to the far side
+  assert.equal(brokenThreads(w, s).length, 1);
+});
+
+console.log('celestial geometry, time and memory echoes');
+test('stars ride their ring: positions follow the ring angle', () => {
+  const w = W({ rings: [{ cx: 0, cy: 0, r: 0.2, steps: 8, a: 0, motor: -1 }], nodes: [node('star', 0, 0, { ring: 0, phase: 0 })] });
+  assert.ok(Math.abs(nodePos(w, 0).x - 0.2) < 1e-9);
+  w.rings[0].a = 2;
+  assert.ok(Math.abs(nodePos(w, 0).y - 0.2) < 1e-9);
+});
+test('time: a seed lit in the past becomes a living bloom in the present', () => {
+  const w = W({ eras: 2, nodes: [node('source', -0.3, 0, { mask: GOLD }), node('seed', 0, 0, { era: 1 }), node('bloom', 0, 0, { era: 2, seed: 1 }), node('receiver', 0.3, 0, { mask: GOLD, era: 2 })] });
+  const s = st(w, [{ a: 2, b: 3, era: 2 }]);
+  assert.equal(evaluate(w, s).exists[1][2], false, 'no bloom without the past');
+  s.threads.push({ a: 0, b: 1, era: 1 });
+  const ev = evaluate(w, s);
+  assert.equal(ev.exists[1][2], true);
+  assert.equal(ev.solved, true);
+});
+test('time: threads belong to the era they were woven in; past-only walls do not block the present', () => {
+  const w = W({ eras: 2, nodes: [node('source', -0.2, 0, { mask: CYAN }), node('receiver', 0.2, 0, { mask: CYAN })], walls: [{ x1: 0, y1: -0.1, x2: 0, y2: 0.1, era: 1 }] });
+  assert.equal(canWeave(w, st(w), 0, 1, 1), 'wall');
+  assert.equal(canWeave(w, st(w), 0, 1, 2), '');
+  assert.equal(evaluate(w, st(w, [{ a: 0, b: 1, era: 1 }])).solved, false, 'a past thread does not light a present receiver');
+});
+test('echo recorder: replays the motion, then holds the final pose, then loops', () => {
+  const e = new EchoTrack();
+  e.start(10);
+  e.add(10, 0, 0, false);
+  e.add(10.5, 0.1, 0, false);
+  e.add(11, 0.2, 0, true);
+  e.stop();
+  const o = { t: 0, x: 0, y: 0, down: false };
+  assert.equal(e.sample(0.25, o).down, false);
+  assert.ok(Math.abs(e.sample(0.25, o).x - 0.05) < 1e-6);
+  assert.equal(e.sample(1 + ECHO_SUSTAIN * 0.5, o).down, true, 'final pose sustained');
+  assert.equal(e.sample(e.loop + 0.1, o).down, false, 'loop restarts');
+});
+
+console.log('the journey: 5 worlds, 15 puzzles, every one solver-verified');
+const PZ = makePuzzles();
+test('five distinct worlds, each with puzzles; all five mechanics appear', () => {
+  assert.equal(WORLDS.length, 5);
+  for (let w = 0; w < 5; w++) assert.ok(PZ.some((p) => p.world === w), 'world ' + w);
+  const all = new Set(PZ.flatMap((p) => p.mech));
+  for (const m of Object.keys(MECH_NAME)) assert.ok(all.has(m as never), 'mechanic ' + m);
+  assert.ok(PZ.length >= 5);
+});
+test('progression teaches one mechanic at a time before combining', () => {
+  const seen = new Set<string>();
+  for (const p of PZ) {
+    if (p.mech.length > 1) for (const m of p.mech.slice(1)) assert.ok(seen.has(m) || p.mech.length === 5 || m === 'A', p.id + ' combines ' + m + ' before it was taught');
+    p.mech.forEach((m) => seen.add(m));
+  }
+  assert.equal(PZ[PZ.length - 1].mech.length, 5, 'the finale combines all five mechanics');
+});
+PZ.forEach((p, i) => {
+  test('puzzle ' + (i + 1) + ' "' + p.name + '" [' + p.mech.join('+') + '] starts unsolved and has a solution', () => {
+    const f = makePuzzles()[i];
+    if (f.light) {
+      const sols = solve(f.light, 2);
+      assert.ok(sols.length > 0, 'light half has no solution');
+      if (!f.weave) assert.equal(trace(f.light, false).solved, false, 'already solved');
+    }
+    if (f.weave) {
+      const s = freshState(f.weave);
+      s.lightOn = [true];
+      assert.equal(evaluate(f.weave, s).solved, false, 'already solved');
+      const sol = solveWeave(f.weave);
+      assert.ok(sol, 'thread half has no solution');
+    }
+  });
+});
+const byId = (id: string) => makePuzzles().find((p) => p.id === id) as ReturnType<typeof makePuzzles>[number];
+test('"Roots of light": the threads stay dark until the light gate wakes', () => {
+  assert.equal(solveWeave(byId('root-light').weave as Weave, { lightOn: false }), null);
+});
+test('"Star bridge": only solvable after the orbit engine turns the ring', () => {
+  const sol = solveWeave(byId('star-bridge').weave as Weave);
+  assert.ok(sol && sol.rings[0] !== 0);
+  const w = byId('star-bridge').weave as Weave;
+  w.rings[0].motor = -1;
+  w.nodes[1].x = 9; // an engine that can never be reached: ring locked at its start
+  w.rings[0].motor = 1;
+  assert.equal(solveWeave(w), null);
+});
+test('"The orrery": exactly one ring setting forms the constellation', () => {
+  const w = byId('orrery').weave as Weave;
+  let n = 0;
+  for (let a = 0; a < 8; a++) for (let b = 0; b < 8; b++) for (let c = 0; c < 8; c++) {
+    w.rings[0].a = a; w.rings[1].a = b; w.rings[2].a = c;
+    const s = freshState(w);
+    if (evaluate(w, s).solved) n++;
+  }
+  assert.equal(n, 1);
+});
+test('"Two eras": impossible in the present alone; the solution weaves a past thread', () => {
+  const sol = solveWeave(byId('two-eras').weave as Weave);
+  assert.ok(sol && sol.threads.some((t) => t.era === 1));
+  const w = byId('two-eras').weave as Weave;
+  w.eras = 1;
+  assert.equal(solveWeave(w), null);
+});
+test('"Memory echo": impossible with one hand alone, solvable with one echo', () => {
+  assert.equal(solveWeave(byId('memory-echo').weave as Weave, { echoSlots: 0 }), null);
+  const sol = solveWeave(byId('memory-echo').weave as Weave);
+  assert.ok(sol && sol.echoes === 1);
+});
+test('"Heart of eternity" needs light, the past, a star alignment and an echo', () => {
+  const h = byId('heart');
+  assert.equal(h.mech.length, 5);
+  assert.equal(solveWeave(h.weave as Weave, { lightOn: false }), null, 'needs light');
+  assert.equal(solveWeave(byId('heart').weave as Weave, { echoSlots: 0 }), null, 'needs an echo');
+  const sol = solveWeave(byId('heart').weave as Weave);
+  assert.ok(sol, 'solvable');
+  assert.ok(sol && sol.threads.some((t) => t.era === 1), 'needs the past');
+  assert.equal(sol && sol.rings[0], 2, 'star aligned');
+  assert.ok(solve(h.light as Level, 1).length > 0, 'light half solvable');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
