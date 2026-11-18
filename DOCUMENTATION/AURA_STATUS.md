@@ -29,3 +29,9 @@ Known limits:
 
 Run the checks: `npx tsc --noEmit`, `npm test`, then `npm run build && npx vite preview --port 4175` and
 `node tests/aura-e2e.mjs`.
+
+## Nov 18 update: bigger loom and clearer menus
+- IMPLEMENTED: the whole loom (board, elements, threads) is drawn 1.2x larger (root scale; puzzle coordinates and solver unchanged, so all 15 puzzles still fit). Mouse/ray/hand input is mapped through the scale.
+- IMPLEMENTED: new glass-style panels for the title, chapter list, in-game HUD (bigger text), progress compass and completion card; new pill buttons with an icon badge and accent colour for the game row, ERA/HINT, chapter select and the 12 settings.
+- TESTED: tsc clean; npm test passes (4 suites); browser e2e (desktop Chromium, software GL) passes all checks incl. 15 puzzles; a mouse drag of a mirror on the enlarged board changed its angle; screenshots of title, chapters, a thread puzzle, a light puzzle and the pause menu were looked at.
+- NOT VERIFIED: any headset, XR ray/hand input on the scaled board, frame rate, legibility at real headset distance. Some icon glyphs (e.g. lightning, gear) depend on the system font.

@@ -61,10 +61,16 @@ import { AuraOpt } from './ui-components.js';
 
 // ---- Aura Weaver: compose light. Turn mirrors and prisms (pinch and swing, or tap) to wake the monoliths.
 const BZ = -0.85;
-const BY = 0.92;
+const BY = 0.9;
+/** The whole loom is drawn this much larger than its puzzle coordinates (puzzles keep their own metre units). */
+const S = 1.2;
 const BW = 1.16;
 const BH = 0.74;
 const PICK_R = 0.085;
+const BTN_W = 0.235;
+const BTN_H = 0.095;
+const BTN_STEP = 0.25;
+const ROW_X = -0.12; // the button rows sit a little left so the global MENU button stays clear
 const PINCH_START = 0.85;
 const PINCH_HOLD = 0.5;
 const MAX_SEG = 96;
@@ -297,6 +303,7 @@ export class AuraSystem extends createSystem({
     setSfxVolume(this.save.settings.sfx);
     setMuted(this.save.settings.muted);
     this.root.position.set(0, BY, BZ);
+    this.root.scale.setScalar(S);
     const rootEnt = this.world.createTransformEntity(this.root);
 
     // cosmic void behind the board + frame
@@ -339,15 +346,15 @@ export class AuraSystem extends createSystem({
     this.buildWisps();
 
     // HUD, compass and buttons
-    this.hud = new TextPanel(0.56, 0.2);
-    this.hud.mesh.position.set(0, BY + BH / 2 + 0.11, BZ + 0.03);
+    this.hud = new TextPanel(0.92, 0.17, 1280);
+    this.hud.mesh.position.set(0, BY + (BH * S) / 2 + 0.045, BZ + 0.05);
     this.hud.mesh.rotation.x = -0.15;
     this.world.createTransformEntity(this.hud.mesh);
-    this.compass = new TextPanel(0.2, 0.2, 384);
-    this.compass.mesh.position.set(-BW / 2 - 0.2, BY + 0.2, BZ + 0.06);
+    this.compass = new TextPanel(0.24, 0.24, 512);
+    this.compass.mesh.position.set(-0.86, BY + (BH * S) / 2 - 0.02, BZ + 0.06);
     this.compass.mesh.rotation.y = 0.35;
     this.world.createTransformEntity(this.compass.mesh);
-    this.card = new TextPanel(0.52, 0.34, 768);
+    this.card = new TextPanel(0.96, 0.62, 1280);
     this.card.mesh.position.set(0, BY + 0.02, BZ + 0.22);
     this.world.createTransformEntity(this.card.mesh);
     const mkBtn = (id: number, w: number, h: number, x: number, y: number, z: number, tilt: number, list: TextPanel[]): void => {
@@ -360,11 +367,11 @@ export class AuraSystem extends createSystem({
       list.push(panel);
       this.uiMeshes.push(panel.mesh);
     };
-    for (let i = 0; i < 4; i++) mkBtn(i, 0.2, 0.07, -0.33 + i * 0.22, 0.64, -0.5, -0.9, this.btns);
-    for (let i = 0; i < 12; i++) mkBtn(4 + i, 0.2, 0.055, i % 2 ? 0.115 : -0.115, 1.27 - Math.floor(i / 2) * 0.062, -0.5, -0.2, this.setBtns);
+    for (let i = 0; i < 4; i++) mkBtn(i, BTN_W, BTN_H, ROW_X + (i - 1.5) * BTN_STEP, 0.64, -0.5, -0.9, this.btns);
+    for (let i = 0; i < 12; i++) mkBtn(4 + i, BTN_W, BTN_H, i % 2 ? 0.15 : -0.15, 1.4 - Math.floor(i / 2) * 0.115, -0.5, -0.2, this.setBtns);
     // thread puzzles only: ERA (switch past / present) and HINT, at both ends of the game row
-    mkBtn(ID_ERA, 0.17, 0.07, -0.545, 0.64, -0.5, -0.9, this.threadBtns);
-    mkBtn(ID_HINT, 0.17, 0.07, 0.545, 0.64, -0.5, -0.9, this.threadBtns);
+    mkBtn(ID_ERA, BTN_W, BTN_H, ROW_X - 2.5 * BTN_STEP, 0.64, -0.5, -0.9, this.threadBtns);
+    mkBtn(ID_HINT, BTN_W, BTN_H, ROW_X + 2.5 * BTN_STEP, 0.64, -0.5, -0.9, this.threadBtns);
 
     this.cleanupFuncs.push(
       this.queries.opts.subscribe('qualify', (entity: Entity) => {
@@ -386,7 +393,7 @@ export class AuraSystem extends createSystem({
         const t = this.lv.targets[e.i];
         g.awake = true;
         this.ripple.fire(t.x, t.y, 0, 0.5, MASK_HEX[t.mask & 7]);
-        celebrate(t.x, BY + t.y, BZ + 0.08, 1);
+        celebrate(t.x * S, BY + t.y * S, BZ + 0.08, 1);
         sfx.auraAwaken(e.i, this.chapterIdx());
         this.buzz(40);
         this.save.stats.connections++;
@@ -496,7 +503,7 @@ export class AuraSystem extends createSystem({
       this.dirty = true;
     };
     w.__auraScreen = (x: number, y: number) => {
-      const v = new Vector3(x, BY + y, BZ + 0.03).project(this.world.camera);
+      const v = new Vector3(x * S, BY + y * S, BZ + 0.03).project(this.world.camera);
       return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
     };
     w.__auraElems = () => this.lv.elems.map((e) => ({ k: e.kind, x: e.x, y: e.y, a: e.a, rot: e.rot }));
@@ -790,15 +797,15 @@ export class AuraSystem extends createSystem({
   private syncPanels(): void {
     const on = modeState.mode === 'aura';
     const game = this.screen === 'game';
-    this.hud.mesh.visible = on && game && !this.photo;
+    this.hud.mesh.visible = on && game && !this.photo && !this.paused;
     this.compass.mesh.visible = on && !this.photo;
     this.card.mesh.visible = on && !this.photo && (this.screen === 'title' || this.screen === 'chapters' || (game && (this.completeT > 2.2 || this.finaleT > 6)));
     const n = on && !this.photo ? this.menuSlots() : 0;
     const row = this.screen === 'title' || this.screen === 'chapters';
     this.setBtns.forEach((b, i) => {
       b.mesh.visible = i < n;
-      if (row) b.mesh.position.set((i - (n - 1) / 2) * 0.22, 0.64, -0.5);
-      else b.mesh.position.set(i % 2 ? 0.115 : -0.115, 1.27 - Math.floor(i / 2) * 0.062, -0.5);
+      if (row) b.mesh.position.set(ROW_X + (i - (n - 1) / 2) * BTN_STEP, 0.64, -0.5);
+      else b.mesh.position.set(i % 2 ? 0.15 : -0.15, 1.4 - Math.floor(i / 2) * 0.115, -0.5);
       b.mesh.rotation.x = row ? -0.9 : -0.2;
     });
     this.btns.forEach((b, i) => (b.mesh.visible = on && game && (!this.photo || i < 3)));
@@ -962,15 +969,15 @@ export class AuraSystem extends createSystem({
   private applyComposition(): void {
     const c = this.photo ? this.comp : 0;
     if (c === 0) {
-      this.root.scale.setScalar(1);
+      this.root.scale.setScalar(S);
       this.root.position.set(0, BY, BZ);
       this.root.rotation.y = 0;
     } else if (c === 1) {
-      this.root.scale.setScalar(1.25);
+      this.root.scale.setScalar(S * 1.2);
       this.root.position.set(0, BY - 0.05, BZ + 0.15);
       this.root.rotation.y = 0;
     } else {
-      this.root.scale.setScalar(1);
+      this.root.scale.setScalar(S);
       this.root.position.set(0.1, BY, BZ + 0.05);
       this.root.rotation.y = -0.3;
     }
@@ -1077,8 +1084,8 @@ export class AuraSystem extends createSystem({
       have = p && this.readHandPos(pt.src, pt.pos);
     }
     if (!have) pt.down = false;
-    const bx = pt.pos.x - this.root.position.x;
-    const by = pt.pos.y - this.root.position.y;
+    const bx = (pt.pos.x - this.root.position.x) / this.root.scale.x;
+    const by = (pt.pos.y - this.root.position.y) / this.root.scale.x;
     if (pt.down && !pt.was && !this.paused && !this.photo) {
       const g = this.nearest(bx, by, PICK_R);
       if (g >= 0 && this.lightTakes(bx, by)) {
@@ -1374,7 +1381,7 @@ export class AuraSystem extends createSystem({
           const m = pl.w.nodes[e.node].mask & 7;
           withPan(p.x / 0.6, () => sfx.auraAwaken(e.node % 3, this.chapterIdx()));
           this.ripple.fire(p.x, p.y, 0, 0.5, MASK_HEX[m]);
-          celebrate(p.x, BY + p.y, BZ + 0.08, 1);
+          celebrate(p.x * S, BY + p.y * S, BZ + 0.08, 1);
           this.buzz(40);
           st.connections++;
           st.hues[m]++;
@@ -1415,7 +1422,7 @@ export class AuraSystem extends createSystem({
 
   private updateHover(): void {
     if (this.mouseSeen && !this.mouseDown && this.mousePoint(this.hoverPos)) {
-      this.hover = this.nearest(this.hoverPos.x - this.root.position.x, this.hoverPos.y - this.root.position.y, 0.09);
+      this.hover = this.nearest((this.hoverPos.x - this.root.position.x) / this.root.scale.x, (this.hoverPos.y - this.root.position.y) / this.root.scale.x, 0.09);
     } else if (!this.mouseSeen) this.hover = -1;
   }
 
@@ -1635,7 +1642,7 @@ export class AuraSystem extends createSystem({
         if (before < at && this.finaleT >= at) {
           this.ripple.fire(-0.5 + (k / 5) * 1.0, -BH / 2, 0.1, 0.9, [0x33f0ff, 0xff3bd6, 0xffc233, 0x3dffa0, 0x8a5cff, 0xffffff][k]);
           this.pulseAge = 0;
-          celebrate(-0.5 + (k / 5) * 1.0, BY - BH / 2, BZ + 0.12, 2);
+          celebrate((-0.5 + (k / 5) * 1.0) * S, BY - (BH * S) / 2, BZ + 0.12, 2);
         }
       }
       for (const l of this.lotus) l.target = 1;
@@ -1649,7 +1656,7 @@ export class AuraSystem extends createSystem({
       const k = Math.min(1, this.finaleT / 9);
       const e = k * k * (3 - 2 * k);
       const amt = reduced ? 0.03 : 0.12;
-      this.root.scale.setScalar(1 + amt * e);
+      this.root.scale.setScalar(S * (1 + amt * e));
       this.root.position.z = BZ + amt * 1.2 * e;
     }
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2);
@@ -1664,30 +1671,94 @@ export class AuraSystem extends createSystem({
   }
 
   // ================================================================ drawing (canvas panels)
+  /** Aura button: dark glass pill, glowing accent rim, round icon badge on the left, big title and a short caption. */
+  private pill(p: TextPanel, accent: string, glyph: string, title: string, sub: string, lit = true): void {
+    const g = p.ctx;
+    const W = p.w;
+    const H = p.h;
+    g.clearRect(0, 0, W, H);
+    const r = H * 0.28;
+    const path = (x: number, y: number, w: number, h: number): void => {
+      g.beginPath();
+      g.moveTo(x + r, y);
+      g.arcTo(x + w, y, x + w, y + h, r);
+      g.arcTo(x + w, y + h, x, y + h, r);
+      g.arcTo(x, y + h, x, y, r);
+      g.arcTo(x, y, x + w, y, r);
+      g.closePath();
+    };
+    const grad = g.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, lit ? 'rgba(46,34,104,0.96)' : 'rgba(26,24,50,0.94)');
+    grad.addColorStop(1, lit ? 'rgba(14,12,46,0.96)' : 'rgba(14,14,32,0.94)');
+    path(5, 5, W - 10, H - 10);
+    g.fillStyle = grad;
+    g.fill();
+    g.lineWidth = 6;
+    g.strokeStyle = lit ? accent : 'rgba(150,160,200,0.45)';
+    g.stroke();
+    const cx = H * 0.5;
+    const cy = H / 2;
+    const cr = H * 0.31;
+    g.beginPath();
+    g.arc(cx + 4, cy, cr, 0, Math.PI * 2);
+    g.fillStyle = lit ? accent : 'rgba(150,160,200,0.5)';
+    g.globalAlpha = 0.28;
+    g.fill();
+    g.globalAlpha = 1;
+    g.lineWidth = 4;
+    g.strokeStyle = lit ? accent : 'rgba(150,160,200,0.6)';
+    g.stroke();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = lit ? '#ffffff' : '#9aa4c4';
+    g.font = '700 ' + Math.round(H * 0.34) + 'px ' + SERIF;
+    g.fillText(glyph, cx + 4, cy + 2);
+    const tx = H * 0.98;
+    const maxW = W - tx - 26;
+    g.textAlign = 'left';
+    const fit = (txt: string, size: number, wt: string): void => {
+      g.font = wt + ' ' + size + 'px ' + SERIF;
+      const m = g.measureText(txt).width;
+      if (m > maxW) g.font = wt + ' ' + Math.floor((size * maxW) / m) + 'px ' + SERIF;
+    };
+    fit(title, Math.round(H * 0.27), '700');
+    g.fillStyle = lit ? '#fff3d0' : '#aab2d0';
+    g.fillText(title, tx, H * 0.38);
+    fit(sub, Math.round(H * 0.2), '600');
+    g.fillStyle = lit ? accent : '#8a93b8';
+    g.fillText(sub, tx, H * 0.7);
+    g.textBaseline = 'alphabetic';
+  }
+
   private drawBtns(): void {
     const solved = this.save.solved[this.level] || this.level < this.save.unlocked;
-    const labels: [string, string][] = this.photo
-      ? [['SHOT', 'Save photo'], ['FRAME', 'Composition ' + (this.comp + 1) + '/3'], ['EXIT', 'Leave photo mode'], ['', '']]
-      : [['BACK', 'Previous'], ['RETRY', 'Reset puzzle'], ['NEXT', solved ? 'Next chapter' : 'Locked'], [this.paused ? 'RESUME' : 'PAUSE', 'Settings']];
+    const labels: [string, string, string, string][] = this.photo
+      ? [['SHOT', 'Save photo', '\u25cf', '#ff9bd0'], ['FRAME', 'View ' + (this.comp + 1) + ' of 3', '\u25a3', '#ffd36b'], ['EXIT', 'Leave photo mode', '\u2715', '#9fc2ff'], ['', '', '', '#9fc2ff']]
+      : [
+          ['BACK', 'Previous puzzle', '\u25c0', '#6fe8ff'],
+          ['RETRY', 'Reset puzzle', '\u21ba', '#ffd36b'],
+          ['NEXT', solved ? 'Next puzzle' : 'Locked', '\u25b6', solved ? '#8dffc2' : '#8a93b8'],
+          [this.paused ? 'RESUME' : 'PAUSE', 'Settings', this.paused ? '\u25b6' : '\u275a\u275a', '#c9a8ff'],
+        ];
     this.btns.forEach((p, i) => {
-      p.card('rgba(10,8,26,0.9)', i === 2 && solved && !this.photo ? '#8dffc2' : '#7fb8ff');
-      p.text(labels[i][0], p.h * 0.3, 22, '#9fc2ff');
-      p.text(labels[i][1], p.h * 0.7, 30, '#eef4ff');
+      const [t, sub, gl, ac] = labels[i];
+      this.pill(p, ac, gl, t, sub, !(i === 2 && !solved && !this.photo));
       p.commit();
       p.mesh.visible = modeState.mode === 'aura' && this.screen === 'game' && !(this.photo && i === 3);
     });
     this.threadBtns.forEach((p, i) => {
       const past = !!this.tp && this.tp.s.era === 1;
-      p.card('rgba(10,8,26,0.9)', i === 0 ? (past ? '#ffb060' : '#7fb8ff') : '#ffe08a');
-      p.text(i === 0 ? 'ERA' : 'HINT', p.h * 0.3, 22, '#9fc2ff');
-      p.text(i === 0 ? (past ? 'Past' : 'Present') : 'Show a step', p.h * 0.7, 30, '#eef4ff');
+      if (i === 0) this.pill(p, past ? '#ffb060' : '#6fe8ff', past ? '\u25d1' : '\u25d0', 'ERA', past ? 'Past' : 'Present');
+      else this.pill(p, '#ffe08a', '\u2726', 'HINT', 'Show a step');
       p.commit();
     });
     this.setBtns.forEach((p, i) => {
       const [a, b] = this.slotText(i);
-      p.card('rgba(10,8,26,0.94)', this.screen === 'chapters' || this.screen === 'title' ? '#7fb8ff' : '#b48cff');
-      p.text(a, p.h * 0.32, 22, '#c9b6ff');
-      p.text(b, p.h * 0.74, 28, '#eef4ff');
+      const menuRow = this.screen === 'chapters' || this.screen === 'title';
+      const locked = this.screen === 'chapters' && b === 'Locked';
+      const accent = menuRow ? (this.screen === 'chapters' ? (b === 'Restored' ? '#8dffc2' : '#6fe8ff') : ['#ffd36b', '#6fe8ff', '#c9a8ff', '#ff8aa8'][i] ?? '#6fe8ff') : '#c9a8ff';
+      const glyph = this.screen === 'title' ? ['\u25b6', '\u2756', '\u2699', '\u21ba'][i] : this.screen === 'chapters' ? (i < 5 ? String(i + 1) : '\u25c0') : ['\u266a', '\u266b', '\u2726', '\u2715', '\u25c8', '\u223f', '\u26a1', '\u25cf', '\u2735', '\u2139', '\u25a3', '\u25c0'][i] ?? '\u2726';
+      this.pill(p, accent, glyph, a, b, !locked);
       p.commit();
     });
   }
@@ -1698,9 +1769,9 @@ export class AuraSystem extends createSystem({
     if (this.screen === 'title') {
       const started = this.save.solved.some(Boolean);
       return ([
-        [started ? 'CONTINUE' : 'START', started ? 'Resume weaving' : 'Begin the experience'],
-        ['CHAPTERS', 'Unlocked chapters'],
-        ['SETTINGS', 'Audio and access'],
+        [started ? 'CONTINUE' : 'START', started ? 'Resume weaving' : 'Begin weaving'],
+        ['CHAPTERS', 'Choose a world'],
+        ['SETTINGS', 'Sound and comfort'],
         ['NEW GAME', this.confirmNew ? 'Press again to erase' : 'Erase progress'],
       ] as [string, string][])[i] ?? ['', ''];
     }
@@ -1728,38 +1799,81 @@ export class AuraSystem extends createSystem({
     ] as [string, string][])[i] ?? ['', ''];
   }
 
+  /** Frosted glass card with a gradient rim: the base of the title, chapter and completion panels. */
+  private glass(c: TextPanel, rim: string): void {
+    const g = c.ctx;
+    g.clearRect(0, 0, c.w, c.h);
+    const r = 46;
+    g.beginPath();
+    g.moveTo(r, 4);
+    g.arcTo(c.w - 4, 4, c.w - 4, c.h - 4, r);
+    g.arcTo(c.w - 4, c.h - 4, 4, c.h - 4, r);
+    g.arcTo(4, c.h - 4, 4, 4, r);
+    g.arcTo(4, 4, c.w - 4, 4, r);
+    g.closePath();
+    const bg = g.createLinearGradient(0, 0, 0, c.h);
+    bg.addColorStop(0, 'rgba(30,22,84,0.95)');
+    bg.addColorStop(1, 'rgba(6,5,26,0.96)');
+    g.fillStyle = bg;
+    g.fill();
+    const edge = g.createLinearGradient(0, 0, c.w, c.h);
+    edge.addColorStop(0, rim);
+    edge.addColorStop(0.5, '#b48cff');
+    edge.addColorStop(1, '#6fe8ff');
+    g.lineWidth = 8;
+    g.strokeStyle = edge;
+    g.stroke();
+  }
+
   /** Title and chapter-select card (the same panel the completion card uses). */
   private drawMenu(): void {
     if (this.screen === 'game') return;
     const c = this.card;
     const g = c.ctx;
-    c.card('rgba(6,5,22,0.9)', '#b48cff');
+    this.glass(c, '#ffd36b');
     g.textAlign = 'center';
     if (this.screen === 'title') {
       g.fillStyle = '#ffe9b0';
-      g.font = '700 70px ' + SERIF;
-      g.fillText('AURA WEAVER', c.w / 2, 120);
-      g.fillStyle = '#9fc2ff';
-      g.font = '600 26px ' + SERIF;
-      g.fillText('T H E   L I G H T   S A N C T U A R Y', c.w / 2, 168);
-      g.fillStyle = '#cfe4ff';
-      g.font = 'italic 28px ' + SERIF;
-      g.fillText('A sanctuary has lost its light.', c.w / 2, 240);
-      g.fillText('Weave threads of energy. Turn mirrors and prisms.', c.w / 2, 280);
-      g.fillText('Wake the monoliths and bring it back to life.', c.w / 2, 320);
+      g.font = '700 118px ' + SERIF;
+      g.fillText('AURA WEAVER', c.w / 2, 190);
+      g.fillStyle = '#8fd8ff';
+      g.font = '600 40px ' + SERIF;
+      g.fillText('T H E   L I G H T   S A N C T U A R Y', c.w / 2, 262);
+      g.strokeStyle = 'rgba(180,140,255,0.6)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(c.w * 0.25, 305);
+      g.lineTo(c.w * 0.75, 305);
+      g.stroke();
+      g.fillStyle = '#e6f0ff';
+      g.font = 'italic 46px ' + SERIF;
+      g.fillText('A sanctuary has lost its light.', c.w / 2, 400);
+      g.fillText('Weave threads. Turn mirrors and prisms.', c.w / 2, 468);
+      g.fillText('Wake the monoliths and bring it back to life.', c.w / 2, 536);
       const n = this.save.solved.filter(Boolean).length;
-      g.font = '600 22px ' + SERIF;
+      g.font = '700 38px ' + SERIF;
       g.fillStyle = '#ffd36b';
-      g.fillText(n ? 'Sanctuary ' + Math.round((n / this.puzzles.length) * 100) + '% restored' : 'Pinch or point and pull. ' + this.puzzles.length + ' puzzles, 5 worlds.', c.w / 2, 400);
+      g.fillText(n ? 'Sanctuary ' + Math.round((n / this.puzzles.length) * 100) + '% restored' : 'Pinch or point and pull  -  ' + this.puzzles.length + ' puzzles, 5 worlds', c.w / 2, 660);
     } else {
       g.fillStyle = '#ffe9b0';
-      g.font = '700 54px ' + SERIF;
-      g.fillText('CHAPTERS', c.w / 2, 100);
-      g.font = '600 26px ' + SERIF;
+      g.font = '700 92px ' + SERIF;
+      g.fillText('CHAPTERS', c.w / 2, 140);
+      g.font = '700 46px ' + SERIF;
       WORLDS.forEach(({ name: nm }, i) => {
         const locked = this.firstLevelOf(i) > this.save.unlocked;
-        g.fillStyle = locked ? '#5a6488' : '#cfe4ff';
-        g.fillText((i + 1) + '   ' + nm + (locked ? '   (locked)' : ''), c.w / 2, 190 + i * 48);
+        const y = 250 + i * 100;
+        g.fillStyle = locked ? 'rgba(40,44,80,0.6)' : 'rgba(60,50,130,0.55)';
+        g.fillRect(110, y - 54, c.w - 220, 80);
+        g.fillStyle = locked ? '#6b7499' : '#ffd36b';
+        g.textAlign = 'left';
+        g.fillText(String(i + 1), 150, y);
+        g.fillStyle = locked ? '#6b7499' : '#eaf2ff';
+        g.fillText(nm, 230, y);
+        g.textAlign = 'right';
+        g.font = '600 36px ' + SERIF;
+        g.fillText(locked ? 'locked' : '', c.w - 150, y);
+        g.font = '700 46px ' + SERIF;
+        g.textAlign = 'center';
       });
     }
     c.commit();
@@ -1769,12 +1883,12 @@ export class AuraSystem extends createSystem({
     const h = this.hud;
     const lv = this.lv;
     if (!lv) return;
-    h.card('rgba(8,6,24,0.88)', '#7fb8ff');
+    this.glass(h, '#6fe8ff');
     const pz = this.pz;
     const pl = this.tp;
     const done = (this.tr?.solved ?? true) && (!pl || pl.ev.solved);
-    h.text(WORLDS[pz.world].name + '   -   ' + pz.name, 50, 26, '#cfe4ff');
-    h.text(pz.goal, 100, 26, done ? '#8dffc2' : '#ffe6a8');
+    h.text(WORLDS[pz.world].short.toUpperCase() + '   -   ' + pz.name, 46, 34, '#8fd8ff');
+    h.text(pz.goal, 102, 44, done ? '#8dffc2' : '#ffe6a8');
     let tip = 'Hint: ' + pz.hint;
     if (this.save.settings.tutorial && !this.save.solved[this.level]) {
       if (pl && pl.recording) tip = 'Recording an echo (' + pl.recordLeft.toFixed(1) + 's): hold a keystone, then let go';
@@ -1782,7 +1896,7 @@ export class AuraSystem extends createSystem({
       else if (!pl && this.moves === 0 && this.lv.elems.some((e) => e.rot)) tip = 'Pinch the ringed mirror and swing it (mouse: drag; keys: Tab, arrows)';
     }
     const hint = this.msgT > 0 ? this.msg : this.save.solved[this.level] ? 'Sanctuary ' + Math.round(this.restore * 100) + '% restored - NEXT continues' : tip;
-    h.text(hint, 148, 23, this.msgT > 0 ? '#8dffc2' : '#b8c8ee');
+    h.text(hint, 156, 30, this.msgT > 0 ? '#8dffc2' : '#c8d6f8');
     let info = '';
     if (lv.targets.length) info += 'Gates: ' + lv.targets.map((t) => MASK_NAME[t.mask & 7]).join('  ') + '     ';
     if (pl) {
@@ -1792,7 +1906,7 @@ export class AuraSystem extends createSystem({
       if (pl.w.eras === 2) info += (pl.s.era === 1 ? 'PAST' : 'PRESENT') + ' (E)     ';
       if (pl.echoes.length) info += 'Echoes ' + pl.echoes.length + '     ';
     }
-    h.text(info + 'Moves ' + this.totalMoves(), 196, 21, '#9fc2ff');
+    h.text(info + 'Moves ' + this.totalMoves(), 210, 28, '#9fc2ff');
     h.commit();
   }
 
@@ -1801,11 +1915,15 @@ export class AuraSystem extends createSystem({
     const g = c.ctx;
     const W = c.w;
     const cx = W / 2;
+    const f = W / 384;
     g.clearRect(0, 0, W, W);
     g.fillStyle = 'rgba(6,5,20,0.7)';
     g.beginPath();
     g.arc(cx, cx, cx - 6, 0, Math.PI * 2);
     g.fill();
+    g.lineWidth = 5;
+    g.strokeStyle = 'rgba(180,140,255,0.7)';
+    g.stroke();
     const ring = (r: number, frac: number, col: string, w: number): void => {
       g.lineWidth = w;
       g.strokeStyle = 'rgba(120,140,200,0.25)';
@@ -1820,17 +1938,17 @@ export class AuraSystem extends createSystem({
     const awake = this.gates.filter((x, i) => this.lv && this.lv.targets[i] && x.awake).length;
     const gates = Math.max(1, this.lv ? this.lv.targets.length : 1);
     const pure = this.tr ? this.tr.ok.filter(Boolean).length / gates : 0;
-    ring(cx - 14, this.restore, '#ffd36b', 9);
-    ring(cx - 34, pure, '#6fe8ff', 7);
-    ring(cx - 52, awake / gates, '#b48cff', 7);
+    ring(cx - 16 * f, this.restore, '#ffd36b', 10 * f);
+    ring(cx - 38 * f, pure, '#6fe8ff', 8 * f);
+    ring(cx - 58 * f, awake / gates, '#b48cff', 8 * f);
     g.fillStyle = '#eef4ff';
     g.textAlign = 'center';
-    g.font = '700 46px ' + SERIF;
-    g.fillText(String(Math.round(this.restore * 100)) + '%', cx, cx + 6);
-    g.font = '600 20px ' + SERIF;
+    g.font = '700 ' + Math.round(54 * f) + 'px ' + SERIF;
+    g.fillText(String(Math.round(this.restore * 100)) + '%', cx, cx + 4 * f);
+    g.font = '700 ' + Math.round(22 * f) + 'px ' + SERIF;
     g.fillStyle = '#9fc2ff';
-    g.fillText('CHAPTER ' + (this.chapterIdx() + 1), cx, cx + 34);
-    g.fillText('PURITY ' + Math.round(pure * 100) + '%', cx, cx + 58);
+    g.fillText('CHAPTER ' + (this.chapterIdx() + 1), cx, cx + 38 * f);
+    g.fillText('PURITY ' + Math.round(pure * 100) + '%', cx, cx + 64 * f);
     c.commit();
   }
 
@@ -1838,40 +1956,40 @@ export class AuraSystem extends createSystem({
     const c = this.card;
     const g = c.ctx;
     const finished = this.save.solved.every(Boolean);
-    c.card('rgba(6,5,22,0.92)', finished ? '#ffd36b' : '#7fb8ff');
+    this.glass(c, finished ? '#ffd36b' : '#6fe8ff');
     g.textAlign = 'center';
     g.fillStyle = '#ffe9b0';
-    g.font = '700 ' + (finished ? 64 : 48) + 'px ' + SERIF;
-    g.fillText(finished ? 'AURA WEAVER' : 'AWAKENED', c.w / 2, 90);
-    g.font = 'italic 30px ' + SERIF;
-    g.fillStyle = '#cfe4ff';
-    g.fillText(finished ? 'I did not just play this world. I brought it to life.' : this.pz.name + ' - ' + this.totalMoves() + ' moves', c.w / 2, 140);
+    g.font = '700 ' + (finished ? 118 : 96) + 'px ' + SERIF;
+    g.fillText(finished ? 'AURA WEAVER' : 'AWAKENED', c.w / 2, 150);
+    g.font = 'italic 50px ' + SERIF;
+    g.fillStyle = '#e6f0ff';
+    g.fillText(finished ? 'I did not just play this world. I brought it to life.' : this.pz.name + '  -  ' + this.totalMoves() + ' moves', c.w / 2, 232);
     // the living signature: a rose curve built from how you played
     const hs = this.save.stats.hues;
     const tot = Math.max(1, hs.reduce((a, b) => a + b, 0));
     const cx = c.w / 2;
-    const cy = c.h * 0.66;
+    const cy = c.h * 0.6;
     const k = 3 + (this.save.stats.connections % 5);
     for (let m = 1; m < 8; m++) {
       if (!hs[m] && finished === false && m !== 1) continue;
       const share = (hs[m] || 1) / tot;
       g.strokeStyle = '#' + MASK_HEX[m].toString(16).padStart(6, '0');
-      g.globalAlpha = 0.35 + share * 1.6;
-      g.lineWidth = 2;
+      g.globalAlpha = 0.4 + share * 1.6;
+      g.lineWidth = 4;
       g.beginPath();
       for (let a = 0; a <= Math.PI * 2 + 0.05; a += 0.03) {
         const r = (70 + 40 * Math.sin(k * a + m)) * (0.5 + share * 2) * (0.7 + 0.05 * m);
-        const x = cx + Math.cos(a + m * 0.4) * Math.min(120, r);
-        const y = cy + Math.sin(a + m * 0.4) * Math.min(120, r) * 0.85;
+        const x = cx + Math.cos(a + m * 0.4) * Math.min(200, r * 1.6);
+        const y = cy + Math.sin(a + m * 0.4) * Math.min(200, r * 1.6) * 0.85;
         if (a === 0) g.moveTo(x, y);
         else g.lineTo(x, y);
       }
       g.stroke();
     }
     g.globalAlpha = 1;
-    g.font = '600 24px ' + SERIF;
-    g.fillStyle = '#9fc2ff';
-    g.fillText('Connections ' + this.save.stats.connections + '   Turns ' + this.save.stats.moves, c.w / 2, c.h - 30);
+    g.font = '700 42px ' + SERIF;
+    g.fillStyle = '#8fd8ff';
+    g.fillText('Connections ' + this.save.stats.connections + '     Turns ' + this.save.stats.moves, c.w / 2, c.h - 56);
     c.commit();
   }
 }
