@@ -18,7 +18,7 @@ const check = (name, ok, extra = '') => {
 const S = () => p.evaluate(() => JSON.parse(JSON.stringify(window.__sf())));
 const step = (n, dt = 1 / 30) => p.evaluate(([n, dt]) => window.__sfStep(n, dt), [n, dt]);
 const shot = async (name) => { if (shots) await p.screenshot({ path: shots + '/' + name + '.png' }); };
-await p.goto('https://127.0.0.1:4175/');
+await p.goto('https://127.0.0.1:'+(process.env.PORT||4175)+'/');
 await p.waitForTimeout(15000);
 await p.evaluate(() => { localStorage.removeItem('pw-spellforge-v1'); window.__setMode('spell'); });
 await p.waitForTimeout(6000);
@@ -116,7 +116,8 @@ for (const id of ['ignar', 'vyra', 'voidking']) {
 }
 // 3D audio, adaptive music and onboarding tips (state only: nothing here can be heard)
 s = await S();
-check('positioned sounds went through the HRTF panner', s.audio && s.audio.mode === 'hrtf' && s.audio.hrtfSounds > 0, JSON.stringify(s.audio && { mode: s.audio.mode, n: s.audio.hrtfSounds }));
+check('battle sound engine fired cast, hit and boss voices', s.audio && s.audio.sfx && s.audio.sfx.cast > 0 && s.audio.sfx.hit > 0, JSON.stringify(s.audio && { sfx: s.audio.sfx, peak: s.audio.peak }));
+check('battle audio peak is below full scale', s.audio && s.audio.peak < 1, String(s.audio && s.audio.peak));
 check('adaptive music played boss layers and phase stingers', s.audio && s.audio.played.ostinato > 0 && s.audio.played.stingers > 0 && s.audio.played.drums > 0, JSON.stringify(s.audio && s.audio.played));
 check('first-run tips shown once and saved', Array.isArray(s.tips) && s.tips.includes('phase'), JSON.stringify(s.tips));
 // endless

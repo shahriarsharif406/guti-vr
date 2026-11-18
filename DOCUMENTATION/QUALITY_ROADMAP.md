@@ -6,8 +6,8 @@ Scores are honest self-assessments from desktop software-rendered testing, not h
 | Area | Now | Next step | Priority |
 |---|---|---|---|
 | Spellforge core loop (cast, fuse, fight, boss) | 4 | real-hand tuning (needs a Quest) | P0 when hardware exists |
-| Spellforge art and VFX | 3-4 | boss silhouettes are simple low-poly; add glow, telegraph rings | P2 |
-| Spellforge audio | 3 | procedural only; positional pan added | P2 |
+| Spellforge art and VFX | 4 | the seven regular enemies are now layered creature models (src/sfcreatures.ts) with emissive eyes and cores, idle, wind-up and frozen states; boss silhouettes are still simple low-poly | P2 |
+| Spellforge audio | 4 | procedural battle engine (src/sfaudio.ts): per-element cast and impact, enemy telegraph and hit, shield clang, boss roar, UI clicks, intensifying music bed, limiter and 40-voice cap. Replaces the quiet shared voices that were inaudible at arena distance. Not listened to on real speakers or a headset | P2 |
 | GearShift puzzle design | 4 | grading added; more levels | P2 |
 | GearShift audio | 3-4 | needs human listening pass | P1 |
 | Aura Weaver | 4 | echoes / hint polish | P2 |

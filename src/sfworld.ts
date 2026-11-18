@@ -36,6 +36,7 @@ import {
 import type { BossDef, EnemyDef } from './sfdata';
 import { glowSprite, glowTexture } from './sfvfx';
 import { buildBossRig } from './sfboss';
+import { buildCreature } from './sfcreatures';
 import type { BossRig, RigState } from './sfboss';
 
 export type RealmId = 'sanctum' | 'ignar' | 'vyra' | 'voidking';
@@ -318,6 +319,17 @@ export function buildEnemy(def: EnemyDef): Rig {
     g.add(o);
     return o;
   };
+  const richTick = buildCreature(def.id, {
+    g,
+    M,
+    reg: (m) => {
+      mats.push(m);
+      return m;
+    },
+    glow,
+    spr: (hex, size, op) => glowSprite(hex, size * 0.5, op * 0.45),
+  });
+  if (richTick) return finish(g, mats, richTick);
   const col = new Color(def.hex);
   const accent = col.clone().lerp(new Color(0xffffff), 0.45).getHex();
   switch (def.id) {

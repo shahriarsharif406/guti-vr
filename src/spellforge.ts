@@ -22,7 +22,7 @@ import {
   Vector3,
   createSystem,
 } from '@iwsdk/core';
-import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, sfx, musicState, isMuted } from './audio.js';
+import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, musicState, isMuted } from './audio.js';
 import { modeState, spellRoom } from './mode.js';
 import { isFontReady, TextPanel } from './panel.js';
 import { SfOpt } from './ui-components.js';
@@ -203,6 +203,7 @@ export class SpellforgeSystem extends createSystem({
 
   // ================================================================== init
   init(): void {
+    sfAudio.unlockOnGesture();
     this.save = loadSfSave();
     this.applyAudioSettings();
     this.world.createTransformEntity(this.root);
@@ -736,7 +737,7 @@ export class SpellforgeSystem extends createSystem({
     if (id < 10) {
       const b = this.btns[id];
       if (!b || !b.shown || !b.act || this.screen === 'play') return;
-      sfx.select();
+      sfAudio.click();
       b.act();
       return;
     }
@@ -758,7 +759,7 @@ export class SpellforgeSystem extends createSystem({
 
   private attune(side: Side | 'both', e: Element): void {
     this.caster.attune(side, e);
-    sfx.select();
+    sfAudio.click();
     this.sigilHot = 0.5;
     const p = this.head.pos;
     this.sparks.burst(p[0] + (side === 'left' ? -0.45 : side === 'right' ? 0.45 : 0), p[1] - 0.2, p[2] - 0.5, ELEMENT_HEX[e], 12, 0.5, 0.04, 0.5);
@@ -823,7 +824,7 @@ export class SpellforgeSystem extends createSystem({
       const d = this.battle.boss.def;
       this.banner(d.name, d.title + '  -  ' + d.realm, 4);
       this.say(d.intro, 5);
-      sfx.bossRoar();
+      sfAudio.roar();
     } else if (kind === 'endless') this.banner('ENDLESS RIFT', 'Survive as many waves as you can', 3);
     else if (kind === 'tutorial') this.banner('FIRST AWAKENING', 'Learn the six elements', 3);
     else if (kind === 'trial') this.banner(this.trial?.name ?? 'TRIAL', this.trial?.desc ?? '', 4);
@@ -842,7 +843,7 @@ export class SpellforgeSystem extends createSystem({
     this.paused = true;
     this.mouseL = false;
     this.mouseR = false;
-    sfx.spellVoice(0, 0);
+    sfAudio.charge(0, 0);
     this.setScreen('pause');
   }
   private resume(): void {
@@ -851,7 +852,7 @@ export class SpellforgeSystem extends createSystem({
   }
   private quitRun(): void {
     this.persist();
-    sfx.spellVoice(0, 0);
+    sfAudio.charge(0, 0);
     this.battle = null;
     this.clearVisuals();
     this.paused = false;
@@ -936,7 +937,7 @@ export class SpellforgeSystem extends createSystem({
     if (this.tutStep !== from) return;
     this.tutStep++;
     this.tutT = 0;
-    sfx.spellUnlock();
+    sfAudio.unlock();
     if (this.tutStep >= TUTORIAL.length) this.finishTutorial(false);
   }
   private finishTutorial(skipped: boolean): void {
@@ -1044,7 +1045,7 @@ export class SpellforgeSystem extends createSystem({
       this.setScreen('title');
     } else {
       this.persist();
-      sfx.spellVoice(0, 0);
+      sfAudio.charge(0, 0);
       this.vignette.visible = false;
       this.world.scene.fog = this.prevFog as FogExp2 | null;
       this.card.mesh.visible = false;
@@ -1348,7 +1349,7 @@ export class SpellforgeSystem extends createSystem({
   private handleGestureEvents(g: GestureOut, b: Battle): void {
     for (const e of g.events) {
       if (e.t === 'shield') {
-        sfx.spellShield(e.on);
+        sfAudio.shield(e.on);
         if (e.on && this.tutStep === 5) this.advanceTutorial(5);
       } else if (e.t === 'down' && e.speed > 1.7 && this.handsXr) {
         b.stomp();
@@ -1366,7 +1367,7 @@ export class SpellforgeSystem extends createSystem({
       const origin: V3 = ev.origin;
       b.cast(ev.spell, ev.power, origin, dir);
       const el = ev.spell.elements[ev.spell.elements.length - 1];
-      sfAudio.at(origin, this.pan(dir[0] * 4), () => sfx.spellCast(ELIDX[el], ev.power));
+      sfAudio.cast(ELIDX[el], ev.power, origin[0]);
       this.sparks.burst(origin[0], origin[1], origin[2], ELEMENT_HEX[el], 22, 1.4, 0.05, 0.6);
       this.flashA = Math.min(0.5, this.flashA + 0.2);
       if (ev.spell.tier === 'fusion') this.trialSeen.add(ev.spell.id);
@@ -1383,11 +1384,11 @@ export class SpellforgeSystem extends createSystem({
       this.beamPower = ev.power;
     } else if (ev.t === 'beamEnd') this.beamUntil = 0;
     else if (ev.t === 'fizzle') {
-      sfx.spellFizzle();
+      sfAudio.fizzle();
       this.say(ev.why, 1.6);
       this.tip('fizzle');
     } else if (ev.t === 'discover') {
-      sfx.spellDiscover();
+      sfAudio.discover();
       const s = ev.spell;
       this.banner('FUSION DISCOVERED', s.name + '  -  ' + s.elements.map((e) => ELEMENT_NAME[e]).join(' + ') + '   (' + this.caster.discovered.size + ' / ' + FUSIONS.length + ')', 4.5);
       this.say(s.gesture, 6);
@@ -1395,7 +1396,7 @@ export class SpellforgeSystem extends createSystem({
       for (let i = 0; i < 3; i++) this.sparks.burst(p[0], p[1] + 0.3, p[2] - 1.2, ELEMENT_HEX[s.elements[i % 2]], 30, 1.8, 0.07, 1.4);
       this.persistSoon();
     } else if (ev.t === 'unlock') {
-      sfx.spellUnlock();
+      sfAudio.unlock();
       this.banner('ADVANCED SPELL UNLOCKED', ev.spell.name + ' - hold the full charge for a second, then release', 4.5);
       this.persistSoon();
     }
@@ -1411,7 +1412,7 @@ export class SpellforgeSystem extends createSystem({
     switch (e.t) {
       case 'hit': {
         const big = e.dmg > 40;
-        sfAudio.at(e.pos, this.pan(e.pos[0]), () => sfx.spellHit(ELIDX[e.element], big));
+        sfAudio.hit(ELIDX[e.element], big, e.pos[0]);
         sp.burst(e.pos[0], e.pos[1], e.pos[2], ELEMENT_HEX[e.element], big ? 26 : 12, big ? 2.2 : 1.3, 0.06, 0.6);
         if (e.target === 'boss') this.bossHit = 0.15;
         break;
@@ -1420,12 +1421,12 @@ export class SpellforgeSystem extends createSystem({
         sp.burst(e.pos[0], e.pos[1], e.pos[2], ELEMENT_HEX[e.element], 3, 1, 0.04, 0.35);
         break;
       case 'enemyDie': {
-        sfAudio.at(e.pos, this.pan(e.pos[0]), () => sfx.spellDie());
+        sfAudio.die(e.pos[0]);
         sp.burst(e.pos[0], e.pos[1], e.pos[2], ENEMIES[e.def] ? ENEMIES[e.def].hex : 0xffffff, 34, 2.2, 0.07, 0.9, 1);
         break;
       }
       case 'telegraph': {
-        sfAudio.at(e.pos, this.pan(e.pos[0]), () => sfx.spellTelegraph(e.kind.length));
+        sfAudio.telegraph(e.kind.length, e.pos[0]);
         this.say(this.telegraphText(e.who, e.kind, b, e.pos), 1.6);
         if (!this.save.tips.includes('shield')) this.tip('shield');
         break;
@@ -1433,36 +1434,35 @@ export class SpellforgeSystem extends createSystem({
       case 'spawn':
         break;
       case 'playerHurt':
-        sfx.spellHurt();
+        sfAudio.hurt();
         this.hurtFlash = this.save.settings.reducedIntensity ? 0.35 : 0.8;
         this.say(e.src + ' hits you', 1.2);
         if (b.player.hp < b.player.maxHp * 0.4) this.tip('lowhp');
         break;
       case 'blocked':
-        sfx.spellBlock();
+        sfAudio.block();
         this.shieldFlash = 0.35;
         sp.burst(e.pos[0], e.pos[1] + 1.1, e.pos[2], 0x8ab4ff, 14, 1.2, 0.05, 0.4);
         break;
       case 'reflect':
-        sfx.spellBlock();
+        sfAudio.block();
         this.shieldFlash = 0.5;
         this.say('Reflected!', 1.4);
         sp.burst(e.pos[0], e.pos[1] + 1.1, e.pos[2], 0xffffff, 30, 2, 0.06, 0.6);
         break;
       case 'stomp':
-        sfx.spellStomp();
+        sfAudio.stomp();
         this.say('Shockwave broken!', 1.4);
         sp.ring(0, 0.05, -0.8, 0.4, 0xffd98c, 28, 0.06, 0.9);
         break;
       case 'armorBreak':
-        sfAudio.at(e.pos, this.pan(e.pos[0]), () => sfx.spellHit(1, true));
+        sfAudio.hit(1, true, e.pos[0]);
         this.banner('ARMOUR SHATTERED', 'Hit him now', 2.5);
         sp.burst(e.pos[0], e.pos[1], e.pos[2], 0xbfeaff, 50, 3, 0.08, 1.2);
         break;
       case 'bossPhase': {
         const d = b.boss?.def;
-        if (b.boss) sfAudio.at(b.boss.pos, this.pan(b.boss.pos[0]), () => sfx.bossRoar());
-        else sfx.bossRoar();
+        sfAudio.roar(b.boss ? b.boss.pos[0] : 0);
         this.banner(e.name.toUpperCase(), d ? 'Phase ' + (e.phase + 1) + ' of ' + d.phases.length : '', 3.2);
         this.say(e.note, 6);
         if (e.phase === 1) this.tip('phase');
@@ -1474,7 +1474,7 @@ export class SpellforgeSystem extends createSystem({
         break;
       case 'barrier':
         this.say(e.on ? 'Her barrier is back. Overload the pylons with lightning.' : 'Barrier down. Strike her now!', 3.5);
-        sfx.spellBlock();
+        sfAudio.block();
         break;
       case 'absorb':
         this.say('He absorbs ' + ELEMENT_NAME[e.el] + '. Mix your elements.', 2.5);
@@ -1484,23 +1484,23 @@ export class SpellforgeSystem extends createSystem({
         this.banner('AETHER NOVA', 'Charge Aether in both hands to full, hold, then release', 5);
         this.caster.counts.aether = Math.max(this.caster.counts.aether, ADV_CASTS);
         this.caster.attune('both', 'aether');
-        sfx.spellUnlock();
+        sfAudio.unlock();
         break;
       case 'bossDie':
-        sfx.bossRoar();
-        sfx.spellWin();
+        sfAudio.roar();
+        sfAudio.win();
         this.banner(b.boss?.def.name + ' FALLS', b.boss?.def.realm ?? '', 4);
         if (this.bossVis) for (let i = 0; i < 5; i++) sp.burst(b.boss!.pos[0], b.boss!.pos[1] + 1.5, b.boss!.pos[2], b.boss!.def.hex, 50, 4, 0.09, 1.8);
         break;
       case 'wave':
         this.banner('WAVE ' + e.n, '', 2);
-        sfx.spellUnlock();
+        sfAudio.unlock();
         break;
       case 'heal':
         this.say('Healed ' + e.amount, 1.4);
         break;
       case 'bolt': {
-        sfAudio.at(e.pos, this.pan(e.pos[0]), () => sfx.spellHit(2, true));
+        sfAudio.hit(2, true, e.pos[0]);
         sp.burst(e.pos[0], e.pos[1] + 0.2, e.pos[2] - 0.5, 0xe0e8ff, 30, 2.4, 0.06, 0.5);
         this.flashLightning(e.from, e.pos);
         break;
@@ -1515,7 +1515,7 @@ export class SpellforgeSystem extends createSystem({
       case 'win':
         break;
       case 'lose':
-        sfx.spellLose();
+        sfAudio.lose();
         break;
       default:
         break;
@@ -1576,7 +1576,7 @@ export class SpellforgeSystem extends createSystem({
   private finishRun(b: Battle): void {
     this.resultWin = b.over === 'win';
     this.paused = true;
-    sfx.spellVoice(0, 0);
+    sfAudio.charge(0, 0);
     const st = this.save;
     st.accuracy.casts += b.stats.casts;
     st.accuracy.hits += b.stats.hits;
@@ -1624,7 +1624,7 @@ export class SpellforgeSystem extends createSystem({
     this.castBeam.visible = false;
     this.castBeamHit.visible = false;
     this.shield.visible = false;
-    sfx.spellVoice(0, 0);
+    sfAudio.charge(0, 0);
   }
   private ambientMenu(dt: number): void {
     // drifting motes in the sanctum behind the menu
@@ -1778,7 +1778,7 @@ export class SpellforgeSystem extends createSystem({
         v = this.makeArea(a);
         this.areaVis.set(a.id, v);
         this.root.add(v.g);
-        sfAudio.at(a.pos, this.pan(a.pos[0]), () => sfx.spellCast(ELIDX[a.spell.elements[a.spell.elements.length - 1]], 1.2));
+        sfAudio.cast(ELIDX[a.spell.elements[a.spell.elements.length - 1]], 1.2, a.pos[0]);
       }
       this.updateArea(v, a, t, live);
     }
@@ -2010,7 +2010,7 @@ export class SpellforgeSystem extends createSystem({
     const hex2 = ELEMENT_HEX[v.elements[1]];
     const L = this.frames[0];
     const R = this.frames[1];
-    sfx.spellVoice(v.active && v.mode !== 'none' ? Math.max(0.1, v.charge) : 0, ELIDX[v.elements[0]]);
+    sfAudio.charge(v.active && v.mode !== 'none' ? Math.max(0.1, v.charge) : 0, ELIDX[v.elements[0]]);
     const beamOn = this.beamUntil > this.time;
     this.castGroup.visible = v.active && v.mode !== 'none';
     this.castBeam.visible = beamOn;
@@ -2362,7 +2362,7 @@ export class SpellforgeSystem extends createSystem({
         proj: b ? b.pProj.length : 0,
         cam: [this.head.pos[0], this.head.pos[1], this.head.pos[2]],
         tut: this.tutStep,
-        audio: { ...spatialInfo(), music: { ...sfAudio.mix }, played: { ...sfAudio.played } },
+        audio: { ...spatialInfo(), music: { ...sfAudio.mix }, played: { ...sfAudio.played }, sfx: { ...sfAudio.sfxCount }, peak: sfAudio.peak() },
         tips: [...this.save.tips],
         handsXr: this.handsXr,
         view: this.view ? { mode: this.view.mode, charge: +this.view.charge.toFixed(2), size: +this.view.size.toFixed(2), spell: this.view.spell.id } : null,
@@ -2386,6 +2386,12 @@ export class SpellforgeSystem extends createSystem({
     w.__sfStep = (n: number, dt = 1 / 30) => {
       for (let i = 0; i < n; i++) this.tick(dt);
     };
+    w.__sfSpawn = (id: string, x = 0, z = ARENA_Z + 1.5) => {
+      if (!this.battle) return;
+      this.battle.enemies.length = 0;
+      this.battle.spawnEnemy(ENEMIES[id], [x, 0, z]);
+    };
+    w.__sfRoot = () => this.root;
     w.__sfBattle = () => this.battle;
     w.__sfCaster = () => this.caster;
     w.__sfLayout = () => this.btns.filter((b) => b.shown).map((b) => b.label);
