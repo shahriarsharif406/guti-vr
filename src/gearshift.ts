@@ -1492,9 +1492,8 @@ export class GearShiftSystem extends createSystem({
       const idx = this.items.indexOf(it);
       if (bestPeg >= 0 && this.place(idx, bestPeg)) {
         const p = this.lv.pegs[bestPeg];
-        sfx.clank(kindOf(it.def.parts[0].n), p.x / 0.6);
+        sfx.seat(kindOf(it.def.parts[0].n), p.x / 0.6);
         buzz(25);
-        sfx.crunch(kindOf(it.def.parts[0].n), p.x / 0.6);
         this.sparks.spray(p.x, BY + p.y, BZ + 0.05, 0, 1, 18, 1, 0.78, 0.35, 0.55);
         this.shake = Math.max(this.shake, 0.25);
       } else {

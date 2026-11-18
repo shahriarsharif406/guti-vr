@@ -22,6 +22,8 @@ function ac(): AudioContext | null {
 }
 
 let master: GainNode | null = null;
+let meter: AnalyserNode | null = null;
+const meterBuf = new Float32Array(2048);
 let sfxBus: GainNode | null = null;
 let masterVol = 0.9;
 let muted = false;
@@ -80,6 +82,9 @@ function dest(c: AudioContext): AudioNode {
     master.connect(comp);
     comp.connect(lim);
     lim.connect(c.destination);
+    meter = c.createAnalyser();
+    meter.fftSize = 2048;
+    lim.connect(meter);
   }
   return sfxBus as GainNode;
 }
@@ -219,11 +224,18 @@ function noise(c: AudioContext): AudioBuffer {
 /** one-shot voices alive right now; new ones are skipped above the cap so slow machines never overload the audio thread */
 let liveShots = 0;
 const MAX_SHOTS = 28;
-function track(src: AudioScheduledSourceNode): void {
+function track(src: AudioScheduledSourceNode, life = 1.5): void {
   liveShots++;
-  src.onended = () => {
+  let done = false;
+  const release = (): void => {
+    if (done) return;
+    done = true;
     liveShots = Math.max(0, liveShots - 1);
   };
+  src.onended = release;
+  // safety net: a source whose "ended" event never fires (suspended context, dropped node) must not keep a slot forever,
+  // otherwise one-shot sounds such as the gear tick would go silent after a while
+  window.setTimeout(release, (life + 0.5) * 1000);
 }
 
 function tone(
@@ -246,7 +258,7 @@ function tone(
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   o.connect(g);
   outTo(c, g);
-  track(o);
+  track(o, dur + delay);
   o.start(t0);
   o.stop(t0 + dur + 0.02);
 }
@@ -266,7 +278,7 @@ function burst(dur: number, vol: number, freq: number, q = 1): void {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   s.connect(f).connect(g);
   outTo(c, g);
-  track(s);
+  track(s, dur);
   s.start(t0);
   s.stop(t0 + dur + 0.02);
 }
@@ -318,7 +330,7 @@ function play(key: string, vol = 1, rate = 1, loop = false): boolean {
   g.gain.value = vol;
   s.connect(g);
   outTo(c, g);
-  track(s);
+  if (!loop) track(s, buf.duration / Math.max(0.1, rate)); // a looping voice never ends: it must not occupy a one-shot slot
   s.start();
   return true;
 }
@@ -339,7 +351,15 @@ const PROG: { bass: number; pad: number[] }[] = [
   { bass: 41, pad: [53, 57, 60, 64, 67] },
   { bass: 36, pad: [48, 55, 60, 64, 67] },
 ];
-const MELODY = [62, 65, 67, 69, 72, 74, 77]; // D minor pentatonic-ish, upper register
+const MELODY = [62, 65, 67, 69, 72, 74, 77];
+// Menu theme (D major colours: warm and welcoming): Dmaj9 - Bm9 - Gmaj7#11 - A6/9
+const MENU_PROG: { bass: number; pad: number[] }[] = [
+  { bass: 38, pad: [50, 57, 61, 64, 66] },
+  { bass: 35, pad: [47, 54, 57, 61, 64] },
+  { bass: 43, pad: [55, 59, 62, 66, 69] },
+  { bass: 45, pad: [57, 61, 64, 66, 71] },
+];
+const MENU_MELODY = [62, 64, 66, 69, 71, 74, 76]; // D minor pentatonic-ish, upper register
 // Aura Weaver: open, luminous D major colours that bloom as the sanctuary is restored
 const AURA_PROG: { bass: number; pad: number[] }[] = [
   { bass: 38, pad: [50, 54, 57, 61, 64] },
@@ -395,12 +415,62 @@ function out(c: AudioContext): AudioNode {
   return musicGain;
 }
 
-type Voice = 'pad' | 'piano' | 'bell' | 'sub' | 'box';
-function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: number, kind: Voice): void {
-  const dest = out(c);
+type Voice = 'pad' | 'piano' | 'bell' | 'sub' | 'box' | 'silk' | 'harp';
+function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: number, kind: Voice, pan = 0): void {
+  let dest: AudioNode = out(c);
+  if (pan !== 0 && c.createStereoPanner) {
+    const sp = c.createStereoPanner();
+    sp.pan.value = pan;
+    sp.connect(dest);
+    dest = sp;
+  }
   const g = c.createGain();
   g.connect(dest);
-  if (kind === 'pad') {
+  if (kind === 'silk') {
+    // soft menu pad: two detuned triangles + a sine an octave down through a slow lowpass. No saw edge, so nothing buzzes
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.Q.value = 0.4;
+    f.frequency.setValueAtTime(600, t);
+    f.frequency.linearRampToValueAtTime(1500, t + dur * 0.55);
+    f.frequency.linearRampToValueAtTime(700, t + dur);
+    f.connect(g);
+    for (const [type, det, mul] of [['triangle', -5, 1], ['triangle', 6, 1], ['sine', 0, 0.5]] as [OscillatorType, number, number][]) {
+      const o = c.createOscillator();
+      o.type = type;
+      o.frequency.value = freq * mul;
+      o.detune.value = det;
+      o.connect(f);
+      o.start(t);
+      o.stop(t + dur + 0.1);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + Math.min(2.2, dur * 0.4));
+    g.gain.setValueAtTime(vol, t + dur * 0.6);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  } else if (kind === 'harp') {
+    // plucked harp: bright attack that dulls fast, a long soft tail
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(5200, t);
+    f.frequency.exponentialRampToValueAtTime(900, t + 0.35);
+    f.connect(g);
+    for (const [mul, a] of [[1, 1], [2, 0.32], [3, 0.12]] as [number, number][]) {
+      const o = c.createOscillator();
+      const og = c.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq * mul;
+      og.gain.value = a;
+      o.connect(og);
+      og.connect(f);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(vol * 0.35, t + 0.18);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  } else if (kind === 'pad') {
     // three detuned saws through a slow lowpass: a warm string section
     const f = c.createBiquadFilter();
     f.type = 'lowpass';
@@ -493,11 +563,19 @@ function schedule(): void {
     return;
   }
   const col = colourFor();
+  if (col === 'gears' || col === 'play') {
+    // the workshop score belongs to the three-game menu only: inside GearShift (and the older games) it stays silent so it
+    // cannot collide with the gear-mesh and tick sounds. Aura and Spellforge keep their own scores.
+    if (musicGain) musicGain.gain.setTargetAtTime(0, c.currentTime, 0.25);
+    curColour = '';
+    nextT = c.currentTime + 0.2;
+    return;
+  }
   if (col !== curColour) {
     curColour = col;
     nextT = Math.max(nextT, c.currentTime + 0.15);
   }
-  if (musicGain && musicOn) musicGain.gain.setTargetAtTime(musicVol * (curColour === 'spell' ? 0.8 : 0.8 - 0.5 * Math.max(musicState.tension, musicState.jam)), c.currentTime, 0.4);
+  if (musicGain && musicOn) musicGain.gain.setTargetAtTime(musicVol * (curColour === 'spell' ? 0.8 : 0.8 - 0.5 * Math.max(musicState.tension, musicState.jam)), c.currentTime, 0.8);
   const stepDur = 60 / BPM / 2; // eighth notes; 8 per bar (4 beats)
   while (nextT < c.currentTime + 0.7) {
     const s = step % 8;
@@ -518,6 +596,29 @@ function schedule(): void {
         melodyIdx = Math.max(0, Math.min(SPELL_MELODY.length - 1, melodyIdx + Math.floor(Math.random() * 3) - 1));
         mNote(c, nextT, midi(SPELL_MELODY[melodyIdx]), 2.6, 0.026 + 0.01 * boss, 'bell');
       }
+      nextT += stepDur;
+      step += 1;
+      if (step % 8 === 0) bar += 1;
+      continue;
+    }
+    if (col === 'menu') {
+      // The welcome theme: Dmaj9 - Bm9 - Gmaj7#11 - A6/9. A silk pad, a sine bass, a flowing harp arpeggio, sparse glass bells.
+      const mc = MENU_PROG[Math.floor(bar) % 4];
+      if (s === 0) {
+        for (const n of mc.pad) mNote(c, nextT, midi(n), stepDur * 8.6, 0.016, 'silk', (n % 5) / 4 - 0.5);
+        mNote(c, nextT, midi(mc.bass), stepDur * 7.5, 0.085, 'sub');
+        if (Math.floor(bar) % 2 === 1) mNote(c, nextT + stepDur * 4, midi(mc.bass + 7), stepDur * 3.5, 0.045, 'sub');
+      }
+      const harpPat = [0, 1, 2, 3, 4, 3, 2, 1];
+      if (Math.random() < 0.86) {
+        const n = mc.pad[harpPat[s] % mc.pad.length] + (s % 4 === 3 ? 24 : 12);
+        mNote(c, nextT, midi(n), 2.6, 0.04, 'harp', Math.sin((s + bar * 3) * 0.9) * 0.55);
+      }
+      if ((s === 0 || s === 4) && Math.random() < 0.5) {
+        melodyIdx = Math.max(0, Math.min(MENU_MELODY.length - 1, melodyIdx + Math.floor(Math.random() * 3) - 1));
+        mNote(c, nextT + (Math.random() < 0.4 ? stepDur : 0), midi(MENU_MELODY[melodyIdx] + 12), 4, 0.032, 'bell', 0.25);
+      }
+      if (s === 2 && Math.floor(bar) % 2 === 0) mNote(c, nextT, midi(mc.pad[4] + 24), 5, 0.012, 'bell', -0.4);
       nextT += stepDur;
       step += 1;
       if (step % 8 === 0) bar += 1;
@@ -714,7 +815,7 @@ export const sfx = {
   tickTock(tock: boolean, rpm: number, pan = 0): void {
     withPan(pan, () => {
       const f = (tock ? 1500 : 2100) * (0.9 + rpm * 0.3);
-      tone(f, 0.035, 0.09, 'square', f * 0.6);
+      tone(f, 0.035, 0.07, 'triangle', f * 0.6);
       burst(0.02, 0.05, f * 1.6, 2);
       play('metal', 0.05, (tock ? 1.3 : 1.8) + rpm * 0.3);
     });
@@ -884,12 +985,24 @@ export const sfx = {
   },
   /** ignition lever slammed home: a deep crank, the engine catching and a steam sigh. Plays once. */
   ignite(): void {
-    tone(48, 0.55, 0.22, 'sawtooth', 120);
-    tone(96, 0.5, 0.1, 'triangle', 190, 0.05);
-    burst(0.5, 0.16, 420, 1.4);
-    tone(70, 0.28, 0.16, 'sine', 45, 0.0);
-    tone(180, 0.7, 0.05, 'sine', 360, 0.28);
-    burst(0.9, 0.07, 3600, 0.6);
+    // starter crank: three low thumps, then the mechanism catches and rises into a smooth hum
+    for (let i = 0; i < 3; i++) tone(64 + i * 9, 0.13, 0.17, 'triangle', 40, i * 0.13);
+    tone(72, 0.85, 0.17, 'triangle', 170, 0.42);
+    tone(144, 0.85, 0.05, 'sawtooth', 340, 0.42);
+    tone(420, 0.6, 0.03, 'sine', 900, 0.5);
+    burst(0.45, 0.1, 420, 1.4);
+    burst(0.9, 0.06, 3600, 0.6);
+  },
+  /** a gear is seated: a crisp double "tick-tick" (a bright click, then a slightly lower one) over a soft thud */
+  seat(kind: 'brass' | 'bronze' | 'copper' | 'iron' = 'bronze', pan = 0): void {
+    const f = kind === 'iron' ? 1500 : kind === 'copper' ? 1900 : 2300;
+    withPan(pan, () => {
+      tone(f, 0.03, 0.1, 'triangle', f * 0.55);
+      burst(0.018, 0.09, f * 1.4, 2.5);
+      tone(f * 0.78, 0.035, 0.09, 'triangle', f * 0.42, 0.075);
+      burst(0.018, 0.07, f * 1.1, 2.5);
+      tone(110, 0.12, 0.1, 'sine', 70, 0.0);
+    });
   },
   /** ratchet click while a lever is dragged; up = release click */
   leverTick(up = false): void {
@@ -1152,4 +1265,28 @@ let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFi
 export function audioCore(): { ctx: AudioContext; out: AudioNode } | null {
   const c = ac();
   return c ? { ctx: c, out: mainOut(c) } : null;
+}
+
+/** Debug/test hook: output level (peak and RMS of the master after the limiter), music gain and live voice count. */
+if (typeof window !== 'undefined') {
+  // the welcome theme starts on the first touch/click/key anywhere, not only after a card is pressed
+  const first = (): void => {
+    sfx.ambience();
+    for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.removeEventListener(ev, first);
+  };
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, first);
+  (window as unknown as { __sfx?: unknown }).__sfx = sfx;
+  (window as unknown as { __audio?: () => object }).__audio = () => {
+    let peak = 0;
+    let sum = 0;
+    if (meter) {
+      meter.getFloatTimeDomainData(meterBuf);
+      for (let i = 0; i < meterBuf.length; i++) {
+        const a = Math.abs(meterBuf[i]);
+        if (a > peak) peak = a;
+        sum += meterBuf[i] * meterBuf[i];
+      }
+    }
+    return { state: ctx?.state ?? 'none', musicGain: musicGain ? musicGain.gain.value : -1, colour: curColour, liveShots, peak, rms: Math.sqrt(sum / meterBuf.length), mode: modeState.mode };
+  };
 }
