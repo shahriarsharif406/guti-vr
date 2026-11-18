@@ -41,6 +41,7 @@ import { SparkField } from './sparks.js';
 import { readPinchPoint } from './hand.js';
 import { askMentor } from './mentor.js';
 import { modeState } from './mode.js';
+import { gsStage } from './gsstage.js';
 import { isFontReady, TextPanel } from './panel.js';
 import { GearOpt } from './ui-components.js';
 
@@ -1479,9 +1480,10 @@ export class GearShiftSystem extends createSystem({
   // ---------------------------------------------------------------- frame
   update(delta: number): void {
     if (this.optCooldown > 0) this.optCooldown -= delta;
-    if (modeState.mode !== this.lastMode) {
-      this.lastMode = modeState.mode;
-      const on = modeState.mode === 'gears';
+    const benchKey = modeState.mode + (gsStage.stage === 'bench' ? '' : '|race');
+    if (benchKey !== this.lastMode) {
+      this.lastMode = benchKey as typeof this.lastMode;
+      const on = modeState.mode === 'gears' && gsStage.stage === 'bench';
       this.setVisible(on);
       if (!on) {
         sfx.whirr(0);
@@ -1489,7 +1491,7 @@ export class GearShiftSystem extends createSystem({
       }
       if (on) this.loadLevel(Math.min(this.unlocked, this.level));
     }
-    if (modeState.mode !== 'gears') return;
+    if (modeState.mode !== 'gears' || gsStage.stage !== 'bench') return;
     if (isFontReady() !== this.fontWasReady) {
       this.fontWasReady = isFontReady();
       this.hudDirty = true;

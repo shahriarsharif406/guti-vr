@@ -9,6 +9,7 @@ import { KiteCraftSystem } from './kitecraft.js';
 import { MarbleRunSystem } from './marblerun.js';
 import { PaperPlaneSystem } from './paperplane.js';
 import { GearShiftSystem } from './gearshift.js';
+import { RaceSystem } from './race.js';
 import { AuraSystem } from './aura.js';
 import { SpellforgeSystem } from './spellforge.js';
 import { LattimSystem } from './lattim.js';
@@ -29,6 +30,7 @@ World.create(
   world.registerSystem(MarbleRunSystem);
   world.registerSystem(PaperPlaneSystem);
   world.registerSystem(GearShiftSystem);
+  world.registerSystem(RaceSystem);
   world.registerSystem(AuraSystem);
   world.registerSystem(SpellforgeSystem);
   const boot = document.getElementById('boot');

@@ -75,3 +75,8 @@ export const AuraOpt = createComponent('AuraOpt', {
 export const SfOpt = createComponent('SfOpt', {
   id: { type: Types.Int8, default: 0 },
 });
+
+/** A pressable option in GearShift: Neon Overdrive (menu, results, bench entry). */
+export const RaceOpt = createComponent('RaceOpt', {
+  id: { type: Types.Int8, default: 0 },
+});
