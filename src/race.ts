@@ -12,7 +12,9 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  MeshPhysicalMaterial,
   BufferGeometry,
+  Float32BufferAttribute,
   SphereGeometry,
   TorusGeometry,
   Pressed,
@@ -94,13 +96,80 @@ interface Anchored {
   tilt: number;
 }
 
+/** Lofted car shell: stations along z (nose to tail) of half-width, roof height and floor height, each a rounded-square ring. */
+function loftBody(): BufferGeometry {
+  const S: number[][] = [
+    [-2.62, 0.3, 0.4, 0.3],
+    [-2.3, 0.58, 0.47, 0.28],
+    [-1.8, 0.82, 0.55, 0.27],
+    [-1.1, 0.95, 0.62, 0.27],
+    [-0.3, 0.98, 0.7, 0.28],
+    [0.5, 0.98, 0.74, 0.28],
+    [1.3, 1.02, 0.84, 0.3],
+    [1.95, 0.92, 0.82, 0.32],
+    [2.4, 0.72, 0.74, 0.34],
+  ];
+  const cr = (a: number, b: number, c: number, d: number, t: number): number => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
+  const rings: number[][] = [];
+  for (let i = 0; i < S.length - 1; i++) {
+    const p0 = S[Math.max(0, i - 1)];
+    const p1 = S[i];
+    const p2 = S[i + 1];
+    const p3 = S[Math.min(S.length - 1, i + 2)];
+    for (let k = 0; k < 6; k++) {
+      const t = k / 6;
+      rings.push([0, 1, 2, 3].map((c) => cr(p0[c], p1[c], p2[c], p3[c], t)));
+    }
+  }
+  rings.push(S[S.length - 1].slice());
+  const N = 28;
+  const pos: number[] = [];
+  for (const [z, hw, top, bot] of rings) {
+    const cy = (top + bot) / 2;
+    const hh = (top - bot) / 2;
+    for (let j = 0; j < N; j++) {
+      const a = (j / N) * Math.PI * 2;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const e = 2 / 2.8; // superellipse: rounded-square section
+      pos.push(Math.sign(c) * Math.pow(Math.abs(c), e) * hw, cy + Math.sign(s) * Math.pow(Math.abs(s), e) * hh, z);
+    }
+  }
+  const idx: number[] = [];
+  for (let r = 0; r < rings.length - 1; r++) {
+    for (let j = 0; j < N; j++) {
+      const a = r * N + j;
+      const b = r * N + ((j + 1) % N);
+      idx.push(a, a + N, b, b, a + N, b + N);
+    }
+  }
+  const cap = (ring: number, flip: boolean): void => {
+    const [z, , top, bot] = rings[ring];
+    const ci = pos.length / 3;
+    pos.push(0, (top + bot) / 2, z);
+    for (let j = 0; j < N; j++) {
+      const a = ring * N + j;
+      const b = ring * N + ((j + 1) % N);
+      if (flip) idx.push(ci, a, b);
+      else idx.push(ci, b, a);
+    }
+  };
+  cap(0, false);
+  cap(rings.length - 1, true);
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export class RaceSystem extends createSystem({
   opts: { required: [RaceOpt, Pressed] },
 }) {
   private rw!: RaceWorld;
   private carGroup = new Group();
   private wheels: Mesh[] = [];
-  private bodyMat!: MeshStandardMaterial;
+  private bodyMat!: MeshPhysicalMaterial;
   private glowMat!: MeshBasicMaterial;
   private cabin!: Group;
   private sim: RaceSim | null = null;
@@ -281,7 +350,7 @@ export class RaceSystem extends createSystem({
   private buildCar(): void {
     const g = this.carGroup;
     const spec = CARS[0];
-    this.bodyMat = new MeshStandardMaterial({ color: spec.paint, metalness: 0.85, roughness: 0.28, emissive: spec.accent, emissiveIntensity: 0.12 });
+    this.bodyMat = new MeshPhysicalMaterial({ color: spec.paint, metalness: 0.7, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08, emissive: spec.accent, emissiveIntensity: 0.1 });
     this.glowMat = new MeshBasicMaterial({ color: spec.accent, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false });
     const dark = new MeshStandardMaterial({ color: 0x05060c, metalness: 0.9, roughness: 0.2 });
     const glass = new MeshStandardMaterial({ color: 0x0a1a2c, metalness: 1, roughness: 0.05, emissive: 0x0a2a44, emissiveIntensity: 0.4 });
@@ -296,27 +365,37 @@ export class RaceSystem extends createSystem({
     };
     const ball = new SphereGeometry(1, 28, 18);
     const box = new BoxGeometry(1, 1, 1);
-    // smooth body: a low, wide ellipsoid tub with a pointed nose and swollen rear haunches
-    add(ball, this.bodyMat, 0, 0.5, 0.1, 0.98, 0.3, 2.2);
-    add(ball, this.bodyMat, 0, 0.42, -1.75, 0.62, 0.17, 1.25, 0.1); // nose
-    add(ball, this.bodyMat, -0.72, 0.62, 1.15, 0.38, 0.28, 0.95); // left haunch
-    add(ball, this.bodyMat, 0.72, 0.62, 1.15, 0.38, 0.28, 0.95); // right haunch
-    add(ball, glass, 0, 0.82, 0.05, 0.56, 0.26, 0.95, -0.06); // canopy
-    add(box, dark, 0, 0.3, -2.62, 1.5, 0.05, 0.34); // front splitter
+    // body: one lofted shell (rounded-square cross-sections that change along the car), then canopy, wing and details
+    add(loftBody(), this.bodyMat, 0, 0, 0);
+    const glassClear = new MeshStandardMaterial({ color: 0x0b1c30, metalness: 0.9, roughness: 0.06, transparent: true, opacity: 0.62, emissive: 0x0a2a44, emissiveIntensity: 0.35 });
+    add(ball, glassClear, 0, 0.84, 0.15, 0.5, 0.24, 1.0, -0.07); // glass canopy
+    add(ball, dark, 0, 0.8, 0.28, 0.13, 0.13, 0.13); // driver helmet
+    add(box, this.bodyMat, 0, 1.0, 0.15, 0.09, 0.03, 0.8); // roof spine
+    add(box, dark, 0, 0.3, -2.62, 1.55, 0.05, 0.36); // front splitter
     add(box, dark, 0, 0.3, 2.3, 1.5, 0.12, 0.45); // diffuser
-    add(box, dark, 0, 1.02, 2.12, 1.9, 0.05, 0.5); // wing
-    add(box, dark, -0.95, 0.92, 2.12, 0.05, 0.3, 0.55); // end plates
-    add(box, dark, 0.95, 0.92, 2.12, 0.05, 0.3, 0.55);
-    add(box, dark, -0.4, 0.8, 2.1, 0.05, 0.38, 0.12); // wing struts
-    add(box, dark, 0.4, 0.8, 2.1, 0.05, 0.38, 0.12);
-    add(box, tail, 0, 0.74, 2.38, 1.5, 0.06, 0.04); // tail light bar
-    add(box, this.glowMat, -0.5, 0.52, -2.3, 0.4, 0.04, 0.05); // headlight blades
-    add(box, this.glowMat, 0.5, 0.52, -2.3, 0.4, 0.04, 0.05);
-    add(box, this.glowMat, 0, 0.18, 0, 1.9, 0.03, 4.4); // underglow
-    add(box, this.glowMat, -0.99, 0.5, 0.1, 0.04, 0.04, 3.4); // side light lines
-    add(box, this.glowMat, 0.99, 0.5, 0.1, 0.04, 0.04, 3.4);
-    add(box, dark, -0.9, 0.46, 0.55, 0.12, 0.16, 0.7); // side intakes
-    add(box, dark, 0.9, 0.46, 0.55, 0.12, 0.16, 0.7);
+    for (const fx of [-0.45, -0.15, 0.15, 0.45]) add(box, dark, fx, 0.33, 2.36, 0.025, 0.14, 0.4); // diffuser fins
+    add(box, dark, 0, 1.06, 2.12, 1.9, 0.05, 0.5); // rear wing
+    add(box, dark, -0.95, 0.96, 2.12, 0.05, 0.32, 0.55); // end plates
+    add(box, dark, 0.95, 0.96, 2.12, 0.05, 0.32, 0.55);
+    add(box, dark, -0.4, 0.84, 2.1, 0.05, 0.38, 0.12); // wing struts
+    add(box, dark, 0.4, 0.84, 2.1, 0.05, 0.38, 0.12);
+    add(box, tail, 0, 0.74, 2.42, 1.3, 0.05, 0.03); // tail light bar
+    add(box, this.glowMat, -0.5, 0.54, -2.34, 0.38, 0.035, 0.05); // headlight blades
+    add(box, this.glowMat, 0.5, 0.54, -2.34, 0.38, 0.035, 0.05);
+    add(box, this.glowMat, 0, 0.16, 0, 1.9, 0.03, 4.4); // underglow
+    add(box, this.glowMat, -0.99, 0.46, 0.1, 0.03, 0.03, 2.2); // side light lines
+    add(box, this.glowMat, 0.99, 0.46, 0.1, 0.03, 0.03, 2.2);
+    add(box, dark, -0.97, 0.5, 0.55, 0.1, 0.16, 0.7); // side intakes
+    add(box, dark, 0.97, 0.5, 0.55, 0.1, 0.16, 0.7);
+    for (const sx of [-1, 1]) {
+      add(box, dark, sx * 0.66, 0.82, -0.75, 0.16, 0.07, 0.1); // mirrors
+      add(box, dark, sx * 0.66, 0.74, -0.7, 0.03, 0.1, 0.03);
+    }
+    // dark wheel-arch liners sit just behind each tyre so the tyres read as set into the body
+    const archGeo = new CylinderGeometry(0.46, 0.46, 0.36, 24);
+    archGeo.rotateZ(Math.PI / 2);
+    for (const [x, z] of [[-0.95, -1.45], [0.95, -1.45], [-1.0, 1.5], [1.0, 1.5]] as [number, number][]) add(archGeo, dark, x, 0.4, z, 1, 0.9, 1);
+    const steel = new MeshStandardMaterial({ color: 0x9aa3ad, metalness: 1, roughness: 0.3 });
     const tyre = new CylinderGeometry(0.36, 0.36, 0.34, 24);
     tyre.rotateZ(Math.PI / 2);
     const rimGeo = new TorusGeometry(0.24, 0.025, 8, 24);
@@ -327,9 +406,19 @@ export class RaceSystem extends createSystem({
       const rim = new Mesh(rimGeo, this.glowMat);
       rim.position.set(Math.sign(x) * 0.18, 0, 0);
       wm.add(rim);
-      const spoke = new Mesh(new BoxGeometry(0.02, 0.44, 0.04), this.glowMat);
-      spoke.position.set(Math.sign(x) * 0.18, 0, 0);
-      wm.add(spoke);
+      for (let q = 0; q < 5; q++) {
+        const spoke = new Mesh(new BoxGeometry(0.018, 0.46, 0.05), this.glowMat);
+        spoke.position.set(Math.sign(x) * 0.18, 0, 0);
+        spoke.rotation.x = (q * Math.PI) / 5;
+        wm.add(spoke);
+      }
+      const disc = new Mesh(new CylinderGeometry(0.17, 0.17, 0.02, 20), steel);
+      disc.rotation.z = Math.PI / 2;
+      disc.position.set(Math.sign(x) * 0.12, 0, 0);
+      wm.add(disc);
+      const caliper = new Mesh(new BoxGeometry(0.05, 0.12, 0.09), tail);
+      caliper.position.set(Math.sign(x) * 0.12, 0.17, 0);
+      wm.add(caliper);
     }
     // cockpit dash visible only in first-person
     this.cabin = new Group();
