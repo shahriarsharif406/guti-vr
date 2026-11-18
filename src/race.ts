@@ -12,7 +12,9 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  PlaneGeometry,
+  BufferGeometry,
+  SphereGeometry,
+  TorusGeometry,
   Pressed,
   Quaternion,
   RayInteractable,
@@ -284,33 +286,50 @@ export class RaceSystem extends createSystem({
     const dark = new MeshStandardMaterial({ color: 0x05060c, metalness: 0.9, roughness: 0.2 });
     const glass = new MeshStandardMaterial({ color: 0x0a1a2c, metalness: 1, roughness: 0.05, emissive: 0x0a2a44, emissiveIntensity: 0.4 });
     const tail = new MeshBasicMaterial({ color: NEON.red });
-    const add = (geo: BoxGeometry | CylinderGeometry, mat: MeshStandardMaterial | MeshBasicMaterial, x: number, y: number, z: number, rx = 0, rz = 0): Mesh => {
+    const add = (geo: BufferGeometry, mat: MeshStandardMaterial | MeshBasicMaterial, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, rx = 0): Mesh => {
       const m = new Mesh(geo, mat);
       m.position.set(x, y, z);
-      m.rotation.set(rx, 0, rz);
+      m.scale.set(sx, sy, sz);
+      m.rotation.x = rx;
       g.add(m);
       return m;
     };
-    add(new BoxGeometry(1.9, 0.34, 4.3), this.bodyMat, 0, 0.42, 0); // tub
-    add(new BoxGeometry(1.55, 0.22, 1.5), this.bodyMat, 0, 0.36, -2.0, -0.12); // nose wedge
-    add(new BoxGeometry(1.3, 0.4, 1.7), glass, 0, 0.78, 0.15, 0.04); // canopy
-    add(new BoxGeometry(1.0, 0.1, 0.9), dark, 0, 0.62, 1.55); // engine cover
-    add(new BoxGeometry(2.0, 0.07, 0.5), dark, 0, 0.98, 2.15); // wing
-    add(new BoxGeometry(0.07, 0.3, 0.4), dark, -0.7, 0.8, 2.1);
-    add(new BoxGeometry(0.07, 0.3, 0.4), dark, 0.7, 0.8, 2.1);
-    add(new BoxGeometry(1.6, 0.06, 0.05), tail, 0, 0.6, 2.18); // tail bar
-    add(new BoxGeometry(1.9, 0.04, 4.3), this.glowMat, 0, 0.2, 0); // underglow strip
-    add(new BoxGeometry(0.05, 0.05, 3.2), this.glowMat, -0.96, 0.46, 0);
-    add(new BoxGeometry(0.05, 0.05, 3.2), this.glowMat, 0.96, 0.46, 0);
-    const wheelGeo = new CylinderGeometry(0.34, 0.34, 0.3, 20);
-    wheelGeo.rotateZ(Math.PI / 2);
-    for (const [x, z] of [[-0.98, -1.4], [0.98, -1.4], [-1.0, 1.4], [1.0, 1.4]]) {
-      const wm = add(wheelGeo as unknown as CylinderGeometry, dark, x, 0.34, z);
+    const ball = new SphereGeometry(1, 28, 18);
+    const box = new BoxGeometry(1, 1, 1);
+    // smooth body: a low, wide ellipsoid tub with a pointed nose and swollen rear haunches
+    add(ball, this.bodyMat, 0, 0.5, 0.1, 0.98, 0.3, 2.2);
+    add(ball, this.bodyMat, 0, 0.42, -1.75, 0.62, 0.17, 1.25, 0.1); // nose
+    add(ball, this.bodyMat, -0.72, 0.62, 1.15, 0.38, 0.28, 0.95); // left haunch
+    add(ball, this.bodyMat, 0.72, 0.62, 1.15, 0.38, 0.28, 0.95); // right haunch
+    add(ball, glass, 0, 0.82, 0.05, 0.56, 0.26, 0.95, -0.06); // canopy
+    add(box, dark, 0, 0.3, -2.62, 1.5, 0.05, 0.34); // front splitter
+    add(box, dark, 0, 0.3, 2.3, 1.5, 0.12, 0.45); // diffuser
+    add(box, dark, 0, 1.02, 2.12, 1.9, 0.05, 0.5); // wing
+    add(box, dark, -0.95, 0.92, 2.12, 0.05, 0.3, 0.55); // end plates
+    add(box, dark, 0.95, 0.92, 2.12, 0.05, 0.3, 0.55);
+    add(box, dark, -0.4, 0.8, 2.1, 0.05, 0.38, 0.12); // wing struts
+    add(box, dark, 0.4, 0.8, 2.1, 0.05, 0.38, 0.12);
+    add(box, tail, 0, 0.74, 2.38, 1.5, 0.06, 0.04); // tail light bar
+    add(box, this.glowMat, -0.5, 0.52, -2.3, 0.4, 0.04, 0.05); // headlight blades
+    add(box, this.glowMat, 0.5, 0.52, -2.3, 0.4, 0.04, 0.05);
+    add(box, this.glowMat, 0, 0.18, 0, 1.9, 0.03, 4.4); // underglow
+    add(box, this.glowMat, -0.99, 0.5, 0.1, 0.04, 0.04, 3.4); // side light lines
+    add(box, this.glowMat, 0.99, 0.5, 0.1, 0.04, 0.04, 3.4);
+    add(box, dark, -0.9, 0.46, 0.55, 0.12, 0.16, 0.7); // side intakes
+    add(box, dark, 0.9, 0.46, 0.55, 0.12, 0.16, 0.7);
+    const tyre = new CylinderGeometry(0.36, 0.36, 0.34, 24);
+    tyre.rotateZ(Math.PI / 2);
+    const rimGeo = new TorusGeometry(0.24, 0.025, 8, 24);
+    rimGeo.rotateY(Math.PI / 2);
+    for (const [x, z, k] of [[-1.0, -1.45, 0.95], [1.0, -1.45, 0.95], [-1.05, 1.5, 1.05], [1.05, 1.5, 1.05]] as [number, number, number][]) {
+      const wm = add(tyre, dark, x, 0.36 * k, z, 1, k, k);
       this.wheels.push(wm);
-      const rim = new Mesh(new PlaneGeometry(0.4, 0.4), this.glowMat);
-      rim.position.set(Math.sign(x) * 0.16, 0, 0);
-      rim.rotation.y = Math.sign(x) * Math.PI / 2;
+      const rim = new Mesh(rimGeo, this.glowMat);
+      rim.position.set(Math.sign(x) * 0.18, 0, 0);
       wm.add(rim);
+      const spoke = new Mesh(new BoxGeometry(0.02, 0.44, 0.04), this.glowMat);
+      spoke.position.set(Math.sign(x) * 0.18, 0, 0);
+      wm.add(spoke);
     }
     // cockpit dash visible only in first-person
     this.cabin = new Group();
