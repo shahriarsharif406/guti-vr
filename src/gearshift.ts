@@ -1555,6 +1555,7 @@ export class GearShiftSystem extends createSystem({
         l.slammed = true;
         this.shake = Math.max(this.shake, 0.7);
         sfx.lever();
+        if (l === this.master) sfx.ignite();
         buzz(40);
       } else if (l.pos < 0.5) l.slammed = false;
       l.g.position.y = BY + l.top - l.pos * TRAVEL;

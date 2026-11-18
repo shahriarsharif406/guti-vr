@@ -216,6 +216,16 @@ function noise(c: AudioContext): AudioBuffer {
   return noiseBuf;
 }
 
+/** one-shot voices alive right now; new ones are skipped above the cap so slow machines never overload the audio thread */
+let liveShots = 0;
+const MAX_SHOTS = 28;
+function track(src: AudioScheduledSourceNode): void {
+  liveShots++;
+  src.onended = () => {
+    liveShots = Math.max(0, liveShots - 1);
+  };
+}
+
 function tone(
   freq: number,
   dur: number,
@@ -225,7 +235,7 @@ function tone(
   delay = 0,
 ): void {
   const c = ac();
-  if (!c) return;
+  if (!c || liveShots > MAX_SHOTS) return;
   const t0 = c.currentTime + delay;
   const o = c.createOscillator();
   const g = c.createGain();
@@ -236,13 +246,14 @@ function tone(
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   o.connect(g);
   outTo(c, g);
+  track(o);
   o.start(t0);
   o.stop(t0 + dur + 0.02);
 }
 
 function burst(dur: number, vol: number, freq: number, q = 1): void {
   const c = ac();
-  if (!c) return;
+  if (!c || liveShots > MAX_SHOTS) return;
   const t0 = c.currentTime;
   const s = c.createBufferSource();
   s.buffer = noise(c);
@@ -255,6 +266,7 @@ function burst(dur: number, vol: number, freq: number, q = 1): void {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   s.connect(f).connect(g);
   outTo(c, g);
+  track(s);
   s.start(t0);
   s.stop(t0 + dur + 0.02);
 }
@@ -297,7 +309,7 @@ function loadSamples(): void {
 function play(key: string, vol = 1, rate = 1, loop = false): boolean {
   const c = ac();
   const buf = samples[key];
-  if (!c || !buf) return false;
+  if (!c || !buf || liveShots > MAX_SHOTS) return false;
   const s = c.createBufferSource();
   s.buffer = buf;
   s.playbackRate.value = rate;
@@ -306,6 +318,7 @@ function play(key: string, vol = 1, rate = 1, loop = false): boolean {
   g.gain.value = vol;
   s.connect(g);
   outTo(c, g);
+  track(s);
   s.start();
   return true;
 }
@@ -395,7 +408,7 @@ function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: numbe
     f.frequency.linearRampToValueAtTime(1100, t + dur * 0.5);
     f.frequency.linearRampToValueAtTime(420, t + dur);
     f.connect(g);
-    for (const det of [-7, 0, 8]) {
+    for (const det of [-6, 7]) {
       const o = c.createOscillator();
       o.type = 'sawtooth';
       o.frequency.value = freq;
@@ -486,7 +499,7 @@ function schedule(): void {
   }
   if (musicGain && musicOn) musicGain.gain.setTargetAtTime(musicVol * (curColour === 'spell' ? 0.8 : 0.8 - 0.5 * Math.max(musicState.tension, musicState.jam)), c.currentTime, 0.4);
   const stepDur = 60 / BPM / 2; // eighth notes; 8 per bar (4 beats)
-  while (nextT < c.currentTime + 0.3) {
+  while (nextT < c.currentTime + 0.7) {
     const s = step % 8;
     const chord = (col === 'aura' ? AURA_PROG : PROG)[Math.floor(bar) % 4];
     if (col === 'spell') {
@@ -528,7 +541,7 @@ function schedule(): void {
     }
     if (s === 0) {
       const barDur = stepDur * 8;
-      for (const n of chord.pad) mNote(c, nextT, midi(n), barDur * 1.05, col === 'gears' ? 0.012 : 0.016, 'pad');
+      for (const n of chord.pad.slice(0, 3)) mNote(c, nextT, midi(n), barDur * 1.05, col === 'gears' ? 0.012 : 0.016, 'pad');
       mNote(c, nextT, midi(chord.bass), barDur, 0.09, 'sub');
     }
     // piano arpeggio: rising pattern over the chord tones, with gaps so it breathes
@@ -868,6 +881,15 @@ export const sfx = {
     tone(70, 0.3, 0.3, 'triangle', 40);
     burst(0.06, 0.25, 700, 2);
     tone(1600, 0.2, 0.04, 'sine');
+  },
+  /** ignition lever slammed home: a deep crank, the engine catching and a steam sigh. Plays once. */
+  ignite(): void {
+    tone(48, 0.55, 0.22, 'sawtooth', 120);
+    tone(96, 0.5, 0.1, 'triangle', 190, 0.05);
+    burst(0.5, 0.16, 420, 1.4);
+    tone(70, 0.28, 0.16, 'sine', 45, 0.0);
+    tone(180, 0.7, 0.05, 'sine', 360, 0.28);
+    burst(0.9, 0.07, 3600, 0.6);
   },
   /** ratchet click while a lever is dragged; up = release click */
   leverTick(up = false): void {
