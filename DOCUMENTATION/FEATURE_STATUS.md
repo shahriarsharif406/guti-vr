@@ -30,7 +30,7 @@ Platform: WebXR (IWSDK + Three.js), run in a browser and in a headset browser. I
 | Tooth-mesh audio, adaptive music, haptics | yes | no (cannot be heard here) | no | mix reworked Nov 18 after player feedback: limiter, soft pulse, original lever sound |
 | Star grading (time, jams), personal best saved | yes | typecheck | no | added Nov 18 |
 | Finale: holographic orrery | yes | screenshot | no | |
-| Racing game "Neon Overdrive" from the prompt | no | - | - | different game, not built (see QUALITY_ROADMAP) |
+| Racer "Neon Overdrive" (6 modes, HUD, results, records, ghost, procedural engine + music) | yes | 39 logic tests + desktop e2e (auto-driver) | no | see GEARSHIFT_STATUS.md; primitive car model, XR controller input untested |
 
 ## Aura Weaver
 | Area | I | T | V | Notes |

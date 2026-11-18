@@ -6,7 +6,7 @@
 The best moments in VR are when your hands do something that feels real. We wanted three very different things you can do with nothing but your hands: solve, compose and cast.
 
 ## What it does
-- **GearShift:** a steampunk blueprint bench of gear puzzles. Seat the right gears so the output wheel spins the way the goal says.
+- **GearShift:** a steampunk blueprint bench of gear puzzles. Seat the right gears so the output wheel spins the way the goal says. A "Racer" button opens Neon Overdrive: shift at the green zone for score and grades.
 - **Aura Weaver:** turn mirrors and prisms, mix cyan, magenta and gold light and wake dark monoliths until a forgotten sanctuary blooms. 7 solver-verified puzzles, adaptive music, save and photo mode.
 - **Spellforge: The Arcane Awakening:** cast fire, ice, lightning, aether, nature and shadow with distinct hand gestures. Attune your two hands to different elements and discover fusion spells nobody tells you about (15 of them). Face three bosses with multi-phase fights (Ignar, Vyra, the Void King), plus Endless Rift, Boss Rush, Trials, a Spell Library and a Bestiary.
 

@@ -153,7 +153,7 @@ export class RaceSystem extends createSystem({
     this.makeButton(this.entry, 40, () => this.active === false && modeState.mode === 'gears' && gsStage.stage === 'bench', () => ['▶ RACER', '']);
 
     // menu: 5 mode buttons + settings row
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       this.makeButton(this.mk(0.5, 0.09, 512, [-0.52 + (i % 3) * 0.52, -0.5 + Math.floor(i / 3) * -0.11, -2.0], [-0.52 + (i % 3) * 0.52, RACE_Y + 0.82 - Math.floor(i / 3) * 0.11, -1.9], 0), i, () => this.active && this.screen === 'menu', () => [MODES[i].name, '']);
     }
     const row = (i: number, id: number, show: () => boolean, label: () => [string, string], x: number, y: number): void => {
@@ -448,7 +448,7 @@ export class RaceSystem extends createSystem({
     }
     if (!this.active) return;
     raceAudio.ui();
-    if (id >= 0 && id <= 4 && this.screen === 'menu') {
+    if (id >= 0 && id <= 5 && this.screen === 'menu') {
       this.set.mode = id;
       this.daily = false;
       this.start();

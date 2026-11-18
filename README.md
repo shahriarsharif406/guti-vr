@@ -2,7 +2,7 @@
 
 **Three experiences, your bare hands.** A hands-only WebXR project for Meta Quest: a clockwork puzzle bench, a light-weaving sanctuary and a spell-casting arena.
 
-- **GearShift** – a steampunk blueprint bench of gear puzzles in three chapters.
+- **GearShift** – a steampunk blueprint bench of gear puzzles in three chapters, plus the "Neon Overdrive" shift-timing racer (button on the bench).
 - **Aura Weaver: The Light Sanctuary** – turn mirrors and prisms, mix cyan, magenta and gold light, and wake the monoliths of a dark sanctuary until it blooms. See [docs/AURA_WEAVER.md](docs/AURA_WEAVER.md).
 - **Spellforge: The Arcane Awakening** – cast fire, ice, lightning, aether, nature and shadow with your bare hands, discover fusions, face three bosses. See [docs/SPELLFORGE.md](docs/SPELLFORGE.md).
 
