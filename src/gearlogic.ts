@@ -3,7 +3,7 @@
  * Board coordinates are metres, x right, y up. A "part" is one toothed wheel on one layer
  * (layer 0 = front, 1 = back); a compound gear is two parts on one axle (peg).
  */
-export const M = 0.0075; // tooth module: pitch radius = N * M / 2
+export const M = 0.0135; // tooth module: pitch radius = N * M / 2
 export const radius = (n: number): number => (n * M) / 2;
 export const outerRadius = (n: number): number => radius(n) + M * 0.9;
 const MESH_TOL = M * 0.45;
@@ -89,7 +89,7 @@ const comp = (nFront: number, nBack: number, angle: number): Link => ({
   angle,
 });
 
-export const LEVELS: Level[] = [
+const RAW_LEVELS: Level[] = [
   build('First link', 'Make the blue wheel turn the same way', 'Fit the gear that touches both wheels', 12, { x: -0.3, y: 0.12 }, [link(12, 0)], { n: 12, layer: 0, dir: 1, minRatio: 0.9, maxRatio: 1.1 }, 0, [g(16)]),
   build('Turn it around', 'Make the blue wheel turn the OPPOSITE way', 'Every touching pair flips the direction', 12, { x: -0.28, y: 0.2 }, [link(12, -20), link(12, 25)], { n: 12, layer: 0, dir: -1, minRatio: 0.9, maxRatio: 1.1 }, 20, [g(8), g(16)]),
   build('Speed it up', 'Make the output spin 2x faster, opposite way', 'A small wheel turns faster than a big one', 20, { x: -0.3, y: 0.05 }, [link(10, 30), link(14, -25)], { n: 10, layer: 0, dir: -1, minRatio: 1.9, maxRatio: 2.1 }, 20, [g(12), g(20), g(16)]),
@@ -117,6 +117,35 @@ export const LEVELS: Level[] = [
     [g(10), g(20), g(15)],
   ),
 ];
+
+/** Board box (metres, board coordinates) that every level must fit in: the gears stay clear of the rack and the frame. */
+export const FIELD = { x: 0.7, yMin: -0.08, yMax: 0.31 };
+
+/** Centre a finished level's pegs in the board field so the machine sits in the middle however big the gears are. */
+function centred(lv: Level): Level {
+  const ns = new Map<number, number>();
+  const note = (peg: number, n: number): void => void ns.set(peg, Math.max(ns.get(peg) ?? 0, n));
+  note(lv.motor.peg, lv.motor.n);
+  note(lv.target.peg, lv.target.n);
+  lv.solution.forEach((it, peg) => {
+    if (it >= 0) for (const p of lv.inventory[it].parts) note(peg, p.n);
+  });
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  lv.pegs.forEach((pg, i) => {
+    const r = outerRadius(ns.get(i) ?? 10);
+    x0 = Math.min(x0, pg.x - r);
+    x1 = Math.max(x1, pg.x + r);
+    y0 = Math.min(y0, pg.y - r);
+    y1 = Math.max(y1, pg.y + r);
+  });
+  const dx = -(x0 + x1) / 2;
+  const dy = (FIELD.yMin + FIELD.yMax) / 2 - (y0 + y1) / 2;
+  return { ...lv, pegs: lv.pegs.map((pg) => ({ x: pg.x + dx, y: pg.y + dy })) };
+}
+export const LEVELS: Level[] = RAW_LEVELS.map(centred);
 
 /** Campaign: three blueprints, two stages each. */
 export const CHAPTERS = ['I  CHRONOMETER ESCAPEMENT', 'II  AETHER PRESSURE REGULATOR', 'III  CELESTIAL ORRERY'];

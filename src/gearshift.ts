@@ -48,7 +48,7 @@ import { GearOpt } from './ui-components.js';
 // ---- GearShift: pick gears from the rack, seat them on pegs, and make the machine do what the goal says.
 const BZ = -0.85; // board front plane
 const BY = 0.92; // board centre height
-const BW = 1.16;
+const BW = 1.8;
 const BH = 0.74;
 const Z0 = 0.024; // front layer offset from the board
 const Z1 = 0.012; // back layer offset
@@ -474,7 +474,7 @@ function blueprintTexture(): CanvasTexture {
   g.fillText('GEARSHIFT  -  ASSEMBLY BENCH', 68, 84);
   g.font = '16px sans-serif';
   g.fillStyle = 'rgba(224,180,100,0.55)';
-  g.fillText('module 7.5 mm   |   front layer / back layer', 68, 108);
+  g.fillText('module ' + (M * 1000).toFixed(1) + ' mm   |   front layer / back layer', 68, 108);
   const ry = 740 / 2 - TRAY_Y * 1000 - 100;
   g.fillStyle = 'rgba(0,0,0,0.38)';
   g.fillRect(60, ry, 1040, 200);
@@ -1127,7 +1127,9 @@ export class GearShiftSystem extends createSystem({
     this.lamp.scale.setScalar(outerRadius(lv.target.n) / 0.1 + 0.55);
     // the rack
     const n = lv.inventory.length;
-    const span = 0.16;
+    let maxR = 0;
+    for (const d of lv.inventory) for (const p of d.parts) maxR = Math.max(maxR, outerRadius(p.n));
+    const span = Math.min(maxR * 2 + 0.03, 1.62 / Math.max(1, n));
     lv.inventory.forEach((def, k) => {
       const g = new Group();
       const meshes: Mesh[] = def.parts.map((p) => {
