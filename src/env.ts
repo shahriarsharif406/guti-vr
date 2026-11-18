@@ -34,7 +34,7 @@ import {
   Mesh as ThreeMesh,
 } from '@iwsdk/core';
 import type { Texture } from '@iwsdk/core';
-import { modeState, spellRoom } from './mode.js';
+import { auraRoom, modeState, spellRoom } from './mode.js';
 import { buildCinematicRoom } from './room.js';
 import type { RoomFx } from './room.js';
 import { kiteCfg } from './kitecfg.js';
@@ -818,7 +818,7 @@ export class EnvSystem extends createSystem({}) {
     }
     if (this.roomGroup) {
       // Spellforge builds its own arena: the workshop room stays out of it
-      if (spellRoom.hide) {
+      if (spellRoom.hide || auraRoom.hide) {
         this.roomGroup.visible = false;
         this.roomWasHidden = true;
       } else if (this.roomWasHidden) {
@@ -826,7 +826,7 @@ export class EnvSystem extends createSystem({}) {
         this.roomGroup.visible = this.shownWorld === 'workshop';
       }
     }
-    if (inRoom && !spellRoom.hide) this.roomFx?.update(this.t);
+    if (inRoom && !spellRoom.hide && !auraRoom.hide) this.roomFx?.update(this.t);
     const open = want === 'field' || want === 'bil' || want === 'winter' || want === 'char';
     for (const sp of this.spinners) sp.rotation.y += dt * 0.02;
     for (const c of this.clouds) {

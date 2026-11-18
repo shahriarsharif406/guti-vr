@@ -10,6 +10,7 @@ import { defaultSave, loadSave, writeSave, SAVE_VERSION } from '../src/aurasave'
 import { ECHO_SUSTAIN, EchoTrack, brokenThreads, canWeave, echoReady, evaluate, freshState, holdLimit, latchMemories, node, nodePos, solveWeave } from '../src/threadlogic';
 import type { Weave, WeaveState } from '../src/threadlogic';
 import { MECH_NAME, V1_TO_V2, WORLDS, makePuzzles } from '../src/auralevels';
+import { ThreadPlay } from '../src/threadplay';
 
 let passed = 0;
 let failed = 0;
@@ -387,6 +388,95 @@ test('"Heart of eternity" needs light, the past, a star alignment and an echo', 
   assert.equal(sol && sol.rings[0], 2, 'star aligned');
   assert.ok(solve(h.light as Level, 1).length > 0, 'light half solvable');
 });
+
+console.log('thread play: the interaction layer (grab, pull, connect, cut, rings, eras, echoes, hints)');
+const WV = (id: string): Weave => makePuzzles().find((q) => q.id === id)!.weave as Weave;
+test('grab a crystal, pull and release on another: a thread is woven and the receiver wakes', () => {
+  const pl = new ThreadPlay(WV('first-thread'));
+  assert.equal(pl.down(1, -0.26, -0.02), true);
+  pl.move(1, 0.1, 0.0);
+  assert.equal(pl.threadDrags().length, 1);
+  pl.up(1, 0.26, 0.04);
+  assert.equal(pl.s.threads.length, 1);
+  assert.equal(pl.ev.solved, true);
+  assert.ok(pl.events.some((e) => e.t === 'grab') && pl.events.some((e) => e.t === 'connect') && pl.events.some((e) => e.t === 'receiver'));
+});
+test('releasing in empty space or too far away is refused with a reason; nothing is woven', () => {
+  const pl = new ThreadPlay(WV('splitter'));
+  pl.down(1, -0.45, 0);
+  pl.move(1, 0, 0.3);
+  pl.up(1, 0, 0.3);
+  assert.ok(pl.events.some((e) => e.t === 'refuse' && e.reason === 'no-node'));
+  pl.events.length = 0;
+  assert.equal(pl.tryConnect(0, 3), false);
+  assert.ok(pl.events.some((e) => e.t === 'refuse' && (e.reason === 'too-long' || e.reason === 'wall')));
+  assert.equal(pl.s.threads.length, 0);
+});
+test('tapping a woven thread cuts it; reset restores the untouched puzzle', () => {
+  const pl = new ThreadPlay(WV('first-thread'));
+  pl.tryConnect(0, 1);
+  pl.down(2, 0, 0.01);
+  pl.tick(0.1);
+  pl.up(2, 0, 0.01);
+  assert.equal(pl.s.threads.length, 0);
+  assert.equal(pl.ev.solved, false);
+  pl.tryConnect(0, 1);
+  pl.reset();
+  assert.equal(pl.s.threads.length, 0);
+  assert.equal(pl.moves, 0);
+});
+test('a motor ring refuses to turn until its orbit engine is powered', () => {
+  const pl = new ThreadPlay(WV('star-bridge'));
+  pl.setRing(0, 2);
+  assert.equal(pl.w.rings[0].a, 0);
+  assert.ok(pl.events.some((e) => e.t === 'ringLocked'));
+  assert.equal(pl.tryConnect(0, 1), true);
+  pl.setRing(0, 2);
+  assert.equal(pl.w.rings[0].a, 2);
+});
+test('dragging around a ring turns it step by step', () => {
+  const pl = new ThreadPlay(WV('orrery'));
+  assert.equal(pl.down(1, 0.27, 0), false === false && true);
+  pl.move(1, 0, 0.27);
+  pl.up(1, 0, 0.27);
+  assert.notEqual(pl.w.rings[2].a + pl.w.rings[1].a + pl.w.rings[0].a, 0);
+});
+test('a recorded echo keeps holding its keystone after the hand lets go', () => {
+  const pl = new ThreadPlay(WV('memory-echo'));
+  assert.equal(pl.tryConnect(4, 5), true);
+  assert.equal(echoReady(pl.w, pl.s), true);
+  pl.toggleRecord(1);
+  assert.equal(pl.recording, true);
+  pl.trackPointer(1, -0.18, 0.16, true);
+  pl.down(1, -0.18, 0.16);
+  for (let i = 0; i < 8; i++) pl.tick(0.1);
+  pl.trackPointer(1, -0.18, 0.16, false);
+  pl.up(1, -0.18, 0.16);
+  assert.equal(pl.recording, false);
+  assert.equal(pl.echoes.length, 1);
+  for (let i = 0; i < 60; i++) {
+    pl.tick(0.1);
+    assert.ok(pl.s.held.includes(1), 'echo holds key at t=' + i);
+  }
+  assert.equal(pl.ev.solved, false);
+  pl.down(2, 0.12, 0.16);
+  pl.tick(0.1);
+  assert.equal(pl.ev.solved, true);
+});
+for (const pz of makePuzzles().filter((q) => q.weave)) {
+  test('following the hints alone solves "' + pz.name + '" (hints are never random)', () => {
+    const pl = new ThreadPlay(pz.weave as Weave);
+    pl.s.lightOn = [true, true, true];
+    pl.refresh();
+    let n = 0;
+    while (!pl.ev.solved && n < 40) {
+      assert.ok(pl.autoStep(), 'stuck at step ' + n + ' with hint ' + JSON.stringify(pl.hint()));
+      pl.tick(0.1);
+      n++;
+    }
+    assert.equal(pl.ev.solved, true);
+  });
+}
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
