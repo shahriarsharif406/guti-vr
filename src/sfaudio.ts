@@ -395,7 +395,7 @@ class SfAudio {
     const core = audioCore();
     if (!core || !this.bus) return;
     const c = core.ctx;
-    const want = this.active && this.musicOn ? 0.8 * getMusicVolume() : 0;
+    const want = this.active && this.musicOn ? 3.5 * getMusicVolume() : 0;
     this.bus.gain.setTargetAtTime(want, c.currentTime, 0.4);
     if (!this.active || !this.musicOn) {
       this.nextT = c.currentTime + 0.1;
