@@ -979,6 +979,8 @@ export class GearShiftSystem extends createSystem({
       return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
     };
     w.__gearLevel = (i: number) => this.loadLevel(i);
+    w.__gearWin = () => this.finishWin();
+    w.__gearGrade = () => ({ line: this.gradeLine, mistakes: this.mistakes });
     w.__gearPegs = () => this.lv.pegs;
     w.__gearJam = () => {
       this.ev = { ...this.ev, jam: true, win: false };
