@@ -35,6 +35,8 @@ import {
 } from '@iwsdk/core';
 import type { BossDef, EnemyDef } from './sfdata';
 import { glowSprite, glowTexture } from './sfvfx';
+import { buildBossRig } from './sfboss';
+import type { BossRig, RigState } from './sfboss';
 
 export type RealmId = 'sanctum' | 'ignar' | 'vyra' | 'voidking';
 interface Theme {
@@ -196,13 +198,21 @@ export class Arena {
     // Vyra's three pylons (visible only in the Storm Citadel)
     for (let i = 0; i < 3; i++) {
       const g = new Group();
-      const shaft = new Mesh(new CylinderGeometry(0.2, 0.3, 2, 6), std(0x20243a, 0, 0, 0.5, 0.5));
-      shaft.position.y = 1;
+      // short conductive pylons: the orb sits at the height the lightning has to hit (1 m), below the line of sight to Vyra
+      const shaft = new Mesh(new CylinderGeometry(0.1, 0.22, 0.75, 6), std(0x20243a, 0, 0, 0.4, 0.8));
+      shaft.position.y = 0.375;
       const mat = std(0x8aa0ff, 0x6a80ff, 1.2, 0.2, 0);
-      const orb = new Mesh(new IcosahedronGeometry(0.34, 1), mat);
-      orb.position.y = 2.3;
-      const halo = glowSprite(0x8aa0ff, 1.6, 0.6);
-      halo.position.y = 2.3;
+      const orb = new Mesh(new IcosahedronGeometry(0.22, 1), mat);
+      orb.position.y = 1.0;
+      for (let k = 0; k < 3; k++) {
+        const fin = new Mesh(new ConeGeometry(0.035, 0.42, 4), std(0x6a74a8, 0x3a4ad0, 0.6, 0.3, 0.8));
+        const a = (k / 3) * Math.PI * 2;
+        fin.position.set(Math.cos(a) * 0.2, 0.95, Math.sin(a) * 0.2);
+        fin.rotation.set(Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35);
+        g.add(fin);
+      }
+      const halo = glowSprite(0x8aa0ff, 1.0, 0.6);
+      halo.position.y = 1.0;
       g.add(shaft, orb, halo);
       g.visible = false;
       this.group.add(g);
@@ -263,7 +273,7 @@ export class Arena {
     p.mat.emissiveIntensity = on ? 3 : barrierOn ? 1.2 : 0.4;
     p.mat.color.setHex(on ? 0xffffff : 0x6a80d8);
     p.halo.material.opacity = on ? 1 : 0.4;
-    p.halo.scale.setScalar(on ? 2.8 : 1.6);
+    p.halo.scale.setScalar(on ? 1.9 : 1.0);
   }
 }
 
@@ -271,8 +281,8 @@ export class Arena {
 export interface Rig {
   group: Group;
   /** st: telegraph seconds left, frozen / burning / rooted flags, hp fraction, armour left */
-  tick(dt: number, t: number, st: { tele: number; frozen: boolean; burning: boolean; rooted: boolean; hpFrac: number; armor: boolean; phase?: number }): void;
-  flash(): void;
+  tick(dt: number, t: number, st: RigState): void;
+  flash(amount?: number): void;
   mats: MeshStandardMaterial[];
 }
 
@@ -473,133 +483,16 @@ export function buildEnemy(def: EnemyDef): Rig {
   void accent;
 }
 
-function buildBossBase(def: BossDef): Rig {
-  const g = new Group();
-  const mats: MeshStandardMaterial[] = [];
-  const M = (hex: number, em: number, emI: number, rough = 0.5, metal = 0.2): MeshStandardMaterial => {
-    const m = std(hex, em, emI, rough, metal);
-    mats.push(m);
-    return m;
-  };
-  const add = <T extends Object3D>(o: T, x = 0, y = 0, z = 0): T => {
-    o.position.set(x, y, z);
-    g.add(o);
-    return o;
-  };
-  if (def.id === 'ignar') {
-    const rock = M(0x2a1410, 0xff4a0a, 0.5, 0.85, 0.1);
-    const torso = add(new Mesh(new DodecahedronGeometry(0.36, 1), rock), 0, 0.55, 0);
-    torso.scale.set(1.2, 1.3, 0.9);
-    const core = add(new Mesh(new IcosahedronGeometry(0.16, 2), M(0xffd080, 0xff8a20, 3, 0.1, 0)), 0, 0.56, 0.22);
-    const head = add(new Mesh(new DodecahedronGeometry(0.17, 0), M(0x1c0c08, 0xff4010, 0.8)), 0, 0.98, 0.04);
-    for (const sx of [-1, 1]) {
-      add(new Mesh(new ConeGeometry(0.04, 0.3, 6), M(0x1c0c08, 0xff6a20, 1)), sx * 0.12, 1.2, 0).rotation.z = -sx * 0.45;
-      add(new Mesh(new SphereGeometry(0.03, 6, 6), glow(0xfff0b0, 1)), sx * 0.07, 1.0, 0.18);
-    }
-    const arms: Mesh[] = [];
-    for (const sx of [-1, 1]) {
-      const sh = add(new Mesh(new DodecahedronGeometry(0.17, 0), rock), sx * 0.46, 0.8, 0);
-      const arm = add(new Mesh(new CylinderGeometry(0.09, 0.14, 0.62, 7), rock), sx * 0.55, 0.45, 0.06);
-      arm.rotation.z = sx * 0.12;
-      arms.push(arm);
-      void sh;
-    }
-    const plates: Mesh[] = [];
-    for (let i = 0; i < 8; i++) {
-      const p = new Mesh(new BoxGeometry(0.22, 0.3, 0.06), M(0x7a7a86, 0x402010, 0.3, 0.4, 0.8));
-      const a = (i / 8) * Math.PI * 2;
-      p.position.set(Math.cos(a) * 0.4, 0.55 + Math.sin(i * 2.3) * 0.25, Math.sin(a) * 0.3 + 0.1);
-      p.rotation.y = -a + Math.PI / 2;
-      g.add(p);
-      plates.push(p);
-    }
-    add(glowSprite(0xff6a20, 1.8, 0.45), 0, 0.55, 0.1);
-    return finish(g, mats, (dt, t, st) => {
-      core.scale.setScalar(1 + Math.sin(t * 3) * 0.08 + (st.phase !== undefined && st.phase >= 3 ? 0.5 : 0));
-      plates.forEach((p) => (p.visible = st.armor));
-      arms.forEach((a, i) => (a.rotation.x = st.tele > 0 ? -2 : Math.sin(t * 1.1 + i * 2) * 0.1));
-      head.rotation.y = Math.sin(t * 0.7) * 0.15;
-      g.position.y = Math.sin(t * 0.9) * 0.02;
-      void dt;
-    });
-  }
-  if (def.id === 'vyra') {
-    const robe = add(new Mesh(new ConeGeometry(0.28, 0.9, 8, 1, true), new MeshStandardMaterial({ color: 0x1c2250, emissive: 0x5a70e0, emissiveIntensity: 0.6, side: DoubleSide, transparent: true, opacity: 0.9, roughness: 0.3 })), 0, 0.5, 0);
-    mats.push(robe.material as MeshStandardMaterial);
-    add(new Mesh(new SphereGeometry(0.1, 12, 10), M(0xe8ecff, 0xa9b8ff, 1.2, 0.2)), 0, 1.02, 0);
-    const halo = add(new Mesh(new TorusGeometry(0.2, 0.012, 6, 40), glow(0xc3ceff, 1)), 0, 1.24, 0);
-    halo.rotation.x = Math.PI / 2;
-    const wings: Mesh[] = [];
-    for (const sx of [-1, 1]) {
-      for (let k = 0; k < 3; k++) {
-        const w = new Mesh(new ConeGeometry(0.05, 0.75 - k * 0.15, 4), M(0xc3ceff, 0x8aa0ff, 1.6));
-        w.position.set(sx * (0.2 + k * 0.09), 0.85 - k * 0.1, -0.05);
-        w.rotation.z = -sx * (1.0 + k * 0.25);
-        g.add(w);
-        wings.push(w);
-      }
-    }
-    const orbs: Mesh[] = [];
-    for (let i = 0; i < 3; i++) {
-      const o = new Mesh(new SphereGeometry(0.05, 8, 8), glow(0xe8ecff, 1));
-      g.add(o);
-      orbs.push(o);
-    }
-    const bar = add(new Mesh(new TorusGeometry(0.5, 0.015, 6, 48), glow(0x8aa0ff, 0)), 0, 0.6, 0);
-    const spark = glowSprite(0xa9b8ff, 1.5, 0.45);
-    add(spark, 0, 0.7, 0);
-    return finish(g, mats, (dt, t, st) => {
-      halo.rotation.z += dt * 0.8;
-      wings.forEach((w, i) => (w.rotation.x = Math.sin(t * 2 + i) * 0.1));
-      orbs.forEach((o, i) => o.position.set(Math.cos(t * 1.6 + i * 2.1) * 0.45, 0.6 + Math.sin(t * 2 + i) * 0.1, Math.sin(t * 1.6 + i * 2.1) * 0.45));
-      (bar.material as MeshBasicMaterial).opacity = st.armor ? 0.9 : 0;
-      bar.rotation.y += dt;
-      g.position.y = Math.sin(t * 1.5) * 0.04 + 0.2;
-    });
-  }
-  // the Void King: a floating crown of nothing, orbiting rings and a pale core
-  const core = add(new Mesh(new IcosahedronGeometry(0.24, 2), M(0x08030e, 0x7a3acb, 0.9, 0.3, 0.6)), 0, 0.6, 0);
-  add(new Mesh(new SphereGeometry(0.07, 8, 8), glow(0xf0e0ff, 1)), 0, 0.6, 0.22);
-  const rings: Mesh[] = [];
-  for (let i = 0; i < 3; i++) {
-    const r = new Mesh(new TorusGeometry(0.4 + i * 0.14, 0.012 + i * 0.004, 8, 60), M(0x1a0a2c, 0x9a5aff, 1.4));
-    r.position.set(0, 0.6, 0);
-    g.add(r);
-    rings.push(r);
-  }
-  const spikes: Mesh[] = [];
-  for (let i = 0; i < 9; i++) {
-    const s = new Mesh(new ConeGeometry(0.035, 0.34, 5), M(0x120620, 0x7a3acb, 1.2));
-    const a = (i / 9) * Math.PI * 2;
-    s.position.set(Math.cos(a) * 0.18, 0.98, Math.sin(a) * 0.18);
-    s.rotation.z = -Math.cos(a) * 0.35;
-    s.rotation.x = Math.sin(a) * 0.35;
-    g.add(s);
-    spikes.push(s);
-  }
-  add(glowSprite(0x7a3acb, 2.2, 0.5), 0, 0.6, 0);
-  const finish1 = glowSprite(0xe0b8ff, 2.8, 0);
-  add(finish1, 0, 0.6, 0);
-  return finish(g, mats, (dt, t, st) => {
-    core.rotation.y += dt * 0.6;
-    rings.forEach((r, i) => {
-      r.rotation.x = t * (0.5 + i * 0.3) + i;
-      r.rotation.y = t * (0.4 - i * 0.2);
-    });
-    spikes.forEach((s, i) => (s.scale.y = 1 + Math.sin(t * 2 + i) * 0.2));
-    finish1.material.opacity = st.phase !== undefined && st.phase >= 5 ? 0.35 + Math.sin(t * 5) * 0.15 : 0;
-    g.position.y = Math.sin(t * 0.8) * 0.05;
-  });
-}
-
 /**
  * Boss presence layer wrapped around every boss model: orbiting aura motes, a burning ground ring,
  * rage glow as health drops, an anticipation squash before attacks, a phase-change shockwave and a rise-from-below entrance.
  * Pure visuals: no gameplay state is read except what the rig tick already receives.
  */
-export function buildBoss(def: BossDef): Rig {
-  const base = buildBossBase(def);
+export function buildBoss(def: BossDef): BossRig {
+  const base = buildBossRig(def);
   const g = base.group;
+  const outer = new Group();
+  outer.add(g);
   const col = new Color(def.hex);
   const N = 54;
   const pos = new Float32Array(N * 3);
@@ -623,60 +516,52 @@ export function buildBoss(def: BossDef): Rig {
   const shock = new Mesh(new RingGeometry(0.9, 1.0, 64), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
   shock.rotation.x = -Math.PI / 2;
   shock.position.y = 0.05;
-  const inner = new Group();
-  while (g.children.length) inner.add(g.children[0]);
-  g.add(inner, motes, ground, ground2, shock);
+  outer.add(motes, ground, ground2, shock);
   let age = 0;
   let lastPhase = -1;
   let shockT = 0;
   let squash = 0;
   const tickBase = base.tick;
   const baseEm = base.mats.map((m) => m.emissiveIntensity);
-  base.tick = (dt, t, st) => {
-    age += dt;
-    tickBase(dt, t, st);
-    // entrance: rise from the floor with a growing glow over 1.6 s
-    const e = Math.min(1, age / 1.6);
-    const ease = 1 - Math.pow(1 - e, 3);
-    inner.position.y = -0.9 * (1 - ease);
-    inner.scale.setScalar(0.6 + 0.4 * ease);
-    // rage: emissive climbs as health falls
-    const rage = (1 - Math.max(0, Math.min(1, st.hpFrac))) * 0.9;
-    for (let i = 0; i < base.mats.length; i++) base.mats[i].emissiveIntensity += rage * Math.min(1.2, Math.max(0.3, baseEm[i])) * 0.25;
-    // anticipation: crouch and lean back as an attack winds up, release with a stretch
-    const target = st.tele > 0 ? 1 : 0;
-    squash += (target - squash) * Math.min(1, dt * (target ? 6 : 14));
-    inner.scale.y *= 1 - 0.1 * squash;
-    inner.scale.x *= 1 + 0.05 * squash;
-    inner.rotation.x = -0.12 * squash;
-    // phase change shockwave
-    if (st.phase !== undefined && st.phase !== lastPhase) {
-      if (lastPhase >= 0) shockT = 1;
-      lastPhase = st.phase;
-    }
-    shockT = Math.max(0, shockT - dt * 0.9);
-    const sm = shock.material as MeshBasicMaterial;
-    sm.opacity = shockT * 0.8;
-    shock.scale.setScalar(1 + (1 - shockT) * 5);
-    // ground rings breathe and spin faster when winding up
-    const pulse = 0.35 + 0.15 * Math.sin(t * 2.4) + (st.tele > 0 ? 0.4 : 0);
-    (ground.material as MeshBasicMaterial).opacity = pulse * ease;
-    (ground2.material as MeshBasicMaterial).opacity = pulse * 0.6 * ease;
-    ground.rotation.z += dt * (0.5 + squash * 3);
-    ground2.rotation.z -= dt * 0.4;
-    ground.scale.setScalar(1 + squash * 0.25);
-    // aura motes: orbit and drift upward, faster when angry
-    const sp = 0.5 + rage * 1.2;
-    for (let i = 0; i < N; i++) {
-      const a = seed[i * 3] + t * sp * (0.6 + seed[i * 3 + 2]);
-      const rise = ((t * 0.18 * (0.5 + seed[i * 3 + 2]) + seed[i * 3 + 2]) % 1);
-      const r = 0.25 + seed[i * 3 + 1] * 0.55;
-      pos[i * 3] = Math.cos(a) * r;
-      pos[i * 3 + 1] = 0.05 + rise * 1.3;
-      pos[i * 3 + 2] = Math.sin(a) * r;
-    }
-    geo.attributes.position.needsUpdate = true;
-    (motes.material as PointsMaterial).opacity = 0.85 * ease;
+  void baseEm;
+  const rig: BossRig = {
+    ...base,
+    group: outer,
+    tick: (dt, t, st) => {
+      age += dt;
+      tickBase(dt, t, st);
+      const ease = 1 - Math.pow(1 - Math.min(1, age / 1.6), 3);
+      const rage = (1 - Math.max(0, Math.min(1, st.hpFrac))) * 0.9;
+      // a light whole-body anticipation squash on top of the rig's own wind-up pose
+      const target = st.tele > 0 ? 1 : 0;
+      squash += (target - squash) * Math.min(1, dt * (target ? 6 : 14));
+      g.scale.set(1 + 0.03 * squash, 1 - 0.05 * squash, 1);
+      if (st.phase !== undefined && st.phase !== lastPhase) {
+        if (lastPhase >= 0) shockT = 1;
+        lastPhase = st.phase;
+      }
+      shockT = Math.max(0, shockT - dt * 0.9);
+      (shock.material as MeshBasicMaterial).opacity = shockT * 0.8;
+      shock.scale.setScalar(1 + (1 - shockT) * 5);
+      const dead = st.dead ? 1 - Math.min(1, (st.deathK ?? 0) * 2) : 1;
+      const pulse = (0.35 + 0.15 * Math.sin(t * 2.4) + (st.tele > 0 ? 0.4 : 0)) * dead;
+      (ground.material as MeshBasicMaterial).opacity = pulse * ease;
+      (ground2.material as MeshBasicMaterial).opacity = pulse * 0.6 * ease;
+      ground.rotation.z += dt * (0.5 + squash * 3);
+      ground2.rotation.z -= dt * 0.4;
+      ground.scale.setScalar(1 + squash * 0.25);
+      const sp = 0.5 + rage * 1.2;
+      for (let i = 0; i < N; i++) {
+        const a = seed[i * 3] + t * sp * (0.6 + seed[i * 3 + 2]);
+        const rise = (t * 0.18 * (0.5 + seed[i * 3 + 2]) + seed[i * 3 + 2]) % 1;
+        const r = 0.25 + seed[i * 3 + 1] * 0.55;
+        pos[i * 3] = Math.cos(a) * r;
+        pos[i * 3 + 1] = 0.05 + rise * 1.3;
+        pos[i * 3 + 2] = Math.sin(a) * r;
+      }
+      geo.attributes.position.needsUpdate = true;
+      (motes.material as PointsMaterial).opacity = 0.85 * ease * dead;
+    },
   };
-  return base;
+  return rig;
 }

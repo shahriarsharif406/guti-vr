@@ -9,3 +9,9 @@ export function setMode(mode: Mode): void {
 
 /** Spellforge owns the whole scene while this is set: the workshop room is hidden. */
 export const spellRoom: { hide: boolean } = { hide: false };
+
+/** GearShift "Neon Overdrive" racer is running: the workshop music steps aside for its own synthwave score. */
+export const raceRoom: { active: boolean } = { active: false };
+
+/** Aura Weaver builds its own five worlds and plays its own adaptive score: the workshop room and music step aside. */
+export const auraRoom: { hide: boolean; music: boolean } = { hide: false, music: false };

@@ -39,6 +39,8 @@ import type { SfSave } from './sfsave.js';
 import { CARD_H, CARD_PX, CARD_W, CREDITS, LETTER, LIB_PER_PAGE, BEST_PER_PAGE, bestiaryEntries, drawBestiary, drawButton, drawCard, drawLibrary, drawTitleArt, libraryEntries, libraryPages, line, para, pill, rr, elementDot } from './sfscreens.js';
 import { Arena, THEMES, buildBoss, buildEnemy } from './sfworld.js';
 import type { RealmId, Rig } from './sfworld.js';
+import type { BossRig, Emitter } from './sfboss.js';
+import { sfAudio } from './sfaudio.js';
 import { Sparks, glowSprite, sigilTexture } from './sfvfx.js';
 
 // ================================================================== constants
@@ -180,7 +182,7 @@ export class SpellforgeSystem extends createSystem({
   private vignette!: Mesh;
   private projVis = new Map<number, { g: Group; kind: string; el: Element; r: number }>();
   private enemyVis = new Map<number, { holder: Group; rig: Rig; ring: Mesh; shell: Mesh; id: string; lastHp: number }>();
-  private bossVis: { holder: Group; rig: Rig; id: string; barrier: Mesh; lastHp: number; tele: Mesh } | null = null;
+  private bossVis: { holder: Group; rig: BossRig; id: string; barrier: Mesh; lastHp: number; tele: Mesh } | null = null;
   private areaVis = new Map<number, { g: Group; a: Area; parts: Mesh[]; seed: number }>();
   private ringVis: Mesh[] = [];
   private telegraphRing!: Mesh;
@@ -255,8 +257,8 @@ export class SpellforgeSystem extends createSystem({
     }
     // in-play panels
     this.hudBoss = new TextPanel(1.2, 0.26, 1024);
-    this.hudBoss.mesh.position.set(0, 2.62, -3.0);
-    this.hudBoss.mesh.scale.setScalar(1.3);
+    this.hudBoss.mesh.position.set(0, 2.95, -3.4);
+    this.hudBoss.mesh.scale.setScalar(1.15);
     this.hudStatus = new TextPanel(0.46, 0.5, 512);
     this.hudStatus.mesh.position.set(-0.66, 1.18, -0.78);
     this.hudStatus.mesh.rotation.y = 0.55;
@@ -1041,18 +1043,28 @@ export class SpellforgeSystem extends createSystem({
     }
   }
   private prevFog: unknown = null;
-  private camSaved: { p: Vector3; q: Quaternion } | null = null;
+  private camSaved: { p: Vector3; q: Quaternion; fov: number } | null = null;
   /** desktop only: look straight down the arena instead of at the workshop table; restored on exit */
   private frameCamera(on: boolean): void {
     if (this.world.renderer.xr.isPresenting) return;
     const cam = this.world.camera;
+    const pc = cam as unknown as { fov?: number; updateProjectionMatrix?: () => void };
     if (on) {
-      this.camSaved = { p: cam.position.clone(), q: cam.quaternion.clone() };
+      this.camSaved = { p: cam.position.clone(), q: cam.quaternion.clone(), fov: pc.fov ?? 50 };
       cam.position.set(0, 1.45, 0.3);
-      cam.lookAt(0, 1.55, -6);
+      cam.lookAt(0, 1.85, -6);
+      // a slightly wider lens so a towering boss and the hand HUD fit the same desktop frame
+      if (pc.fov !== undefined) {
+        pc.fov = 64;
+        pc.updateProjectionMatrix?.();
+      }
     } else if (this.camSaved) {
       cam.position.copy(this.camSaved.p);
       cam.quaternion.copy(this.camSaved.q);
+      if (pc.fov !== undefined) {
+        pc.fov = this.camSaved.fov;
+        pc.updateProjectionMatrix?.();
+      }
       this.camSaved = null;
     }
   }
@@ -1680,16 +1692,21 @@ export class SpellforgeSystem extends createSystem({
       const bv = this.bossVis;
       bv.holder.position.set(bs.pos[0], bs.pos[1], bs.pos[2]);
       bv.holder.rotation.y = Math.atan2(this.head.pos[0] - bs.pos[0], this.head.pos[2] - bs.pos[2]);
-      if (bs.hp < bv.lastHp - 0.01) bv.rig.flash();
+      if (bs.hp < bv.lastHp - 0.01) bv.rig.flash(Math.min(1, (bv.lastHp - bs.hp) / 40));
       bv.lastHp = bs.hp;
       const tele = bs.winding ? Math.max(0, bs.winding.dur - bs.winding.t) : 0;
-      bv.rig.tick(live ? dt : 0, t, { tele, frozen: false, burning: false, rooted: false, hpFrac: bs.hp / bs.maxHp, armor: bs.armorHp > 0 || bs.barrier, phase: bs.phase });
+      const w = bs.winding;
+      bv.rig.tick(live ? dt : 0, t, { tele, frozen: false, burning: false, rooted: false, hpFrac: bs.hp / bs.maxHp, armor: bs.armorHp > 0, phase: bs.phase, kind: w?.kind, teleDur: w?.dur, trans: bs.trans, dead: bs.dead, deathK: bs.dead ? Math.min(1, bs.deathT / 4.2) : 0, vuln: bs.vuln > 0, barrier: bs.barrier, elHex: w?.el ? ELEMENT_HEX[w.el] : undefined });
+      if (live) {
+        this.runEmitters(bv.rig.emitters, dt);
+        this.bossCues(bv.rig, bs.def.hex);
+      }
       (bv.barrier.material as MeshBasicMaterial).opacity = bs.barrier ? 0.28 + Math.sin(t * 8) * 0.08 : 0;
       (bv.tele.material as MeshBasicMaterial).opacity = tele > 0 ? 0.7 : 0;
       (bv.tele.material as MeshBasicMaterial).color.setHex(bs.def.hex);
       bv.tele.scale.setScalar(1 + (tele > 0 ? (1 - tele) * 1.2 : 0));
       bv.tele.lookAt(this.head.pos[0], this.head.pos[1], this.head.pos[2]);
-      if (bs.dead) bv.holder.scale.setScalar(Math.max(0.01, bs.def.scale * Math.max(0, 1 - bs.deathT / 4.5)));
+      if (bs.dead && bs.deathT > 3.6) bv.holder.scale.setScalar(Math.max(0.01, bs.def.scale * Math.max(0, 1 - (bs.deathT - 3.6) / 0.9)));
       this.bossPylons(b);
     } else if (this.bossVis) {
       this.root.remove(this.bossVis.holder);
@@ -1775,6 +1792,52 @@ export class SpellforgeSystem extends createSystem({
     }
   }
 
+  /** world-space particle sockets on rigs (chimneys, hands, hearts) */
+  private runEmitters(list: Emitter[], dt: number): void {
+    const d = this.sparks.density;
+    for (const e of list) {
+      if (!e.on || e.rate <= 0) continue;
+      e.acc += e.rate * dt * d;
+      if (e.acc < 1) continue;
+      e.obj.getWorldPosition(this.tmpV);
+      while (e.acc >= 1) {
+        e.acc -= 1;
+        const sp = e.spread;
+        this.sparks.emit(this.tmpV.x + (Math.random() - 0.5) * sp * 0.3, this.tmpV.y + (Math.random() - 0.5) * sp * 0.3, this.tmpV.z + (Math.random() - 0.5) * sp * 0.3, e.vel[0] + (Math.random() - 0.5) * sp, e.vel[1] + (Math.random() - 0.5) * sp, e.vel[2] + (Math.random() - 0.5) * sp, e.hex, e.size * (0.7 + Math.random() * 0.6), e.life * (0.7 + Math.random() * 0.6), e.grav);
+      }
+    }
+  }
+  /** one-shot rig cues: landing slams, roars, shattering blades, breaking seals */
+  private bossCues(rig: BossRig, hex: number): void {
+    if (!rig.cues.length) return;
+    rig.cueAt.getWorldPosition(this.tmpV);
+    const b = this.battle;
+    const bx = b?.boss ? b.boss.pos[0] : this.tmpV.x;
+    const bz = b?.boss ? b.boss.pos[2] : this.tmpV.z;
+    for (const c of rig.cues) {
+      if (c === 'slam' || c === 'release-slam') {
+        this.sparks.ring(bx, 0.08, bz + 1.2, 1.6, 0xffb060, 48, 0.1, 1.0);
+        this.sparks.burst(bx, 0.3, bz + 1.5, 0xff7a1a, 40, 3.2, 0.09, 1.1, 3, 1.5);
+        this.envPulse = Math.max(this.envPulse, 1);
+        sfAudio.event('slam', [bx, 0.2, bz + 1.5], 1);
+      } else if (c === 'land') {
+        this.sparks.ring(bx, 0.08, bz, 2.2, hex, 64, 0.1, 1.2);
+        this.sparks.burst(this.tmpV.x, this.tmpV.y, this.tmpV.z, hex, 60, 3.4, 0.09, 1.2);
+        this.envPulse = Math.max(this.envPulse, 1);
+        sfAudio.event('land', [bx, 1.5, bz], 1);
+      } else if (c === 'roar' || c === 'seal') {
+        this.sparks.burst(this.tmpV.x, this.tmpV.y, this.tmpV.z, hex, 50, 2.6, 0.08, 1.2);
+        if (c === 'seal') this.sparks.ring(bx, 2.4, bz, 2.6, 0xe0c8ff, 60, 0.08, 1.4);
+      } else if (c === 'shatter') {
+        this.sparks.burst(this.tmpV.x, this.tmpV.y + 0.4, this.tmpV.z, 0xc3ceff, 40, 2.8, 0.07, 1.0, 4);
+        sfAudio.event('shatter', [this.tmpV.x, this.tmpV.y, this.tmpV.z], 0.8);
+      } else if (c === 'implode') {
+        this.sparks.burst(this.tmpV.x, this.tmpV.y, this.tmpV.z, 0xffffff, 90, 5, 0.1, 1.6);
+      }
+    }
+    rig.cues.length = 0;
+  }
+  private envPulse = 0;
   private bossPylons(b: Battle): void {
     b.pylons.forEach((p, i) => this.arena.setPylon(i, p.overload, !!b.boss?.barrier));
   }
@@ -2092,7 +2155,10 @@ export class SpellforgeSystem extends createSystem({
     this.sigilCd = Math.max(0, this.sigilCd - dt);
     // reposition the status, hint, extra buttons around the head
     this.hudStatus.mesh.position.set(hx - 0.66, hy - 0.2, hz - 0.78);
-    this.hudHint.mesh.position.set(hx, hy - 0.72, hz - 0.95);
+    // in a headset the hint sits low, under the action; on a flat screen it must stay inside the frame
+    const flat = !this.presenting && !this.handsXr;
+    this.hudHint.mesh.position.set(hx, hy - (flat ? 0.4 : 0.72), hz - 0.95);
+    this.hudHint.mesh.rotation.x = flat ? -0.25 : -0.55;
     this.extra[0].panel.mesh.position.set(hx - 0.66, hy + 0.2, hz - 0.7);
     this.extra[1].panel.mesh.position.set(hx + 0.7, hy + 0.2, hz - 0.75);
     this.extra[2].panel.mesh.position.set(hx + 0.7, hy + 0.08, hz - 0.75);

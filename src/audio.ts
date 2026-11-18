@@ -225,7 +225,7 @@ function play(key: string, vol = 1, rate = 1, loop = false): boolean {
 // ------------------------------------------------------------------ music
 // Procedural Bengali-folk style score: tanpura drone, bansuri flute or dotara
 // pluck, tabla/dhol, soft reverb. Every game screen has its own raga and rhythm.
-import { modeState } from './mode.js';
+import { auraRoom, modeState, raceRoom } from './mode.js';
 
 // Cinematic score: warm string pad, felt-piano arpeggios, a sparse bell melody and a soft sub, in D minor.
 // Each screen gets its own colour (menu: open and gentle; gears: darker with a clockwork pulse; others: lighter).
@@ -385,6 +385,12 @@ const BPM = 66;
 function schedule(): void {
   const c = ctx;
   if (!c || !musicOn) return;
+  if (raceRoom.active || auraRoom.music) {
+    // Neon Overdrive plays its own score: fade the workshop music out instead of layering two
+    if (musicGain) musicGain.gain.setTargetAtTime(0, c.currentTime, 0.3);
+    nextT = c.currentTime + 0.2;
+    return;
+  }
   const col = colourFor();
   if (col !== curColour) {
     curColour = col;
@@ -1031,3 +1037,9 @@ let spellV: { o1: OscillatorNode; o2: OscillatorNode; f: BiquadFilterNode; g: Ga
 let auraV: { cy: { o: OscillatorNode; g: GainNode }[]; ma: { o: OscillatorNode; g: GainNode }[]; go: { o: OscillatorNode; g: GainNode }[] } | null = null;
 const meshVoices: ({ bp: BiquadFilterNode; lfo: OscillatorNode; level: GainNode; sp: StereoPannerNode | null } | undefined)[] = [];
 let whirrNode: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode; nf: BiquadFilterNode; ng: GainNode; lfo: OscillatorNode; lg: GainNode } | null = null;
+
+/** Shared AudioContext + master input (through the compressor/limiter) for modules with their own synth graphs. */
+export function audioCore(): { ctx: AudioContext; out: AudioNode } | null {
+  const c = ac();
+  return c ? { ctx: c, out: mainOut(c) } : null;
+}
