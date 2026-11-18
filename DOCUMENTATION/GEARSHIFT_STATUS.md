@@ -4,7 +4,7 @@ Statuses are kept separate. VERIFIED (on a real Quest headset) is **NO** for eve
 
 | Area | IMPLEMENTED | TESTED | Notes |
 | --- | --- | --- | --- |
-| Gear-train assembly bench (6 levels, star grades) | yes | browser (desktop, software GL) | unchanged by the racer |
+| Gear-train assembly bench (12 levels, star grades) | yes | browser (desktop, software GL) | unchanged by the racer |
 | Racer rules engine (RaceSim, 120 Hz fixed step) | yes | 39 node tests | shift windows, turbo, heat, stress, grades, records, daily challenge |
 | Night-city world (city / tunnel / highway, rain) | yes | desktop screenshots | procedural shaders, instanced props |
 | Procedural engine + synthwave score | yes | no listening test | WebAudio, compressor + limiter on the master bus |

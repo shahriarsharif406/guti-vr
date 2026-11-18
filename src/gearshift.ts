@@ -53,6 +53,7 @@ const BH = 0.74;
 const Z0 = 0.024; // front layer offset from the board
 const Z1 = 0.012; // back layer offset
 const TRAY_Y = -0.29;
+const RACK_SCALE = 0.7;
 const PICK_R = 0.075;
 const SNAP_R = 0.085;
 const OMEGA = -1.5; // motor speed (negative = clockwise as seen by the player)
@@ -1033,7 +1034,7 @@ export class GearShiftSystem extends createSystem({
   // ---------------------------------------------------------------- levels
   private loadLevel(i: number): void {
     this.level = Math.max(0, Math.min(LEVELS.length - 1, i));
-    curStyle = chapterOf(this.level);
+    curStyle = chapterOf(this.level) % 3;
     orbitals.length = 0;
     const lv = this.lv;
     this.solved = false;
@@ -1129,7 +1130,7 @@ export class GearShiftSystem extends createSystem({
     const n = lv.inventory.length;
     let maxR = 0;
     for (const d of lv.inventory) for (const p of d.parts) maxR = Math.max(maxR, outerRadius(p.n));
-    const span = Math.min(maxR * 2 + 0.03, 1.62 / Math.max(1, n));
+    const span = Math.min(maxR * 2 * RACK_SCALE + 0.03, 1.62 / Math.max(1, n));
     lv.inventory.forEach((def, k) => {
       const g = new Group();
       const meshes: Mesh[] = def.parts.map((p) => {
@@ -1160,6 +1161,7 @@ export class GearShiftSystem extends createSystem({
 
   private syncItem(it: Item): void {
     it.g.position.set(it.x, BY + it.y, BZ + it.lift);
+    it.g.scale.setScalar(it.peg >= 0 || it.held ? 1 : RACK_SCALE); // parts in the rack are shown smaller so a big rack stays tidy
   }
 
   private place(itemIdx: number, peg: number): boolean {

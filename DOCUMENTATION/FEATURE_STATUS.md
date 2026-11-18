@@ -27,7 +27,7 @@ Platform: WebXR (IWSDK + Three.js), run in a browser and in a headset browser. I
 ## GearShift
 | Area | I | T | V | Notes |
 |---|---|---|---|---|
-| 6 verified gear-train levels in 3 chapters, clutch + ignition levers | yes | logic solver + e2e | no | |
+| 12 gear-train levels in 6 chapters, clutch + ignition levers | yes | logic tests (solution wins, no clash, fits board); levels 7 and 12 seen in a desktop screenshot, level 12 solution placed via test hook | no | levels 8-11 not looked at in the browser |
 | Tooth-mesh audio, adaptive music, haptics | yes | no (cannot be heard here) | no | mix reworked Nov 18 after player feedback: limiter, soft pulse, original lever sound |
 | Star grading (time, jams), personal best saved | yes | typecheck | no | added Nov 18 |
 | Finale: holographic orrery | yes | screenshot | no | |

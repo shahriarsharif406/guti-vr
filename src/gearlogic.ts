@@ -116,6 +116,62 @@ const RAW_LEVELS: Level[] = [
     -10,
     [g(10), g(20), g(15)],
   ),
+  build('Long train', 'Three idle gears in a row: the output is a big slow wheel, same way', 'Only the first and last wheel decide the speed', 10, { x: -0.3, y: 0.15 }, [link(15, -20), link(10, 25), link(20, -15)], { n: 24, layer: 0, dir: 1, minRatio: 0.38, maxRatio: 0.45 }, 20, [g(12), g(25)]),
+  build(
+    'Big reduction',
+    'A double gear slows the output to a quarter, same way',
+    'The big front wheel takes the motor, the small back wheel gives it away',
+    12,
+    { x: -0.3, y: 0.2 },
+    [comp(24, 12, -8)],
+    { n: 24, layer: 1, dir: 1, minRatio: 0.22, maxRatio: 0.28 },
+    8,
+    [g(12), g(24)],
+  ),
+  build(
+    'Overdrive',
+    'Spin the output 4x faster, same way',
+    'Small teeth up front, big teeth behind: the speed climbs',
+    20,
+    { x: -0.32, y: 0.1 },
+    [comp(10, 20, 25)],
+    { n: 10, layer: 1, dir: 1, minRatio: 3.8, maxRatio: 4.2 },
+    -20,
+    [g(10), g(20), g(15)],
+  ),
+  build(
+    'Back-layer relay',
+    'The output sits at the back: relay through a back-layer idler, 2x faster, opposite way',
+    'After the double gear, the next wheel must be a back-layer one',
+    10,
+    { x: -0.34, y: 0.2 },
+    [comp(10, 20, -30), { parts: [{ n: 12, layer: 1 }], inPart: 0, outPart: 0, angle: 15 }],
+    { n: 10, layer: 1, dir: -1, minRatio: 1.9, maxRatio: 2.1 },
+    40,
+    [g(12), g(12, 1), g(20, 1)],
+  ),
+  build(
+    'Crawler',
+    'Two double gears in a row: crawl at a quarter speed, opposite way',
+    'Each double gear takes big teeth in and gives small teeth out',
+    16,
+    { x: -0.34, y: 0.16 },
+    [comp(16, 8, -20), { parts: [{ n: 20, layer: 1 }, { n: 8, layer: 0 }], inPart: 0, outPart: 1, angle: 25 }],
+    { n: 14, layer: 0, dir: -1, minRatio: 0.21, maxRatio: 0.25 },
+    45,
+    [g(8), g(16), g(12)],
+  ),
+  build(
+    'Grand gearbox',
+    'The final gearbox: output 5x faster, opposite way',
+    'Two double gears: 10 and 25 teeth, then 10 and 20 teeth',
+    10,
+    { x: -0.36, y: 0.2 },
+    [comp(10, 25, -6), { parts: [{ n: 10, layer: 1 }, { n: 20, layer: 0 }], inPart: 0, outPart: 1, angle: 10 }],
+    { n: 10, layer: 0, dir: -1, minRatio: 4.8, maxRatio: 5.2 },
+    -4,
+    [g(20), g(25), g(15)],
+  ),
 ];
 
 /** Board box (metres, board coordinates) that every level must fit in: the gears stay clear of the rack and the frame. */
@@ -147,9 +203,9 @@ function centred(lv: Level): Level {
 }
 export const LEVELS: Level[] = RAW_LEVELS.map(centred);
 
-/** Campaign: three blueprints, two stages each. */
-export const CHAPTERS = ['I  CHRONOMETER ESCAPEMENT', 'II  AETHER PRESSURE REGULATOR', 'III  CELESTIAL ORRERY'];
-export const chapterOf = (level: number): number => Math.min(2, Math.floor(level / 2));
+/** Campaign: six blueprints, two stages each (the look cycles through three styles). */
+export const CHAPTERS = ['I  CHRONOMETER ESCAPEMENT', 'II  AETHER PRESSURE REGULATOR', 'III  CELESTIAL ORRERY', 'IV  TIDAL ENGINE', 'V  STARLIGHT DYNAMO', 'VI  GRAND GEARBOX'];
+export const chapterOf = (level: number): number => Math.min(5, Math.floor(level / 2));
 /** The orrery needs the clutch lever pulled as well as the ignition lever. */
 export const needsClutch = (level: number): boolean => level >= 4;
 

@@ -3,7 +3,7 @@
  * and fits inside the board field with the (bigger) gears. Rendering and audio are NOT covered here. Run: npm run test:gear
  */
 import assert from 'node:assert/strict';
-import { FIELD, LEVELS, evaluate, outerRadius } from '../src/gearlogic';
+import { FIELD, LEVELS, clashFree, evaluate, outerRadius } from '../src/gearlogic';
 
 let passed = 0;
 let failed = 0;
@@ -21,6 +21,10 @@ const test = (name: string, fn: () => void): void => {
 LEVELS.forEach((lv, i) => {
   test('level ' + (i + 1) + ' (' + lv.name + '): intended solution wins', () => {
     assert.equal(evaluate(lv, lv.solution).win, true);
+  });
+  test('level ' + (i + 1) + ': solution has no clashing gears and no jam', () => {
+    assert.equal(clashFree(lv, lv.solution), true);
+    assert.equal(evaluate(lv, lv.solution).jam, false);
   });
   test('level ' + (i + 1) + ': empty bench does not win', () => {
     assert.equal(evaluate(lv, lv.solution.map(() => -1)).win, false);
