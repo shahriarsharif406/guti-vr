@@ -5,7 +5,7 @@
  * replay memory echoes. Emits events that the view, audio and save layers listen to.
  * Unit-tested in tests/aura.test.ts (thread grabbing, connections, reset, ring turns, echo replay).
  */
-import { ECHO_MAX, EchoTrack, LIVE_HOLDS, OUT_CAP, brokenThreads, canWeave, echoReady, evaluate, freshState, holdLimit, keyAt, latchMemories, nodePos, reach, solveWeave } from './threadlogic.js';
+import { ECHO_MAX, EchoTrack, LIVE_HOLDS, OUT_CAP, brokenThreads, canWeave, echoReady, evaluate, freshState, holdLimit, latchMemories, nodePos, reach, solveWeave } from './threadlogic.js';
 import type { Era, Thread, Weave, WeaveEval, WeaveRefusal, WeaveSolution, WeaveState } from './threadlogic.js';
 
 export type PlayEvent =
@@ -116,8 +116,11 @@ export class ThreadPlay {
   setSlack(v: number): void {
     this.s.slack = v;
   }
+  /** A light gate of a combined light + thread puzzle woke or fell asleep. Re-evaluates only on change. */
   setLight(i: number, on: boolean): void {
+    if (this.s.lightOn[i] === on) return;
     this.s.lightOn[i] = on;
+    this.refresh();
   }
 
   // ---------------------------------------------------------------- picking
@@ -413,6 +416,10 @@ export class ThreadPlay {
   }
 
   // ---------------------------------------------------------------- simulation step
+  /**
+   * Advance the clock by dt. Steady state (no recording, no echoes, no hold change) does no work and allocates
+   * nothing, so the renderer may call this every frame. Energy is only re-evaluated when the held keys change.
+   */
   tick(dt: number): void {
     this.time += dt;
     if (this.rec && this.rec.recording) {
@@ -422,26 +429,48 @@ export class ThreadPlay {
         if (!this.rec.add(this.time, p.x, p.y, p.down)) this.stopRecord();
       } else if (this.time > 0 && !this.rec.add(this.time, 0, 0, false)) this.stopRecord();
     }
-    const echoHeld: number[] = [];
-    this.echoes.forEach((e, i) => {
+    // keys held by echoes (scratch arrays: no per-frame allocation)
+    const echoHeld = this.echoHeldScratch;
+    echoHeld.length = 0;
+    for (let i = 0; i < this.echoes.length; i++) {
       this.echoClock[i] += dt;
       const o = this.echoPose[i];
-      e.sample(this.echoClock[i], o as never);
+      this.echoes[i].sample(this.echoClock[i], o as never);
       if (o.down) {
-        const k = keyAt(this.w, o.x, o.y, this.pickR);
+        const k = this.keyNear(o.x, o.y);
         if (k >= 0) echoHeld.push(k);
       }
-    });
+    }
     const limit = holdLimit(this.w, this.s, this.echoes.length);
-    const held: number[] = [];
+    const held = this.heldScratch;
+    held.length = 0;
     if (this.liveHold) held.push(this.liveHold.node);
     for (const k of echoHeld) if (held.length < limit && !held.includes(k)) held.push(k);
-    const before = this.s.held.join();
-    this.s.held = held;
-    if (held.join() !== before) {
-      for (const k of echoHeld) if (!before.split(',').includes(String(k))) this.events.push({ t: 'echoHold', node: k });
-    }
+    const before = this.s.held;
+    let same = before.length === held.length;
+    for (let i = 0; same && i < held.length; i++) same = before[i] === held[i];
+    if (same) return;
+    for (const k of echoHeld) if (held.includes(k) && !before.includes(k)) this.events.push({ t: 'echoHold', node: k });
+    this.s.held = held.slice();
     this.refresh();
+  }
+  private readonly heldScratch: number[] = [];
+  private readonly echoHeldScratch: number[] = [];
+  private readonly keyP = { x: 0, y: 0 };
+  /** allocation-free keyAt (same rule as threadlogic.keyAt with this play's pick radius) */
+  private keyNear(x: number, y: number): number {
+    let best = -1;
+    let bd = this.pickR;
+    for (let i = 0; i < this.w.nodes.length; i++) {
+      if (this.w.nodes[i].kind !== 'key') continue;
+      nodePos(this.w, i, this.keyP);
+      const d = Math.hypot(this.keyP.x - x, this.keyP.y - y);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    return best;
   }
 
   /** re-evaluate energy and emit change events (power, receivers, constellation, memory latches) */

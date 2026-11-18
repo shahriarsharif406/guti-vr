@@ -189,6 +189,24 @@ test('a version-1 save migrates: restored light puzzles keep their place in the 
   assert.equal(r.settings.muted, true);
   assert.ok(r.unlocked >= V1_TO_V2[1]);
 });
+test('an interim v2 save with one slot per light puzzle is re-indexed into the full journey', () => {
+  store.clear();
+  store.set('pw-aura-v2', JSON.stringify({ v: SAVE_VERSION, unlocked: 2, solved: [true, true, false, false, false, false, false], best: [3, 5, 0, 0, 0, 0, 0], time: [9, 0, 0, 0, 0, 0, 0], finished: true, settings: { sfx: 0.5 } }));
+  const r = loadSave(15);
+  assert.equal(r.solved[V1_TO_V2[0]], true);
+  assert.equal(r.solved[V1_TO_V2[1]], true);
+  assert.equal(r.best[V1_TO_V2[1]], 5);
+  assert.equal(r.time[V1_TO_V2[0]], 9);
+  assert.equal(r.solved[0], false, 'thread puzzles stay unsolved');
+  assert.equal(r.finished, false);
+  assert.equal(r.unlocked, V1_TO_V2[1] + 1);
+  assert.equal(r.settings.sfx, 0.5);
+  // a full-length v2 save is read as is
+  const d = defaultSave(15);
+  d.solved[0] = true;
+  writeSave(d);
+  assert.equal(loadSave(15).solved[0], true);
+});
 test('missing storage never throws', () => {
   (globalThis as unknown as { localStorage: unknown }).localStorage = undefined;
   assert.equal(loadSave(7).unlocked, 0);

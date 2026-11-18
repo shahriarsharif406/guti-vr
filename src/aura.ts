@@ -28,16 +28,14 @@ import {
   Vector3,
   createSystem,
 } from '@iwsdk/core';
-import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, sfx, musicState } from './audio.js';
+import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, sfx, musicState, withPan } from './audio.js';
 import {
-  CHAPTER_NAMES,
   CYAN,
   GOLD,
   MAGENTA,
   MIRROR_STEPS,
   PRISM_STEPS,
   angleOf,
-  makeLevels,
   solve,
   stepsOf,
   trace,
@@ -45,7 +43,14 @@ import {
 import type { Elem, Level, Trace } from './auralogic.js';
 import { MASK_HEX, MASK_LETTER, MASK_NAME, RippleFx, floatingStone, makeBeams, makeCrystalMaterial, makeFractal, makeLotus, makeNebula, runeRingTexture, setBeam, softDotTexture } from './aurafx.js';
 import type { Lotus } from './aurafx.js';
+import { WORLDS, makePuzzles } from './auralevels.js';
+import type { Puzzle } from './auralevels.js';
 import { defaultSave, loadSave, writeSave } from './aurasave.js';
+import { nodePos } from './threadlogic.js';
+import { ThreadPlay } from './threadplay.js';
+import type { PlayEvent } from './threadplay.js';
+import { ThreadView } from './threadview.js';
+import type { ThreadViewOpts } from './threadview.js';
 import type { AuraSave } from './aurasave.js';
 import { celebrate } from './fx.js';
 import { readPinchPoint } from './hand.js';
@@ -64,6 +69,22 @@ const PINCH_START = 0.85;
 const PINCH_HOLD = 0.5;
 const MAX_SEG = 96;
 const HOLD_T = 0.8; // seconds of exact light needed to wake a gate
+/** thread pick radius per aim setting (precise, normal, generous) */
+const AIM_R = [0.042, 0.055, 0.075];
+/** button ids of the thread-only game buttons (after the 4 game buttons and 12 menu slots) */
+const ID_ERA = 16;
+const ID_HINT = 17;
+const REFUSE_TEXT: Record<string, string> = {
+  'no-node': 'Let go on a crystal to tie the thread',
+  self: 'A thread needs two different crystals',
+  era: 'That crystal does not exist in this era',
+  'capacity-out': 'That crystal has no thread left to give',
+  'capacity-in': 'That crystal cannot take another thread',
+  duplicate: 'Those crystals are already woven together',
+  'too-long': 'Too far: the thread would tear. Find a crystal in between',
+  wall: 'A pillar is in the way',
+  crossing: 'Threads may not cross: they would short the energy',
+};
 let rayTex: CanvasTexture | null = null;
 /** Radial god-ray burst (cheap screen-space-style approximation: one additive quad per awake gate). */
 function rayTexture(): CanvasTexture {
@@ -177,8 +198,23 @@ export class AuraSystem extends createSystem({
   opts: { required: [AuraOpt, Pressed] },
 }) {
   private bus = new Bus();
-  private levels: Level[] = makeLevels();
-  private save: AuraSave = defaultSave(7);
+  /** the journey: every puzzle (light board, thread board or both); `level` indexes this list */
+  private puzzles: Puzzle[] = makePuzzles();
+  private pz!: Puzzle;
+  private save: AuraSave = defaultSave(this.puzzles.length);
+  /** thread board of the current puzzle (null for pure light puzzles) */
+  private tp: ThreadPlay | null = null;
+  private tview!: ThreadView;
+  private tviewOpts: ThreadViewOpts = { reducedMotion: false, reducedFlash: false, highContrast: false, hintOn: false };
+  /** invisible ray target over the loom: mouse, controller rays and hand pointers all arrive here */
+  private board!: Mesh;
+  private boardPids = new Set<number>();
+  private boardV = new Vector3();
+  private uiMeshes: Mesh[] = [];
+  private hintT = 0;
+  private hintsUsed = 0;
+  private puzzleT = 0;
+  private threadLv = [0, 0, 0];
   private level = 0;
   private lv!: Level;
   private startAng: number[] = [];
@@ -244,6 +280,7 @@ export class AuraSystem extends createSystem({
   private hud!: TextPanel;
   private compass!: TextPanel;
   private btns: TextPanel[] = [];
+  private threadBtns: TextPanel[] = [];
   private setBtns: TextPanel[] = [];
   private card!: TextPanel;
   private beamLv = [0, 0, 0];
@@ -254,13 +291,13 @@ export class AuraSystem extends createSystem({
 
   // ================================================================ init
   init(): void {
-    this.save = loadSave(this.levels.length);
+    this.save = loadSave(this.puzzles.length);
     setMasterVolume(this.save.settings.volume);
     setMusicVolume(this.save.settings.music);
     setSfxVolume(this.save.settings.sfx);
     setMuted(this.save.settings.muted);
     this.root.position.set(0, BY, BZ);
-    this.world.createTransformEntity(this.root);
+    const rootEnt = this.world.createTransformEntity(this.root);
 
     // cosmic void behind the board + frame
     this.nebula = makeNebula(BW, BH);
@@ -285,6 +322,16 @@ export class AuraSystem extends createSystem({
     this.ghost.mat.uniforms.uAlpha.value = 0;
     this.root.add(this.ghost.mesh, this.beams.mesh, this.srcGroup, this.elemGroup, this.ripple.group);
     this.ripple.group.position.z = 0.035;
+    // thread board: renderer + one ray-interactable plane covering the loom
+    this.tview = new ThreadView(shared().dot);
+    this.root.add(this.tview.group);
+    const boardMat = new MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+    boardMat.colorWrite = false;
+    this.board = new Mesh(new PlaneGeometry(BW + 0.06, BH + 0.06), boardMat);
+    this.board.position.set(0, 0, 0.03);
+    const boardEnt = this.world.createTransformEntity(this.board, { parent: rootEnt });
+    boardEnt.addComponent(RayInteractable);
+    this.initBoardInput();
 
     // gates (monoliths): pool of 3
     for (let i = 0; i < 3; i++) this.gates.push(this.makeGate());
@@ -311,9 +358,13 @@ export class AuraSystem extends createSystem({
       entity.addComponent(RayInteractable);
       entity.addComponent(AuraOpt, { id });
       list.push(panel);
+      this.uiMeshes.push(panel.mesh);
     };
     for (let i = 0; i < 4; i++) mkBtn(i, 0.2, 0.07, -0.33 + i * 0.22, 0.64, -0.5, -0.9, this.btns);
     for (let i = 0; i < 12; i++) mkBtn(4 + i, 0.2, 0.055, i % 2 ? 0.115 : -0.115, 1.27 - Math.floor(i / 2) * 0.062, -0.5, -0.2, this.setBtns);
+    // thread puzzles only: ERA (switch past / present) and HINT, at both ends of the game row
+    mkBtn(ID_ERA, 0.17, 0.07, -0.545, 0.64, -0.5, -0.9, this.threadBtns);
+    mkBtn(ID_HINT, 0.17, 0.07, 0.545, 0.64, -0.5, -0.9, this.threadBtns);
 
     this.cleanupFuncs.push(
       this.queries.opts.subscribe('qualify', (entity: Entity) => {
@@ -348,17 +399,26 @@ export class AuraSystem extends createSystem({
         this.msgT = 4;
         this.hudDirty = true;
       } else if (e.t === 'complete') {
+        const mv = this.totalMoves();
         this.save.solved[this.level] = true;
-        this.save.unlocked = Math.min(this.levels.length - 1, Math.max(this.save.unlocked, this.level + 1));
+        this.save.unlocked = Math.min(this.puzzles.length - 1, Math.max(this.save.unlocked, this.level + 1));
         const best = this.save.best[this.level];
-        if (best === 0 || this.moves < best) this.save.best[this.level] = this.moves;
-        this.save.stats.moves += this.moves;
+        if (best === 0 || mv < best) {
+          this.save.best[this.level] = mv;
+          this.save.hints[this.level] = this.hintsUsed;
+        }
+        const bt = this.save.time[this.level];
+        if (bt === 0 || this.puzzleT < bt) this.save.time[this.level] = Math.max(0.1, Math.round(this.puzzleT * 10) / 10);
+        if (this.puzzleT <= this.pz.swift) this.save.swift[this.level] = true;
+        this.save.stats.moves += mv;
+        if (this.tp) this.tp.cancel();
+        this.boardPids.clear();
         this.lotus[this.level].target = 1;
         this.ferns[this.level].lines.visible = true;
         this.pulseAge = 0;
         sfx.auraPulse();
         this.buzz([60, 40, 120]);
-        this.restore = this.save.solved.filter(Boolean).length / this.levels.length;
+        this.restore = this.save.solved.filter(Boolean).length / this.puzzles.length;
         this.msg = 'Sanctuary ' + Math.round(this.restore * 100) + '% restored';
         this.msgT = 6;
         this.persist();
@@ -391,7 +451,9 @@ export class AuraSystem extends createSystem({
         }
       } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && this.sel >= 0 && !this.paused) {
         this.stepElem(this.sel, e.key === 'ArrowRight' ? 1 : -1);
-      } else if (e.key === 'r' || e.key === 'R') this.press(1);
+      } else if (e.key === 'e' || e.key === 'E') this.press(ID_ERA);
+      else if (e.key === 'h' || e.key === 'H') this.press(ID_HINT);
+      else if (e.key === 'r' || e.key === 'R') this.press(1);
       else if (e.key === 'Enter') this.press(2);
       else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') this.press(3);
     };
@@ -424,7 +486,7 @@ export class AuraSystem extends createSystem({
 
     // hooks for automated tests
     const w = window as unknown as Record<string, unknown>;
-    w.__aura = () => ({ screen: this.screen, settings: this.save.settings, mode: modeState.mode, level: this.level, solved: this.tr?.solved, ok: this.tr?.ok, got: this.tr?.got, awake: this.gates.map((g) => g.awake), saved: this.save.solved, restore: this.restore, moves: this.moves, paused: this.paused, finaleT: this.finaleT, sol: this.sol, ang: this.lv?.elems.map((e) => e.a) });
+    w.__aura = () => ({ screen: this.screen, puzzle: this.pz?.id, stats: this.save.stats, msg: this.msgT > 0 ? this.msg : '', hints: this.save.hints, count: this.puzzles.length, unlocked: this.save.unlocked, time: this.save.time, settings: this.save.settings, mode: modeState.mode, level: this.level, solved: this.tr?.solved, ok: this.tr?.ok, got: this.tr?.got, awake: this.gates.map((g) => g.awake), saved: this.save.solved, restore: this.restore, moves: this.moves, paused: this.paused, finaleT: this.finaleT, sol: this.sol, ang: this.lv?.elems.map((e) => e.a) });
     w.__auraLevel = (i: number) => this.loadLevel(i);
     w.__auraInfo = () => ({ geometries: this.world.renderer.info.memory.geometries, textures: this.world.renderer.info.memory.textures, programs: this.world.renderer.info.programs?.length ?? 0, children: this.elemGroup.children.length + this.srcGroup.children.length, listeners: this.cleanupFuncs.length });
     w.__auraSolve = () => {
@@ -439,17 +501,43 @@ export class AuraSystem extends createSystem({
     };
     w.__auraElems = () => this.lv.elems.map((e) => ({ k: e.kind, x: e.x, y: e.y, a: e.a, rot: e.rot }));
     w.__auraPress = (id: number) => this.press(id);
+    // thread board hooks (tests): state, node screen positions, fixed-step simulation, assisted weaving
+    w.__auraThread = () => {
+      const pl = this.tp;
+      if (!pl) return null;
+      return { era: pl.s.era, eras: pl.w.eras, threads: pl.s.threads.map((t) => [t.a, t.b, t.era]), held: pl.s.held.slice(), solved: pl.ev.solved, receivers: pl.ev.receiverOk.filter((ok, i) => pl.w.nodes[i].kind === 'receiver' && ok).length, recording: pl.recording, echoes: pl.echoes.length, moves: pl.moves, hint: pl.hint(), board: this.board.pointerEvents };
+    };
+    w.__auraNodeScreen = (i: number) => {
+      if (!this.tp) return null;
+      const p = nodePos(this.tp.w, i);
+      const v = new Vector3(p.x, p.y, 0.034);
+      this.root.localToWorld(v).project(this.world.camera);
+      return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
+    };
+    w.__auraStep = (n: number, dt = 1 / 30) => {
+      for (let k = 0; k < n; k++) this.simStep(dt);
+    };
+    w.__auraWeave = (max = 40) => {
+      const pl = this.tp;
+      if (!pl) return false;
+      for (let k = 0; k < max && !pl.ev.solved; k++) {
+        if (!pl.autoStep()) break;
+        this.simStep(0.1);
+      }
+      this.simStep(0);
+      return pl.ev.solved;
+    };
     w.__auraWipe = () => {
-      this.save = defaultSave(this.levels.length);
+      this.save = defaultSave(this.puzzles.length);
       this.persist();
     };
 
     this.setVisible(false);
-    this.restore = this.save.solved.filter(Boolean).length / this.levels.length;
+    this.restore = this.save.solved.filter(Boolean).length / this.puzzles.length;
   }
 
   private chapterIdx(): number {
-    return Math.max(0, CHAPTER_NAMES.indexOf(this.lv.chapter));
+    return this.pz ? this.pz.world : 0;
   }
   private rotIdx(): number[] {
     const r: number[] = [];
@@ -497,16 +585,17 @@ export class AuraSystem extends createSystem({
     const ledge = new Mesh(new BoxGeometry(1.2, 0.03, 0.22), new MeshStandardMaterial({ color: 0x0b0a14, roughness: 0.3, metalness: 0.85, emissive: 0x15103a, emissiveIntensity: 0.6 }));
     ledge.position.set(0, -BH / 2 - 0.06, 0.12);
     this.root.add(ledge);
-    const n = this.levels.length;
+    const n = this.puzzles.length;
     for (let i = 0; i < n; i++) {
       const x = -0.5 + (i / (n - 1)) * 1.0;
-      const lo = makeLotus(0.5 + i * 0.07, 3);
+      const lo = makeLotus(0.5 + i * 0.035, 3);
       lo.group.position.set(x, -BH / 2 - 0.035, 0.16);
+      lo.group.scale.setScalar(0.7);
       this.root.add(lo.group);
       this.lotus.push(lo);
-      const fr = makeFractal(0.3 + i * 0.05, 11 + i * 7);
-      fr.lines.position.set(x + 0.05, -BH / 2 - 0.045, 0.09);
-      fr.lines.scale.setScalar(0.9);
+      const fr = makeFractal(0.3 + i * 0.025, 11 + i * 7);
+      fr.lines.position.set(x + 0.03, -BH / 2 - 0.045, 0.09);
+      fr.lines.scale.setScalar(0.6);
       fr.lines.visible = false;
       fr.setGrow(1);
       this.root.add(fr.lines);
@@ -561,15 +650,28 @@ export class AuraSystem extends createSystem({
   }
 
   private loadLevel(i: number): void {
-    this.level = Math.max(0, Math.min(this.levels.length - 1, i));
+    this.level = Math.max(0, Math.min(this.puzzles.length - 1, i));
     if (this.finaleT >= 0) {
       this.finaleT = -1;
       this.applyComposition();
     }
-    this.levels = makeLevels(); // fresh angles every load
-    this.lv = this.levels[this.level];
+    this.puzzles = makePuzzles(); // fresh angles and ring positions every load
+    this.pz = this.puzzles[this.level];
+    const pz = this.pz;
+    this.lv = pz.light ?? { name: pz.name, chapter: WORLDS[pz.world].name, goal: pz.goal, hint: pz.hint, sources: [], elems: [], targets: [] };
     this.startAng = this.lv.elems.map((e) => e.a);
-    this.sol = solve(this.lv, 1)[0] ?? null;
+    this.sol = pz.light ? (solve(this.lv, 1)[0] ?? null) : null;
+    // thread board (if this puzzle has one): relaxed difficulty lets threads stretch further
+    if (this.tp) this.tp.cancel();
+    const st = this.save.settings;
+    this.tp = pz.weave ? new ThreadPlay(pz.weave, AIM_R[st.aim] ?? AIM_R[1], st.difficulty === 0 ? 0.15 : 0) : null;
+    this.tview.bind(this.tp);
+    this.boardPids.clear();
+    this.hintT = 0;
+    this.hintsUsed = 0;
+    this.puzzleT = 0;
+    this.threadLevels();
+    this.refreshHint();
     this.clearLevelObjects();
     const sh = shared();
     this.lv.elems.forEach((e) => {
@@ -649,7 +751,7 @@ export class AuraSystem extends createSystem({
       else l.grow = 0;
       this.ferns[k].lines.visible = done;
     });
-    this.restore = this.save.solved.filter(Boolean).length / this.levels.length;
+    this.restore = this.save.solved.filter(Boolean).length / this.puzzles.length;
     this.drawBtns();
     this.syncPanels();
   }
@@ -673,6 +775,10 @@ export class AuraSystem extends createSystem({
 
   private setVisible(v: boolean): void {
     this.root.visible = v;
+    if (!v && this.tp) {
+      this.tp.cancel();
+      this.boardPids.clear();
+    }
     this.hud.mesh.visible = v;
     this.compass.mesh.visible = v;
     for (const b of this.btns) b.mesh.visible = v;
@@ -696,6 +802,7 @@ export class AuraSystem extends createSystem({
       b.mesh.rotation.x = row ? -0.9 : -0.2;
     });
     this.btns.forEach((b, i) => (b.mesh.visible = on && game && (!this.photo || i < 3)));
+    this.threadBtns.forEach((b, i) => (b.mesh.visible = on && game && !this.photo && !!this.tp && (i === 1 || this.tp.w.eras === 2)));
   }
 
   // ================================================================ actions
@@ -710,6 +817,26 @@ export class AuraSystem extends createSystem({
         this.comp = (this.comp + 1) % 3;
         this.applyComposition();
       } else if (id === 2) this.setPhoto(false);
+      return;
+    }
+    if (id === ID_ERA || id === ID_HINT) {
+      if (this.screen !== 'game' || this.paused || !this.tp) return;
+      if (id === ID_ERA) {
+        if (this.tp.w.eras !== 2) return;
+        this.boardPids.clear();
+        this.tp.toggleEra();
+      } else {
+        this.hintT = 8;
+        this.hintsUsed++;
+        this.refreshHint();
+        const h = this.tp.hint();
+        this.msg = h.kind === 'era' ? 'Hint: weave in the ' + (h.era === 1 ? 'past' : 'present') : h.kind === 'ring' ? 'Hint: turn the glowing ring' : h.kind === 'record' ? 'Hint: tap the memory crystal, hold the keystone, let go' : h.kind === 'hold' ? 'Hint: hold the glowing keystone' : h.kind === 'cut' ? 'Hint: tap the ember-guided thread to cut it' : h.kind === 'charge' ? 'Hint: bring energy to the glowing crystal' : h.kind === 'none' ? 'Nothing left to weave' : 'Hint: follow the golden guide';
+        this.msgT = 5;
+      }
+      this.idle = 0;
+      this.drainPlay();
+      this.drawBtns();
+      this.hudDirty = true;
       return;
     }
     if (id >= 4) {
@@ -736,6 +863,10 @@ export class AuraSystem extends createSystem({
       }
     } else if (id === 3) {
       this.paused = !this.paused;
+      if (this.paused && this.tp) {
+        this.tp.cancel();
+        this.boardPids.clear();
+      }
     }
     this.persist();
     this.drawBtns();
@@ -750,7 +881,7 @@ export class AuraSystem extends createSystem({
   private pressTitle(slot: number): void {
     if (slot === 0) {
       let start = this.save.solved.findIndex((s) => !s);
-      if (start < 0) start = this.levels.length - 1;
+      if (start < 0) start = this.puzzles.length - 1;
       this.startLevel(Math.min(start, this.save.unlocked));
     } else if (slot === 1) this.screen = 'chapters';
     else if (slot === 2) this.screen = 'settings';
@@ -761,7 +892,7 @@ export class AuraSystem extends createSystem({
       }
       this.confirmNew = false;
       const keep = this.save.settings;
-      this.save = defaultSave(this.levels.length);
+      this.save = defaultSave(this.puzzles.length);
       this.save.settings = keep;
       this.restore = 0;
       this.restoreShown = 0;
@@ -770,7 +901,7 @@ export class AuraSystem extends createSystem({
     if (slot !== 3) this.confirmNew = false;
   }
   private firstLevelOf(c: number): number {
-    return Math.max(0, this.levels.findIndex((l) => l.chapter === CHAPTER_NAMES[c]));
+    return Math.max(0, this.puzzles.findIndex((p) => p.world === c));
   }
   private pressChapter(slot: number): void {
     if (slot === 5) {
@@ -950,7 +1081,7 @@ export class AuraSystem extends createSystem({
     const by = pt.pos.y - this.root.position.y;
     if (pt.down && !pt.was && !this.paused && !this.photo) {
       const g = this.nearest(bx, by, PICK_R);
-      if (g >= 0) {
+      if (g >= 0 && this.lightTakes(bx, by)) {
         pt.grab = g;
         pt.t0 = this.time;
         pt.sx = bx;
@@ -999,7 +1130,7 @@ export class AuraSystem extends createSystem({
         this.applyComposition();
         this.save.stats.plays++;
         let start = this.save.solved.findIndex((s) => !s);
-        if (start < 0) start = this.levels.length - 1;
+        if (start < 0) start = this.puzzles.length - 1;
         this.loadLevel(Math.min(start, this.save.unlocked));
         this.drawMenu();
       } else {
@@ -1022,8 +1153,19 @@ export class AuraSystem extends createSystem({
       this.updateHover();
     }
 
-    if (this.dirty) this.retrace();
-    this.updateGates(dt);
+    this.simStep(dt);
+    this.syncPointerTargets();
+    if (this.tp) {
+      const o = this.tviewOpts;
+      o.reducedMotion = reduced;
+      o.reducedFlash = this.save.settings.reducedFlash;
+      o.highContrast = this.save.settings.highContrast;
+      if (this.hintT > 0) this.hintT -= dt;
+      // automatic hints follow the wisp rules: never in challenge mode, sooner in the tutorial
+      const auto = this.save.settings.wisps && this.save.settings.difficulty < 2 && this.idle > (this.save.settings.tutorial && this.level === 0 ? 6 : this.save.settings.difficulty === 0 ? 10 : 18);
+      o.hintOn = !this.paused && (this.hintT > 0 || auto) && !this.tp.ev.solved;
+      this.tview.sync(this.time, dt, o);
+    }
     this.updateVisuals(dt, reduced);
     this.updateWorld(dt, reduced);
     this.updateAudio();
@@ -1039,6 +1181,236 @@ export class AuraSystem extends createSystem({
       this.drawCompass();
     }
     if (this.shotPending) this.capture();
+  }
+
+  // ================================================================ thread board
+  /** Simulation step shared by the frame loop and the fixed-step test hook. */
+  private simStep(dt: number): void {
+    if (this.tp) {
+      if (dt > 0) this.tp.tick(dt);
+      this.drainPlay();
+    }
+    if (this.dirty) this.retrace();
+    this.updateGates(dt);
+    if (this.screen === 'game' && this.completeT < 0) this.puzzleT += dt;
+  }
+  private totalMoves(): number {
+    return this.moves + (this.tp ? this.tp.moves : 0);
+  }
+  /** Is a light element (mirror/prism) the better target for a press at this board point than a thread crystal? */
+  private lightTakes(bx: number, by: number): boolean {
+    const e = this.nearest(bx, by, PICK_R);
+    if (e < 0) return false;
+    if (!this.tp) return true;
+    const n = this.tp.nearestNode(bx, by);
+    if (n < 0) return true;
+    const el = this.lv.elems[e];
+    const p = nodePos(this.tp.w, n, this.nodeP);
+    return Math.hypot(el.x - bx, el.y - by) < Math.hypot(p.x - bx, p.y - by);
+  }
+  private nodeP = { x: 0, y: 0 };
+  private boardActive(): boolean {
+    return modeState.mode === 'aura' && this.screen === 'game' && !!this.tp && !this.paused && !this.photo && this.finaleT < 0;
+  }
+  /**
+   * Hidden menu panels must not swallow rays meant for the loom (pointer hits ignore visibility), and the loom must not
+   * catch rays outside a thread puzzle. Writes only when a value changes; no allocation.
+   */
+  private syncPointerTargets(): void {
+    for (let i = 0; i < this.uiMeshes.length; i++) {
+      const m = this.uiMeshes[i];
+      const want = m.visible ? 'auto' : 'none';
+      if (m.pointerEvents !== want) m.pointerEvents = want;
+    }
+    const want = this.boardActive() ? 'auto' : 'none';
+    if (this.board.pointerEvents !== want) this.board.pointerEvents = want;
+  }
+  /** Pointer events on the loom plane (mouse, XR controller rays, hand pointers) drive the thread controller. */
+  private initBoardInput(): void {
+    type PE = { point: Vector3; pointerId: number };
+    const toBoard = (e: PE): void => {
+      this.boardV.copy(e.point);
+      this.root.worldToLocal(this.boardV);
+    };
+    const down = (ev: unknown): void => {
+      const e = ev as PE;
+      if (!this.boardActive() || !this.tp) return;
+      toBoard(e);
+      const x = this.boardV.x;
+      const y = this.boardV.y;
+      if (this.lightTakes(x, y)) return;
+      this.tp.trackPointer(e.pointerId, x, y, true);
+      if (this.tp.down(e.pointerId, x, y)) {
+        this.boardPids.add(e.pointerId);
+        try {
+          this.board.setPointerCapture(e.pointerId);
+        } catch {
+          /* capture is optional: the plane is larger than the loom */
+        }
+        this.idle = 0;
+        this.drainPlay();
+      }
+    };
+    const move = (ev: unknown): void => {
+      const e = ev as PE;
+      if (!this.tp) return;
+      toBoard(e);
+      const held = this.boardPids.has(e.pointerId);
+      this.tp.trackPointer(e.pointerId, this.boardV.x, this.boardV.y, held);
+      if (!held) return;
+      this.tp.move(e.pointerId, this.boardV.x, this.boardV.y);
+      this.drainPlay();
+    };
+    const up = (ev: unknown): void => {
+      const e = ev as PE;
+      if (!this.tp || !this.boardPids.has(e.pointerId)) return;
+      toBoard(e);
+      this.boardPids.delete(e.pointerId);
+      this.tp.trackPointer(e.pointerId, this.boardV.x, this.boardV.y, false);
+      this.tp.up(e.pointerId, this.boardV.x, this.boardV.y);
+      try {
+        this.board.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      this.idle = 0;
+      this.drainPlay();
+    };
+    const b = this.board as unknown as { addEventListener(t: string, f: (e: unknown) => void): void; removeEventListener(t: string, f: (e: unknown) => void): void };
+    b.addEventListener('pointerdown', down);
+    b.addEventListener('pointermove', move);
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+    this.cleanupFuncs.push(() => {
+      b.removeEventListener('pointerdown', down);
+      b.removeEventListener('pointermove', move);
+      b.removeEventListener('pointerup', up);
+      b.removeEventListener('pointercancel', up);
+    });
+  }
+  /** Route queued controller events to audio, haptics, save stats and HUD. Event-driven: allocates only on events. */
+  private drainPlay(): void {
+    const pl = this.tp;
+    if (!pl || pl.events.length === 0) return;
+    for (let i = 0; i < pl.events.length; i++) this.onPlayEvent(pl.events[i], pl);
+    pl.events.length = 0;
+    this.threadLevels();
+    this.refreshHint();
+    this.drawBtns();
+    this.hudDirty = true;
+  }
+  private panOf(pl: ThreadPlay, node: number): number {
+    if (node < 0) return 0;
+    return nodePos(pl.w, node, this.nodeP).x / 0.6;
+  }
+  private onPlayEvent(e: PlayEvent, pl: ThreadPlay): void {
+    const st = this.save.stats;
+    const say = (m: string, t = 3.5): void => {
+      this.msg = m;
+      this.msgT = t;
+    };
+    switch (e.t) {
+      case 'grab':
+        withPan(this.panOf(pl, e.node), () => sfx.grab());
+        this.buzz(10);
+        break;
+      case 'connect': {
+        const p = nodePos(pl.w, e.b, this.nodeP);
+        const m = pl.ev.mask[pl.s.era - 1][e.a] || 7;
+        // pitch rises with tension: a taut thread rings higher
+        withPan(p.x / 0.6, () => sfx.auraTick(Math.round(e.len * 8)));
+        this.ripple.fire(p.x, p.y, 0, 0.25, MASK_HEX[m & 7]);
+        this.buzz(18);
+        st.threads++;
+        break;
+      }
+      case 'refuse':
+        withPan(this.panOf(pl, e.a), () => sfx.auraImpure());
+        say(REFUSE_TEXT[e.reason] ?? 'That thread cannot be woven');
+        break;
+      case 'cut':
+        withPan(this.panOf(pl, e.a), () => sfx.cut());
+        this.buzz(14);
+        break;
+      case 'snap':
+        withPan(this.panOf(pl, e.a), () => sfx.auraImpure());
+        say('A thread snapped: the ring carried a crystal out of reach');
+        break;
+      case 'hold':
+      case 'echoHold':
+        withPan(this.panOf(pl, e.node), () => sfx.auraTick(e.node));
+        break;
+      case 'ring':
+        sfx.auraTick(e.step);
+        this.buzz(12);
+        break;
+      case 'ringLocked':
+        sfx.auraImpure();
+        say('This ring is locked: power its orbit engine first');
+        break;
+      case 'era':
+        sfx.whoosh();
+        st.eraShifts++;
+        say(e.era === 1 ? 'The past. Threads woven here shape the present' : 'The present', 2.5);
+        break;
+      case 'recStart':
+        sfx.chime();
+        say('Recording an echo: hold a keystone, then let go', 4);
+        break;
+      case 'recStop':
+        if (e.ok) {
+          sfx.auraPulse();
+          st.echoes++;
+          say('The echo remembers your hand', 3);
+        } else sfx.auraImpure();
+        break;
+      case 'latch':
+        sfx.chime();
+        say('The memory crystal remembers. Tap it to record an echo', 4);
+        break;
+      case 'receiver':
+        if (e.on) {
+          const p = nodePos(pl.w, e.node, this.nodeP);
+          const m = pl.w.nodes[e.node].mask & 7;
+          withPan(p.x / 0.6, () => sfx.auraAwaken(e.node % 3, this.chapterIdx()));
+          this.ripple.fire(p.x, p.y, 0, 0.5, MASK_HEX[m]);
+          celebrate(p.x, BY + p.y, BZ + 0.08, 1);
+          this.buzz(40);
+          st.connections++;
+          st.hues[m]++;
+          this.flash = this.save.settings.reducedFlash ? 0.3 : 1;
+        }
+        break;
+      case 'align':
+        if (e.on) sfx.auraAwaken(0, this.chapterIdx());
+        break;
+      case 'power':
+      case 'release':
+        break;
+    }
+  }
+  /** Thread energy per colour feeds the same adaptive beam hum as the light puzzles. */
+  private threadLevels(): void {
+    const tl = this.threadLv;
+    tl[0] = tl[1] = tl[2] = 0;
+    const pl = this.tp;
+    if (!pl) return;
+    const ei = pl.s.era - 1;
+    const all = pl.w.fixed.concat(pl.s.threads);
+    for (const t of all) {
+      if (t.era !== pl.s.era || !pl.ev.live[ei][t.a]) continue;
+      const m = pl.ev.mask[ei][t.a];
+      const p = nodePos(pl.w, t.a);
+      const q = nodePos(pl.w, t.b);
+      const L = Math.hypot(q.x - p.x, q.y - p.y);
+      if (m & CYAN) tl[0] += L;
+      if (m & MAGENTA) tl[1] += L;
+      if (m & GOLD) tl[2] += L;
+    }
+    for (let i = 0; i < 3; i++) tl[i] = Math.min(1, tl[i] / 1.1);
+  }
+  private refreshHint(): void {
+    this.tview.setHint(this.tp ? this.tp.hint() : null);
   }
 
   private updateHover(): void {
@@ -1104,12 +1476,16 @@ export class AuraSystem extends createSystem({
         }
       }
       if (!gv.awake) all = false;
+      // combined puzzles: an awake light gate feeds the thread source bound to it
+      if (this.tp) this.tp.setLight(i, gv.awake);
     });
-    if (all && this.completeT < 0 && this.lv.targets.length > 0 && !this.paused) {
+    // a puzzle is restored when every light gate is awake and every thread receiver / constellation is satisfied
+    const done = all && (!this.tp || this.tp.ev.solved) && (this.lv.targets.length > 0 || !!this.tp);
+    if (done && this.completeT < 0 && !this.paused) {
       this.completeT = 0;
     }
     if (this.completeT >= 0) {
-      if (!all) this.completeT = -1;
+      if (!done) this.completeT = -1;
       else {
         const before = this.completeT;
         this.completeT += dt;
@@ -1283,7 +1659,8 @@ export class AuraSystem extends createSystem({
     if (this.paused) return;
     this.bend += ((this.sel >= 0 ? this.lv.elems[this.sel].a / stepsOf(this.lv.elems[this.sel]) : 0) - this.bend) * 0.1;
     const awakeN = this.gates.filter((g) => g.awake).length;
-    sfx.auraBeams(this.beamLv[0] * (0.6 + 0.4 * (awakeN > 0 ? 1 : 0)), this.beamLv[1], this.beamLv[2], this.bend);
+    const tl = this.threadLv;
+    sfx.auraBeams(Math.min(1, this.beamLv[0] * (0.6 + 0.4 * (awakeN > 0 ? 1 : 0)) + tl[0]), Math.min(1, this.beamLv[1] + tl[1]), Math.min(1, this.beamLv[2] + tl[2]), this.bend);
   }
 
   // ================================================================ drawing (canvas panels)
@@ -1298,6 +1675,13 @@ export class AuraSystem extends createSystem({
       p.text(labels[i][1], p.h * 0.7, 30, '#eef4ff');
       p.commit();
       p.mesh.visible = modeState.mode === 'aura' && this.screen === 'game' && !(this.photo && i === 3);
+    });
+    this.threadBtns.forEach((p, i) => {
+      const past = !!this.tp && this.tp.s.era === 1;
+      p.card('rgba(10,8,26,0.9)', i === 0 ? (past ? '#ffb060' : '#7fb8ff') : '#ffe08a');
+      p.text(i === 0 ? 'ERA' : 'HINT', p.h * 0.3, 22, '#9fc2ff');
+      p.text(i === 0 ? (past ? 'Past' : 'Present') : 'Show a step', p.h * 0.7, 30, '#eef4ff');
+      p.commit();
     });
     this.setBtns.forEach((p, i) => {
       const [a, b] = this.slotText(i);
@@ -1325,7 +1709,7 @@ export class AuraSystem extends createSystem({
       if (i > 4) return ['', ''];
       const li = this.firstLevelOf(i);
       const locked = li > this.save.unlocked;
-      const done = this.levels.filter((l) => l.chapter === CHAPTER_NAMES[i]).every((l) => this.save.solved[this.levels.indexOf(l)]);
+      const done = this.puzzles.every((p, k) => p.world !== i || this.save.solved[k]);
       return ['CHAPTER ' + (i + 1), locked ? 'Locked' : done ? 'Restored' : 'Open'];
     }
     return ([
@@ -1361,18 +1745,18 @@ export class AuraSystem extends createSystem({
       g.fillStyle = '#cfe4ff';
       g.font = 'italic 28px ' + SERIF;
       g.fillText('A sanctuary has lost its light.', c.w / 2, 240);
-      g.fillText('Turn mirrors and prisms. Mix cyan, magenta and gold.', c.w / 2, 280);
+      g.fillText('Weave threads of energy. Turn mirrors and prisms.', c.w / 2, 280);
       g.fillText('Wake the monoliths and bring it back to life.', c.w / 2, 320);
       const n = this.save.solved.filter(Boolean).length;
       g.font = '600 22px ' + SERIF;
       g.fillStyle = '#ffd36b';
-      g.fillText(n ? 'Sanctuary ' + Math.round((n / this.levels.length) * 100) + '% restored' : 'Hands only. Pinch to turn light.', c.w / 2, 400);
+      g.fillText(n ? 'Sanctuary ' + Math.round((n / this.puzzles.length) * 100) + '% restored' : 'Pinch or point and pull. ' + this.puzzles.length + ' puzzles, 5 worlds.', c.w / 2, 400);
     } else {
       g.fillStyle = '#ffe9b0';
       g.font = '700 54px ' + SERIF;
       g.fillText('CHAPTERS', c.w / 2, 100);
       g.font = '600 26px ' + SERIF;
-      CHAPTER_NAMES.forEach((nm, i) => {
+      WORLDS.forEach(({ name: nm }, i) => {
         const locked = this.firstLevelOf(i) > this.save.unlocked;
         g.fillStyle = locked ? '#5a6488' : '#cfe4ff';
         g.fillText((i + 1) + '   ' + nm + (locked ? '   (locked)' : ''), c.w / 2, 190 + i * 48);
@@ -1386,16 +1770,29 @@ export class AuraSystem extends createSystem({
     const lv = this.lv;
     if (!lv) return;
     h.card('rgba(8,6,24,0.88)', '#7fb8ff');
-    h.text(lv.chapter + '   -   ' + lv.name, 50, 26, '#cfe4ff');
-    h.text(lv.goal, 100, 26, this.tr?.solved ? '#8dffc2' : '#ffe6a8');
-    let tip = 'Hint: ' + lv.hint;
-    if (this.save.settings.tutorial && this.level === 0 && !this.save.solved[0]) {
-      tip = this.moves === 0 ? 'Pinch the ringed mirror and swing it (mouse: drag; keys: Tab, arrows)' : 'Aim the beam into the crystal gate and hold it';
+    const pz = this.pz;
+    const pl = this.tp;
+    const done = (this.tr?.solved ?? true) && (!pl || pl.ev.solved);
+    h.text(WORLDS[pz.world].name + '   -   ' + pz.name, 50, 26, '#cfe4ff');
+    h.text(pz.goal, 100, 26, done ? '#8dffc2' : '#ffe6a8');
+    let tip = 'Hint: ' + pz.hint;
+    if (this.save.settings.tutorial && !this.save.solved[this.level]) {
+      if (pl && pl.recording) tip = 'Recording an echo (' + pl.recordLeft.toFixed(1) + 's): hold a keystone, then let go';
+      else if (pl && this.level === 0) tip = pl.moves === 0 ? 'Pinch or click the bright crystal, pull to the dark one, let go' : 'Tap a thread to cut it. Threads have a maximum reach';
+      else if (!pl && this.moves === 0 && this.lv.elems.some((e) => e.rot)) tip = 'Pinch the ringed mirror and swing it (mouse: drag; keys: Tab, arrows)';
     }
     const hint = this.msgT > 0 ? this.msg : this.save.solved[this.level] ? 'Sanctuary ' + Math.round(this.restore * 100) + '% restored - NEXT continues' : tip;
     h.text(hint, 148, 23, this.msgT > 0 ? '#8dffc2' : '#b8c8ee');
-    const need = lv.targets.map((t) => MASK_NAME[t.mask & 7]).join('  ');
-    h.text('Gates: ' + need + '     Turns ' + this.moves, 196, 21, '#9fc2ff');
+    let info = '';
+    if (lv.targets.length) info += 'Gates: ' + lv.targets.map((t) => MASK_NAME[t.mask & 7]).join('  ') + '     ';
+    if (pl) {
+      const rc = pl.w.nodes.filter((n) => n.kind === 'receiver').length;
+      const ok = pl.ev.receiverOk.filter((v, i) => v && pl.w.nodes[i].kind === 'receiver').length;
+      info += 'Crystals ' + ok + '/' + rc + '     ';
+      if (pl.w.eras === 2) info += (pl.s.era === 1 ? 'PAST' : 'PRESENT') + ' (E)     ';
+      if (pl.echoes.length) info += 'Echoes ' + pl.echoes.length + '     ';
+    }
+    h.text(info + 'Moves ' + this.totalMoves(), 196, 21, '#9fc2ff');
     h.commit();
   }
 
@@ -1448,7 +1845,7 @@ export class AuraSystem extends createSystem({
     g.fillText(finished ? 'AURA WEAVER' : 'AWAKENED', c.w / 2, 90);
     g.font = 'italic 30px ' + SERIF;
     g.fillStyle = '#cfe4ff';
-    g.fillText(finished ? 'I did not just play this world. I brought it to life.' : this.lv.name + ' - ' + this.moves + ' turns', c.w / 2, 140);
+    g.fillText(finished ? 'I did not just play this world. I brought it to life.' : this.pz.name + ' - ' + this.totalMoves() + ' moves', c.w / 2, 140);
     // the living signature: a rose curve built from how you played
     const hs = this.save.stats.hues;
     const tot = Math.max(1, hs.reduce((a, b) => a + b, 0));

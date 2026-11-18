@@ -1,0 +1,31 @@
+# Aura Weaver - status
+
+Statuses are kept separate. VERIFIED means checked on a real Quest headset; it is **NO** for everything.
+"e2e" = `tests/aura-e2e.mjs` (Playwright, desktop Chromium, software GL at about 1 fps, fixed-step hooks).
+"unit" = `npm run test:aura` (81 node tests).
+
+| Area | IMPLEMENTED | TESTED | VERIFIED |
+| --- | --- | --- | --- |
+| 15-puzzle journey over 5 worlds (light, thread and combined puzzles) in the game loop | yes | e2e: all 15 solved and saved; unit: every puzzle solvable | NO |
+| Entry from title (START / CONTINUE) and from the CHAPTERS level menu (5 worlds) | yes | e2e: chapter 1 opens the first thread puzzle | NO |
+| Thread board renderer (`src/threadview.ts`): nodes per kind, powered / dormant threads, stretched drag thread with tension colour, walls, rings, sockets, echo ghosts, era tint, hint guide | yes | one desktop screenshot; e2e: no geometry/texture growth over 30 loads | NO |
+| Thread controller (`src/threadplay.ts`): grab, pull, connect, refuse, cut, re-route, rings, eras, keys, echoes, hints | yes | unit (grab/connect/cut/reset/rings/echo/hint-solve) | NO |
+| Mouse input on the loom (pointer events on a RayInteractable plane) | yes | e2e: real mouse drag weaves, tap cuts, empty drop refused | NO |
+| XR controller ray / hand pointer input on the loom (same RayInteractable plane) | yes | **no** (no XR session was run) | NO |
+| Hand pinch / grip direct input for mirrors and prisms (existing light path) | yes (unchanged) | no | NO |
+| ERA and HINT buttons (also keys E and H), tutorial and refuse messages | yes | e2e: ERA switches era, HINT gives a step | NO |
+| Audio feedback via existing helpers (grab, tension-pitched tick, cut, impure, chime, awaken, pulse, whoosh, panned with withPan; thread energy feeds the beam hum) | yes | events reach the handler (e2e stats); **no listening test** | NO |
+| Save v2: 15 slots, best moves / time / hints / swift, stats; v1 migration; interim 7-slot v2 records re-indexed | yes | unit (incl. new interim-layout test); e2e: progress survives reload | NO |
+| Pause / photo mode / leaving the mode cancel drags; hidden menu panels no longer swallow rays | yes | e2e: loom stops taking rays while paused | NO |
+| Finale after the last puzzle | yes | e2e | NO |
+| Frame-time budget (72-90 Hz) | not measured | **no FPS numbers exist** | NO |
+
+Known limits:
+- Per-frame code of the thread board does not allocate in steady state; it allocates on events (re-evaluation, hints,
+  HUD redraw) and while an echo is being recorded (up to 30 samples/s for at most 6 s).
+- The pre-existing light-board code still allocates small arrays per frame (`filter` in gates/audio); not changed here.
+- Colour-independent letter labels are not drawn on thread crystals yet (only on light gates).
+- Hidden discoveries (12 slots in the save) are not awarded by any puzzle yet.
+
+Run the checks: `npx tsc --noEmit`, `npm test`, then `npm run build && npx vite preview --port 4175` and
+`node tests/aura-e2e.mjs`.

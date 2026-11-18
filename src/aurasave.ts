@@ -114,8 +114,18 @@ export function loadSave(levels: number): AuraSave {
     const o = JSON.parse(raw) as Partial<AuraSave>;
     if (!o || o.v !== SAVE_VERSION) return d;
     d.unlocked = int(o.unlocked, 0, levels - 1, 0);
+    // An interim build wrote v2 records with one slot per LIGHT puzzle (7). In the full journey those slots belong
+    // to other puzzles, so they are re-indexed the same way a v1 save is migrated.
+    const interim = levels > V1_TO_V2.length && Array.isArray(o.solved) && o.solved.length === V1_TO_V2.length;
     const arr = <T>(src: unknown, dst: T[], f: (x: unknown, i: number) => T): void => {
-      if (Array.isArray(src)) for (let i = 0; i < dst.length; i++) dst[i] = f(src[i], i);
+      if (!Array.isArray(src)) return;
+      if (interim) {
+        V1_TO_V2.forEach((ni, oi) => {
+          if (ni < dst.length) dst[ni] = f(src[oi], ni);
+        });
+        return;
+      }
+      for (let i = 0; i < dst.length; i++) dst[i] = f(src[i], i);
     };
     arr(o.solved, d.solved, (x) => x === true);
     arr(o.best, d.best, (x) => int(x, 0, 9999, 0));
@@ -135,6 +145,13 @@ export function loadSave(levels: number): AuraSave {
     }
     readSettings(o.settings, d.settings);
     d.finished = o.finished === true;
+    if (interim) {
+      // the new thread puzzles are unsolved, so the journey cannot be finished; keep restored ones reachable
+      d.finished = false;
+      let far = 0;
+      d.solved.forEach((s, i) => s && (far = Math.max(far, i + 1)));
+      d.unlocked = Math.min(levels - 1, far);
+    }
     return d;
   } catch {
     return d;
