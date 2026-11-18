@@ -1557,7 +1557,7 @@ export class GameSystem extends createSystem({
       const open = modeState.mode === 'kite' || modeState.mode === 'lattim' || modeState.mode === 'danguli' || modeState.mode === 'kitecraft' || modeState.mode === 'marblerun' || modeState.mode === 'paperplane' || modeState.mode === 'gears' || modeState.mode === 'aura' || modeState.mode === 'spell' || modeState.mode === 'menu';
       this.floorMesh.visible = !open;
       this.tableMesh.visible = !open;
-      this.stemMesh.visible = modeState.mode !== 'spell';
+      this.stemMesh.visible = modeState.mode === 'guti';
       if (open) {
         this.sun.color.setHex(0xffe6b8);
         this.sun.intensity = 2.6;

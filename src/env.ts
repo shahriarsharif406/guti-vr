@@ -35,6 +35,7 @@ import {
 } from '@iwsdk/core';
 import type { Texture } from '@iwsdk/core';
 import { auraRoom, modeState, spellRoom } from './mode.js';
+import { buildArcLamp, buildBasket } from './decor.js';
 import { buildCinematicRoom } from './room.js';
 import type { RoomFx } from './room.js';
 import { kiteCfg } from './kitecfg.js';
@@ -756,10 +757,8 @@ export class EnvSystem extends createSystem({}) {
   /** CC0 apartment props (Vuena) around the workshop corner */
   private decor(): void {
     const spots: [string, number, number, number, number, number][] = [
-      ['floor_lamp', -2.0, 0, -2.6, 0.4, 1],
       ['plant_small', 2.4, 0, -2.4, -0.3, 1],
       ['side_table', 2.3, 0, -1.5, 0, 1],
-      ['basket', -2.4, 0, -2.5, 0.5, 1],
     ];
     const onTable: [string, number, number, number, number][] = [
       ['mug', 2.22, 0, -1.4, 0],
@@ -774,6 +773,14 @@ export class EnvSystem extends createSystem({}) {
       this.add(o, x, y, z);
     };
     for (const [k, x, y, z, ry, sc] of spots) tryAdd(k, x, y, z, ry, sc);
+    // hand-built, more modern pieces replace the stock lamp and basket
+    const lamp = buildArcLamp();
+    lamp.rotation.y = 0.35;
+    lamp.scale.setScalar(0.8);
+    this.add(lamp, -2.35, 0, -2.95);
+    const basket = buildBasket();
+    basket.rotation.y = 0.5;
+    this.add(basket, -1.35, 0, -2.45);
     // props sit on top of the side table; its height is measured from the model
     const tb = AssetManager.getAsset('side_table') as { scene?: Object3D } | undefined;
     const top = tb?.scene ? new Box3().setFromObject(tb.scene).max.y : 0.5;

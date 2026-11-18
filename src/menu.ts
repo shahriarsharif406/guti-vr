@@ -73,11 +73,20 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'aura' | 'spell', title: strin
   const W = p.w;
   const H = p.h;
   c.clearRect(0, 0, W, H);
-  // leather body
-  const bg = c.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, '#1d140d');
-  bg.addColorStop(1, '#0d0805');
+  // modern glass card: deep navy body with a soft accent bloom, rounded corners
+  c.save();
+  c.beginPath();
+  c.roundRect(2, 2, W - 4, H - 4, 44);
+  c.clip();
+  const bg = c.createLinearGradient(0, 0, W * 0.4, H);
+  bg.addColorStop(0, '#080c1c');
+  bg.addColorStop(1, '#010206');
   c.fillStyle = bg;
+  c.fillRect(0, 0, W, H);
+  const bloom = c.createRadialGradient(W / 2, H * 1.02, 10, W / 2, H * 1.02, W * 0.9);
+  bloom.addColorStop(0, accent + '40');
+  bloom.addColorStop(1, accent + '00');
+  c.fillStyle = bloom;
   c.fillRect(0, 0, W, H);
   // illustration window
   const ix = 38;
@@ -86,7 +95,7 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'aura' | 'spell', title: strin
   const ih = H * 0.6;
   c.save();
   c.beginPath();
-  c.rect(ix, iy, iw, ih);
+  c.roundRect(ix, iy, iw, ih, 30);
   c.clip();
   const sky = c.createLinearGradient(0, iy, 0, iy + ih);
   const tints: Record<string, [string, string]> = {
@@ -225,42 +234,55 @@ function drawPoster(p: TextPanel, kind: 'gears' | 'aura' | 'spell', title: strin
   vig.addColorStop(1, 'rgba(0,0,0,0.55)');
   c.fillStyle = vig;
   c.fillRect(ix, iy, iw, ih);
-  // brass frame around the picture and the whole card
-  c.strokeStyle = '#c79a46';
-  c.lineWidth = 5;
-  c.strokeRect(ix, iy, iw, ih);
-  c.strokeStyle = 'rgba(199,154,70,0.55)';
-  c.lineWidth = 2;
-  c.strokeRect(14, 14, W - 28, H - 28);
-  c.strokeStyle = '#8a6a30';
-  c.lineWidth = 8;
-  c.strokeRect(4, 4, W - 8, H - 8);
-  for (const [rx, ry] of [[24, 24], [W - 24, 24], [24, H - 24], [W - 24, H - 24]]) {
-    const rg = c.createRadialGradient(rx - 2, ry - 2, 1, rx, ry, 8);
-    rg.addColorStop(0, '#f6dc9a');
-    rg.addColorStop(1, '#5a4120');
-    c.fillStyle = rg;
-    c.beginPath();
-    c.arc(rx, ry, 7, 0, Math.PI * 2);
-    c.fill();
-  }
-  // title and tagline
-  c.textAlign = 'center';
-  c.fillStyle = accent;
-  c.font = '700 54px ' + SERIF;
-  (c as unknown as { letterSpacing: string }).letterSpacing = '5px';
-  const tw = c.measureText(title).width;
-  if (tw > W - 70) c.font = '700 ' + Math.floor((54 * (W - 70)) / tw) + 'px ' + SERIF;
-  c.shadowColor = 'rgba(0,0,0,0.8)';
-  c.shadowBlur = 6;
-  c.fillText(title, W / 2, iy + ih + 78);
+  // thin accent frame around the picture and the card
+  c.strokeStyle = accent;
+  c.shadowColor = accent;
+  c.shadowBlur = 14;
+  c.lineWidth = 3;
+  c.beginPath();
+  c.roundRect(ix, iy, iw, ih, 30);
+  c.stroke();
   c.shadowBlur = 0;
+  c.restore();
+  c.strokeStyle = accent + 'aa';
+  c.lineWidth = 4;
+  c.beginPath();
+  c.roundRect(3, 3, W - 6, H - 6, 44);
+  c.stroke();
+  // chapter number chip over the picture
+  const num = kind === 'gears' ? '01' : kind === 'aura' ? '02' : '03';
+  c.fillStyle = 'rgba(5,8,20,0.72)';
+  c.beginPath();
+  c.roundRect(ix + 16, iy + 16, 86, 44, 22);
+  c.fill();
+  c.fillStyle = accent;
+  c.textAlign = 'center';
+  c.font = '800 28px "Segoe UI", Arial, sans-serif';
+  c.fillText(num, ix + 59, iy + 46);
+  // title, tagline and a play pill
+  const SANS = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
+  c.fillStyle = '#f4f6ff';
+  c.font = '800 50px ' + SANS;
+  (c as unknown as { letterSpacing: string }).letterSpacing = '6px';
+  const tw = c.measureText(title).width;
+  if (tw > W - 70) c.font = '800 ' + Math.floor((50 * (W - 70)) / tw) + 'px ' + SANS;
+  c.fillText(title, W / 2, iy + ih + 72);
   (c as unknown as { letterSpacing: string }).letterSpacing = '1px';
-  c.fillStyle = '#d8c3a0';
-  c.font = 'italic 34px ' + SERIF;
-  c.fillText(tag, W / 2, iy + ih + 128);
-  c.fillStyle = 'rgba(199,154,70,0.8)';
-  c.fillRect(W / 2 - 60, iy + ih + 98, 120, 2);
+  c.fillStyle = '#9fb0d6';
+  c.font = '500 30px ' + SANS;
+  c.fillText(tag, W / 2, iy + ih + 114);
+  const pw = 200;
+  c.fillStyle = accent;
+  c.shadowColor = accent;
+  c.shadowBlur = 16;
+  c.beginPath();
+  c.roundRect(W / 2 - pw / 2, iy + ih + 134, pw, 48, 24);
+  c.fill();
+  c.shadowBlur = 0;
+  c.fillStyle = '#080b18';
+  c.font = '800 26px ' + SANS;
+  (c as unknown as { letterSpacing: string }).letterSpacing = '4px';
+  c.fillText('PLAY  \u25B6', W / 2, iy + ih + 168);
   (c as unknown as { letterSpacing: string }).letterSpacing = '0px';
   p.commit();
 }
@@ -306,9 +328,9 @@ export class MenuSystem extends createSystem({
   }
 
   private drawButtons(): void {
-    drawPoster(this.buttons[0].panel, 'gears', 'GEARSHIFT', "The Clockmaker's Bench", '#f2d38a');
-    drawPoster(this.buttons[1].panel, 'aura', 'AURA WEAVER', 'Compose the light.', '#bfe6ff');
-    drawPoster(this.buttons[2].panel, 'spell', 'SPELLFORGE', 'Become the magic.', '#ffb070');
+    drawPoster(this.buttons[0].panel, 'gears', 'GEARSHIFT', "The Clockmaker's Bench", '#ffc857');
+    drawPoster(this.buttons[1].panel, 'aura', 'AURA WEAVER', 'Compose the light.', '#5fe0ff');
+    drawPoster(this.buttons[2].panel, 'spell', 'SPELLFORGE', 'Become the magic.', '#ff7a59');
     const b = this.back.panel;
     b.card('rgba(24,14,8,0.92)', '#c79a46');
     b.ctx.textAlign = 'center';
@@ -322,17 +344,17 @@ export class MenuSystem extends createSystem({
     tc.textAlign = 'center';
     tc.shadowColor = 'rgba(0,0,0,0.9)';
     tc.shadowBlur = 14;
-    tc.fillStyle = '#f2d38a';
-    tc.font = '700 70px ' + SERIF;
+    tc.fillStyle = '#ffffff';
+    tc.font = '800 66px "Segoe UI", "Helvetica Neue", Arial, sans-serif';
     (tc as unknown as { letterSpacing: string }).letterSpacing = '9px';
     const tm = tc.measureText('POCKET WORKSHOP').width;
-    if (tm > t.w - 40) tc.font = '700 ' + Math.floor((70 * (t.w - 40)) / tm) + 'px ' + SERIF;
+    if (tm > t.w - 40) tc.font = '800 ' + Math.floor((66 * (t.w - 40)) / tm) + 'px "Segoe UI", Arial, sans-serif';
     tc.fillText('POCKET WORKSHOP', t.w / 2, t.h * 0.52);
     tc.shadowBlur = 0;
     tc.fillStyle = '#c79a46';
     tc.fillRect(t.w / 2 - 230, t.h * 0.64, 460, 3);
     tc.fillStyle = '#e6d3b0';
-    tc.font = 'italic 34px ' + SERIF;
+    tc.font = '500 32px "Segoe UI", Arial, sans-serif';
     (tc as unknown as { letterSpacing: string }).letterSpacing = '3px';
     tc.fillText('three benches.  your bare hands.', t.w / 2, t.h * 0.88);
     (tc as unknown as { letterSpacing: string }).letterSpacing = '0px';
