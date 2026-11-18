@@ -109,8 +109,96 @@ export function withPan(p: number, f: () => void): void {
     panV = 0;
   }
 }
+// ---- 3D positional audio (Spellforge). withPos places the next procedural sounds at a world point
+// through an HRTF PannerNode; the listener follows the camera via setListenerPose. If the browser
+// has no PannerNode (or creating one throws) the sound falls back to the stereo pan given.
+let posOn = false;
+let posX = 0;
+let posY = 0;
+let posZ = 0;
+let posPan = 0;
+let spatial: 'hrtf' | 'pan' | 'unknown' = 'unknown';
+let spatialHits = 0;
+export function withPos(x: number, y: number, z: number, fallbackPan: number, f: () => void): void {
+  posOn = true;
+  posX = x;
+  posY = y;
+  posZ = z;
+  posPan = Math.max(-1, Math.min(1, fallbackPan));
+  try {
+    f();
+  } finally {
+    posOn = false;
+  }
+}
+/** Which path the last positioned sound took, and how many went through the HRTF panner (for tests). */
+export function spatialInfo(): { mode: 'hrtf' | 'pan' | 'unknown'; hrtfSounds: number } {
+  return { mode: spatial, hrtfSounds: spatialHits };
+}
+function setP(p: AudioParam | undefined, v: number, t: number): boolean {
+  if (!p) return false;
+  p.setTargetAtTime(v, t, 0.03);
+  return true;
+}
+/** Listener = head pose: position, forward and up vectors in world space. Call every frame; no allocation. */
+export function setListenerPose(px: number, py: number, pz: number, fx: number, fy: number, fz: number, ux: number, uy: number, uz: number): void {
+  if (!ctx) return;
+  const L = ctx.listener as AudioListener & {
+    setPosition?: (x: number, y: number, z: number) => void;
+    setOrientation?: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+  };
+  const t = ctx.currentTime;
+  if (!setP(L.positionX, px, t)) L.setPosition?.(px, py, pz);
+  else {
+    setP(L.positionY, py, t);
+    setP(L.positionZ, pz, t);
+  }
+  if (!setP(L.forwardX, fx, t)) L.setOrientation?.(fx, fy, fz, ux, uy, uz);
+  else {
+    setP(L.forwardY, fy, t);
+    setP(L.forwardZ, fz, t);
+    setP(L.upX, ux, t);
+    setP(L.upY, uy, t);
+    setP(L.upZ, uz, t);
+  }
+}
+function spatialOut(c: AudioContext, node: AudioNode): boolean {
+  if (typeof c.createPanner !== 'function') return false;
+  try {
+    const p = c.createPanner();
+    p.panningModel = 'HRTF';
+    p.distanceModel = 'inverse';
+    p.refDistance = 1.5;
+    p.maxDistance = 40;
+    p.rolloffFactor = 0.7;
+    const pp = p as PannerNode & { setPosition?: (x: number, y: number, z: number) => void };
+    if (pp.positionX) {
+      pp.positionX.value = posX;
+      pp.positionY.value = posY;
+      pp.positionZ.value = posZ;
+    } else pp.setPosition?.(posX, posY, posZ);
+    node.connect(p);
+    p.connect(dest(c));
+    spatial = 'hrtf';
+    spatialHits++;
+    return true;
+  } catch {
+    return false;
+  }
+}
 /** Connect a node to the speakers, panned if a position is active. */
 function outTo(c: AudioContext, node: AudioNode): void {
+  if (posOn) {
+    if (spatialOut(c, node)) return;
+    spatial = 'pan';
+    if (posPan !== 0 && typeof c.createStereoPanner === 'function') {
+      const sp = c.createStereoPanner();
+      sp.pan.value = posPan;
+      node.connect(sp);
+      sp.connect(dest(c));
+    } else node.connect(dest(c));
+    return;
+  }
   if (panV !== 0 && typeof c.createStereoPanner === 'function') {
     const sp = c.createStereoPanner();
     sp.pan.value = panV;

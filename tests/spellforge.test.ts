@@ -11,6 +11,8 @@ import type { CastEvent } from '../src/sfcast';
 import { ADVANCED_SPELLS, ALL_SPELLS, BASE_SPELLS, BOSSES, ELEMENTS, ENEMIES, FUSIONS, damageAgainst, resolveSpell } from '../src/sfdata';
 import { Battle, PLAYER_HEAD, ARENA_Z } from '../src/sfbattle';
 import { defaultSfSave, loadSfSave, writeSfSave, SF_SAVE_VERSION } from '../src/sfsave';
+import { musicMix, newMix } from '../src/sfmusic';
+import { fusionNudge, takeTip, ALL_TIPS } from '../src/sfonboard';
 
 let passed = 0;
 let failed = 0;
@@ -662,6 +664,53 @@ test('corrupt, outdated and hostile data fall back safely', () => {
   assert.equal(r.settings.difficulty, 'normal');
   assert.equal(r.settings.dominant, 'right');
   assert.equal(r.bossBest.ignar, 0);
+});
+
+// ---------------------------------------------------------------- adaptive music + onboarding (pure rules)
+test('music: calm field is quiet, tension adds drums then ticks', () => {
+  const m = newMix();
+  musicMix(0, -1, 0, 1, m);
+  assert.equal(m.drums, 0);
+  assert.equal(m.ostinato, 0);
+  musicMix(0.6, -1, 0, 1, m);
+  assert.ok(m.drums > 0 && m.hats > 0);
+  assert.equal(m.ostinato, 0);
+});
+test('music: boss phases escalate tempo, ostinato and lift; final phase adds the choir', () => {
+  const a = { ...musicMix(0.5, 0, 5, 1, newMix()) };
+  const b = { ...musicMix(0.5, 2, 5, 1, newMix()) };
+  const c = { ...musicMix(0.5, 4, 5, 1, newMix()) };
+  assert.ok(a.bpm < b.bpm && b.bpm < c.bpm);
+  assert.ok(a.ostinato < c.ostinato);
+  assert.ok(a.lift <= b.lift && b.lift < c.lift);
+  assert.equal(a.choir, 0);
+  assert.equal(c.choir, 1);
+});
+test('music: heartbeat only when the player is low', () => {
+  assert.equal(musicMix(0.5, -1, 0, 0.8, newMix()).heartbeat, 0);
+  assert.ok(musicMix(0.5, -1, 0, 0.15, newMix()).heartbeat > 0.5);
+});
+test('onboarding: a tip shows once, then never again', () => {
+  const seen: string[] = [];
+  assert.ok(takeTip('shield', seen, false).includes('SPACE'));
+  assert.equal(takeTip('shield', seen, false), '');
+  assert.ok(takeTip('shield', [], true).includes('wrists'));
+});
+test('onboarding: fusion nudge names a partner element, not the fusion, and counts progress', () => {
+  const n = fusionNudge(new Set(), 'fire', 'fire');
+  assert.ok(n.includes('(0/15 found)'), n);
+  for (const f of FUSIONS) assert.ok(!n.includes(f.name), 'leaks ' + f.name);
+  const all = new Set(FUSIONS.map((f) => f.id));
+  assert.ok(fusionNudge(all, 'fire', 'ice').startsWith('All 15'));
+  const fireDone = new Set(FUSIONS.filter((f) => f.elements.includes('fire')).map((f) => f.id));
+  assert.ok(!fusionNudge(fireDone, 'fire', 'fire').startsWith('Pyrogenesis still'));
+});
+test('save: tips round-trip and unknown tips are dropped', () => {
+  const s = defaultSfSave();
+  s.tips = ['shield', 'bogus'];
+  writeSfSave(s);
+  assert.deepEqual(loadSfSave().tips, ['shield']);
+  assert.equal(ALL_TIPS.length, 6);
 });
 test('missing storage never throws', () => {
   (globalThis as unknown as { localStorage: unknown }).localStorage = undefined;

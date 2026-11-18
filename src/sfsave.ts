@@ -1,6 +1,7 @@
 /** SPELLFORGE persistence: one versioned LocalStorage record, validated on load (bad or old data is ignored). */
 import type { Element } from './sfdata';
 import { BOSS_ORDER, ELEMENTS, FUSIONS } from './sfdata';
+import { ALL_TIPS } from './sfonboard';
 
 export const SF_SAVE_VERSION = 1;
 const KEY = 'pw-spellforge-v1';
@@ -34,6 +35,8 @@ export interface SfSave {
   accuracy: { casts: number; hits: number };
   trials: Record<string, number>;
   campaign: number; // bosses defeated in the campaign
+  /** one-time onboarding tips already shown (optional; older saves have none) */
+  tips: string[];
   settings: SfSettings;
 }
 
@@ -46,6 +49,7 @@ export const defaultSfSave = (): SfSave => ({
   accuracy: { casts: 0, hits: 0 },
   trials: {},
   campaign: 0,
+  tips: [],
   settings: { volume: 0.9, music: 1, sfx: 1, muted: false, dominant: 'right', seated: true, reducedIntensity: false, subtitles: true, aimAssist: 0.7, difficulty: 'normal', colourCues: false, tutorial: true },
 });
 
@@ -71,6 +75,7 @@ export function loadSfSave(): SfSave {
     }
     if (o.trials && typeof o.trials === 'object') for (const [k, v] of Object.entries(o.trials)) if (typeof v === 'number' && isFinite(v) && k.length < 40) d.trials[k] = v;
     d.campaign = Math.round(num(o.campaign, 0, BOSS_ORDER.length, 0));
+    if (Array.isArray(o.tips)) d.tips = o.tips.filter((x): x is string => typeof x === 'string' && (ALL_TIPS as string[]).includes(x));
     const s = o.settings;
     if (s) {
       d.settings.volume = num(s.volume, 0, 1, 0.9);

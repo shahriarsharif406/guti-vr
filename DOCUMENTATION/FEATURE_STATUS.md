@@ -15,11 +15,12 @@ Platform: WebXR (IWSDK + Three.js), run in a browser and in a headset browser. I
 | 7 enemy types, status effects, shield/reflect/stomp | yes | logic + e2e | no | |
 | 3 bosses (5/5/6 phases), distinct mechanics | yes | e2e phase sequence | no | |
 | Modes: Journey, Training, Sandbox, Endless, Boss Rush, 4 Trials, Tutorial | yes | e2e | no | |
-| Positional audio (stereo pan by enemy position for hits, deaths, wind-ups, casts) | yes | typecheck only | no | stereo pan, not full 3D HRTF |
+| 3D positional audio (HRTF PannerNode, listener = camera pose) for hits, deaths, telegraphs, casts, boss roars/slams | yes | e2e checks the HRTF path is taken (Chromium) | no | falls back to stereo pan without PannerNode; never heard on a headset |
 | Boss/enemy telegraphs (text + sound) | yes | e2e | no | |
 | Settings: subtitles, aim assist, colour-blind clue, reduced effects, left hand, seated, volumes | yes | partly | no | |
 | Save / records | yes | logic tests | no | local only |
-| Original adaptive music | yes (procedural) | no | no | procedural synth, not recorded music |
+| Original adaptive music (tension, boss phase tempo/ostinato/stingers, final-phase choir, low-HP heartbeat) | yes (procedural) | 3 logic tests + e2e counts scheduled layers | no | not listened to for quality; no recorded music |
+| Onboarding: guided tutorial, one-time contextual tips (saved), fusion discovery nudges + count | yes | 3 logic tests + e2e (tips saved) | no | nudges shown in Training/Sandbox only |
 | 7 realms | no | - | - | 3 themed arenas built (Ember Forge, Frost, Void) |
 | Environment reacting to spells (ignite/freeze surfaces) | no | - | - | not built |
 

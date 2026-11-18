@@ -5,7 +5,7 @@
 import { chromium } from 'playwright-core';
 const exe = process.argv[2] || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const shots = process.argv[3] || '';
-const b = await chromium.launch({ executablePath: exe, args: ['--ignore-certificate-errors', '--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+const b = await chromium.launch({ executablePath: exe, args: ['--ignore-certificate-errors', '--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
 const p = await (await b.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1000, height: 600 } })).newPage();
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
@@ -114,6 +114,11 @@ for (const id of ['ignar', 'vyra', 'voidking']) {
   }, id);
   check(id + ': phases advance through the whole fight', r.phases.length === r.max, JSON.stringify(r));
 }
+// 3D audio, adaptive music and onboarding tips (state only: nothing here can be heard)
+s = await S();
+check('positioned sounds went through the HRTF panner', s.audio && s.audio.mode === 'hrtf' && s.audio.hrtfSounds > 0, JSON.stringify(s.audio && { mode: s.audio.mode, n: s.audio.hrtfSounds }));
+check('adaptive music played boss layers and phase stingers', s.audio && s.audio.played.ostinato > 0 && s.audio.played.stingers > 0 && s.audio.played.drums > 0, JSON.stringify(s.audio && s.audio.played));
+check('first-run tips shown once and saved', Array.isArray(s.tips) && s.tips.includes('phase'), JSON.stringify(s.tips));
 // endless
 await p.evaluate(() => window.__sfStart('endless'));
 await step(300);
