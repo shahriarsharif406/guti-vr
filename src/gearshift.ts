@@ -984,6 +984,14 @@ export class GearShiftSystem extends createSystem({
     w.__gearWin = () => this.finishWin();
     w.__gearGrade = () => ({ line: this.gradeLine, mistakes: this.mistakes });
     w.__gearPegs = () => this.lv.pegs;
+    // test hook: client-pixel position of a rack item ('item') or a peg ('peg'), for scripted mouse drags
+    w.__gearScreenOf = (kind: string, i: number) => {
+      const v = new Vector3();
+      if (kind === 'item') v.set(this.items[i].x, BY + this.items[i].y, BZ);
+      else v.set(this.lv.pegs[i].x, BY + this.lv.pegs[i].y, BZ);
+      v.project(this.world.camera);
+      return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight };
+    };
     w.__gearJam = () => {
       this.ev = { ...this.ev, jam: true, win: false };
     };

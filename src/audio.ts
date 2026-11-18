@@ -14,7 +14,7 @@ function ac(): AudioContext | null {
           .webkitAudioContext;
       ctx = new Ctor();
     }
-    if (ctx.state === 'suspended') void ctx.resume();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => undefined);
     return ctx;
   } catch {
     return null;
@@ -263,10 +263,10 @@ function tone(
   o.stop(t0 + dur + 0.02);
 }
 
-function burst(dur: number, vol: number, freq: number, q = 1): void {
+function burst(dur: number, vol: number, freq: number, q = 1, delay = 0): void {
   const c = ac();
   if (!c || liveShots > MAX_SHOTS) return;
-  const t0 = c.currentTime;
+  const t0 = c.currentTime + delay;
   const s = c.createBufferSource();
   s.buffer = noise(c);
   const f = c.createBiquadFilter();
@@ -278,7 +278,7 @@ function burst(dur: number, vol: number, freq: number, q = 1): void {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   s.connect(f).connect(g);
   outTo(c, g);
-  track(s, dur);
+  track(s, dur + delay);
   s.start(t0);
   s.stop(t0 + dur + 0.02);
 }
@@ -555,7 +555,13 @@ function mNote(c: AudioContext, t: number, freq: number, dur: number, vol: numbe
 const BPM = 66;
 function schedule(): void {
   const c = ctx;
-  if (!c || !musicOn) return;
+  if (!c) return;
+  // room tone + drone: silent in GearShift and the older games, on in the menu, Aura and Spellforge
+  if (ambBus) {
+    const m = modeState.mode;
+    ambBus.gain.setTargetAtTime(m === 'gears' || m === 'guti' || m === 'kite' || m === 'lattim' || m === 'danguli' || m === 'kitecraft' || m === 'marblerun' || m === 'paperplane' ? 0 : 1, c.currentTime, 0.2);
+  }
+  if (!musicOn) return;
   if (raceRoom.active || auraRoom.music) {
     // Neon Overdrive plays its own score: fade the workshop music out instead of layering two
     if (musicGain) musicGain.gain.setTargetAtTime(0, c.currentTime, 0.3);
@@ -700,6 +706,7 @@ function startMusic(): void {
 }
 
 let ambientOn = false;
+let ambBus: GainNode | null = null;
 let inSpace = false;
 
 /** Evening ambience: soft drone, crickets and the odd bird. Starts once. */
@@ -709,7 +716,21 @@ function startAmbience(): void {
   if (!c) return;
   ambientOn = true;
   loadSamples();
-  window.setTimeout(() => play('room', 0.35, 1, true), 1500);
+  // the room tone and the drone live on their own bus so they can be silenced inside GearShift (see schedule())
+  ambBus = c.createGain();
+  ambBus.gain.value = 1;
+  ambBus.connect(dest(c));
+  window.setTimeout(() => {
+    const buf = samples.room;
+    if (!buf || !ambBus) return;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const g = c.createGain();
+    g.gain.value = 0.35;
+    src.connect(g).connect(ambBus);
+    src.start();
+  }, 1500);
   startMusic();
   for (const f of [110, 164.8, 220]) {
     const o = c.createOscillator();
@@ -717,7 +738,7 @@ function startAmbience(): void {
     o.type = 'sine';
     o.frequency.value = f;
     g.gain.value = 0.0015;
-    o.connect(g).connect(dest(c));
+    o.connect(g).connect(ambBus);
     o.start();
   }
 }
@@ -815,9 +836,9 @@ export const sfx = {
   tickTock(tock: boolean, rpm: number, pan = 0): void {
     withPan(pan, () => {
       const f = (tock ? 1500 : 2100) * (0.9 + rpm * 0.3);
-      tone(f, 0.035, 0.07, 'triangle', f * 0.6);
-      burst(0.02, 0.05, f * 1.6, 2);
-      play('metal', 0.05, (tock ? 1.3 : 1.8) + rpm * 0.3);
+      tone(f, 0.04, 0.75, 'triangle', f * 0.6);
+      burst(0.025, 0.6, f * 1.6, 2);
+      play('metal', 0.3, (tock ? 1.3 : 1.8) + rpm * 0.3);
     });
   },
   /**
@@ -882,8 +903,8 @@ export const sfx = {
     w.nf.frequency.setTargetAtTime(300 + rpm * 600, t, 0.1);
     w.lfo.frequency.setTargetAtTime(4 + rpm * 22, t, 0.1);
     w.lg.gain.setTargetAtTime(60 + rpm * 200, t, 0.1);
-    w.g.gain.setTargetAtTime(rpm > 0.01 ? 0.02 + rpm * 0.03 : 0, t, 0.12);
-    w.ng.gain.setTargetAtTime(rpm > 0.01 ? 0.004 + rpm * 0.012 : 0, t, 0.12);
+    w.g.gain.setTargetAtTime(rpm > 0.01 ? 0.05 + rpm * 0.075 : 0, t, 0.12);
+    w.ng.gain.setTargetAtTime(rpm > 0.01 ? 0.01 + rpm * 0.03 : 0, t, 0.12);
   },
   /**
    * Tooth-mesh voice: a gated noise train whose click rate is the tooth-passing frequency
@@ -934,7 +955,7 @@ export const sfx = {
     v.lfo.frequency.setTargetAtTime(Math.max(0.1, Math.min(9, clicksPerSec * 0.3)), t, 0.05);
     v.bp.frequency.setTargetAtTime(cf, t, 0.05);
     v.bp.Q.setTargetAtTime(1.2, t, 0.05);
-    v.level.gain.setTargetAtTime(clicksPerSec > 0.01 ? vol * (kind === 'iron' ? 0.25 : 0.14) : 0, t, 0.06);
+    v.level.gain.setTargetAtTime(clicksPerSec > 0.01 ? vol * (kind === 'iron' ? 0.6 : 0.36) : 0, t, 0.06);
     if (v.sp) v.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.1);
   },
   /** gritty bite when teeth first engage or the train reverses */
@@ -979,29 +1000,36 @@ export const sfx = {
   },
   /** lever slammed home: heavy clunk with a mid body so laptop speakers carry it */
   lever(): void {
-    tone(70, 0.3, 0.3, 'triangle', 40);
-    burst(0.06, 0.25, 700, 2);
-    tone(1600, 0.2, 0.04, 'sine');
+    tone(70, 0.3, 1.0, 'triangle', 40);
+    burst(0.06, 0.9, 700, 2);
+    tone(1600, 0.2, 0.2, 'sine');
   },
   /** ignition lever slammed home: a deep crank, the engine catching and a steam sigh. Plays once. */
   ignite(): void {
-    // starter crank: three low thumps, then the mechanism catches and rises into a smooth hum
-    for (let i = 0; i < 3; i++) tone(64 + i * 9, 0.13, 0.17, 'triangle', 40, i * 0.13);
-    tone(72, 0.85, 0.17, 'triangle', 170, 0.42);
-    tone(144, 0.85, 0.05, 'sawtooth', 340, 0.42);
-    tone(420, 0.6, 0.03, 'sine', 900, 0.5);
-    burst(0.45, 0.1, 420, 1.4);
-    burst(0.9, 0.06, 3600, 0.6);
+    // starter crank: three heavy low thumps...
+    for (let i = 0; i < 3; i++) {
+      tone(78 + i * 8, 0.16, 0.7, 'triangle', 36, i * 0.15);
+      burst(0.07, 0.35, 220, 1.2, i * 0.15);
+    }
+    // ...then the mechanism catches: a body-shaking low note rising into a whirr, a metal clang and a steam release
+    tone(70, 1.5, 0.6, 'triangle', 200, 0.5);
+    tone(140, 1.4, 0.16, 'sawtooth', 420, 0.5);
+    tone(280, 1.2, 0.14, 'sine', 900, 0.55);
+    tone(560, 1.0, 0.07, 'sine', 1800, 0.6);
+    play('metal', 0.6, 0.7);
+    burst(0.5, 0.3, 420, 1.4, 0.5);
+    burst(1.0, 0.13, 3600, 0.6, 0.6);
   },
-  /** a gear is seated: a crisp double "tick-tick" (a bright click, then a slightly lower one) over a soft thud */
+  /** a gear is seated: a sharp double "tick-tick" (bright click, then a slightly lower one) with a little body */
   seat(kind: 'brass' | 'bronze' | 'copper' | 'iron' = 'bronze', pan = 0): void {
-    const f = kind === 'iron' ? 1500 : kind === 'copper' ? 1900 : 2300;
+    const f = kind === 'iron' ? 1700 : kind === 'copper' ? 2100 : 2500;
     withPan(pan, () => {
-      tone(f, 0.03, 0.1, 'triangle', f * 0.55);
-      burst(0.018, 0.09, f * 1.4, 2.5);
-      tone(f * 0.78, 0.035, 0.09, 'triangle', f * 0.42, 0.075);
-      burst(0.018, 0.07, f * 1.1, 2.5);
-      tone(110, 0.12, 0.1, 'sine', 70, 0.0);
+      tone(f, 0.04, 0.85, 'triangle', f * 0.5);
+      burst(0.025, 0.95, f * 1.3, 2.5);
+      play('metal', 0.35, 1.9);
+      tone(f * 0.8, 0.045, 0.8, 'triangle', f * 0.4, 0.09);
+      burst(0.025, 0.8, f * 1.0, 2.5, 0.09);
+      tone(130, 0.16, 0.8, 'sine', 70);
     });
   },
   /** ratchet click while a lever is dragged; up = release click */
@@ -1288,5 +1316,53 @@ if (typeof window !== 'undefined') {
       }
     }
     return { state: ctx?.state ?? 'none', musicGain: musicGain ? musicGain.gain.value : -1, colour: curColour, liveShots, peak, rms: Math.sqrt(sum / meterBuf.length), mode: modeState.mode };
+  };
+}
+
+/**
+ * Test hook: render one sound effect through the SAME limiter chain into an OfflineAudioContext (deterministic, no real-time
+ * scheduling) and report its peak/RMS in dBFS plus where the peak sits. Restores the live graph afterwards.
+ */
+if (typeof window !== 'undefined') {
+  (window as unknown as { __renderSfx?: unknown }).__renderSfx = async (fn: (s: typeof sfx) => void, secs = 2.5): Promise<{ peakDb: number; rmsDb: number; peakAt: number; peak: number }> => {
+    const saved = { ctx, master, sfxBus, meter, liveShots, mesh: meshVoices.slice() };
+    const oc = new OfflineAudioContext(2, Math.ceil(48000 * secs), 48000);
+    ctx = oc as unknown as AudioContext;
+    master = null;
+    sfxBus = null;
+    meter = null;
+    liveShots = 0;
+    meshVoices.length = 0;
+    try {
+      fn(sfx);
+      const buf = await oc.startRendering();
+      let peak = 0;
+      let at = 0;
+      let sum = 0;
+      const n = buf.length;
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < n; i++) {
+          const a = Math.abs(d[i]);
+          sum += a * a;
+          if (a > peak) {
+            peak = a;
+            at = i / buf.sampleRate;
+          }
+        }
+      }
+      const db = (v: number): number => 20 * Math.log10(Math.max(v, 1e-6));
+      return { peakDb: +db(peak).toFixed(1), rmsDb: +db(Math.sqrt(sum / (n * buf.numberOfChannels))).toFixed(1), peakAt: +at.toFixed(2), peak: +peak.toFixed(3) };
+    } finally {
+      ctx = saved.ctx;
+      master = saved.master;
+      sfxBus = saved.sfxBus;
+      meter = saved.meter;
+      liveShots = saved.liveShots;
+      meshVoices.length = 0;
+      saved.mesh.forEach((v, i) => {
+        meshVoices[i] = v;
+      });
+    }
   };
 }
