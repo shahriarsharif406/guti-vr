@@ -31,9 +31,10 @@ import {
   SphereGeometry,
   TorusGeometry,
   Sprite,
+  RingGeometry,
 } from '@iwsdk/core';
 import type { BossDef, EnemyDef } from './sfdata';
-import { glowSprite } from './sfvfx';
+import { glowSprite, glowTexture } from './sfvfx';
 
 export type RealmId = 'sanctum' | 'ignar' | 'vyra' | 'voidking';
 interface Theme {
@@ -472,7 +473,7 @@ export function buildEnemy(def: EnemyDef): Rig {
   void accent;
 }
 
-export function buildBoss(def: BossDef): Rig {
+function buildBossBase(def: BossDef): Rig {
   const g = new Group();
   const mats: MeshStandardMaterial[] = [];
   const M = (hex: number, em: number, emI: number, rough = 0.5, metal = 0.2): MeshStandardMaterial => {
@@ -589,4 +590,93 @@ export function buildBoss(def: BossDef): Rig {
     finish1.material.opacity = st.phase !== undefined && st.phase >= 5 ? 0.35 + Math.sin(t * 5) * 0.15 : 0;
     g.position.y = Math.sin(t * 0.8) * 0.05;
   });
+}
+
+/**
+ * Boss presence layer wrapped around every boss model: orbiting aura motes, a burning ground ring,
+ * rage glow as health drops, an anticipation squash before attacks, a phase-change shockwave and a rise-from-below entrance.
+ * Pure visuals: no gameplay state is read except what the rig tick already receives.
+ */
+export function buildBoss(def: BossDef): Rig {
+  const base = buildBossBase(def);
+  const g = base.group;
+  const col = new Color(def.hex);
+  const N = 54;
+  const pos = new Float32Array(N * 3);
+  const seed = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    seed[i * 3] = Math.random() * Math.PI * 2;
+    seed[i * 3 + 1] = 0.25 + Math.random() * 0.55;
+    seed[i * 3 + 2] = Math.random();
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(pos, 3));
+  const motes = new Points(geo, new PointsMaterial({ size: 0.07, map: glowTexture(), color: col.clone().lerp(new Color(0xffffff), 0.35), transparent: true, opacity: 0.85, blending: AdditiveBlending, depthWrite: false }));
+  motes.frustumCulled = false;
+  const ringMat = new MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+  const ground = new Mesh(new RingGeometry(0.55, 0.62, 56), ringMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = 0.02;
+  const ground2 = new Mesh(new RingGeometry(0.8, 0.83, 56), ringMat.clone());
+  ground2.rotation.x = -Math.PI / 2;
+  ground2.position.y = 0.025;
+  const shock = new Mesh(new RingGeometry(0.9, 1.0, 64), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
+  shock.rotation.x = -Math.PI / 2;
+  shock.position.y = 0.05;
+  const inner = new Group();
+  while (g.children.length) inner.add(g.children[0]);
+  g.add(inner, motes, ground, ground2, shock);
+  let age = 0;
+  let lastPhase = -1;
+  let shockT = 0;
+  let squash = 0;
+  const tickBase = base.tick;
+  const baseEm = base.mats.map((m) => m.emissiveIntensity);
+  base.tick = (dt, t, st) => {
+    age += dt;
+    tickBase(dt, t, st);
+    // entrance: rise from the floor with a growing glow over 1.6 s
+    const e = Math.min(1, age / 1.6);
+    const ease = 1 - Math.pow(1 - e, 3);
+    inner.position.y = -0.9 * (1 - ease);
+    inner.scale.setScalar(0.6 + 0.4 * ease);
+    // rage: emissive climbs as health falls
+    const rage = (1 - Math.max(0, Math.min(1, st.hpFrac))) * 0.9;
+    for (let i = 0; i < base.mats.length; i++) base.mats[i].emissiveIntensity += rage * Math.min(1.2, Math.max(0.3, baseEm[i])) * 0.25;
+    // anticipation: crouch and lean back as an attack winds up, release with a stretch
+    const target = st.tele > 0 ? 1 : 0;
+    squash += (target - squash) * Math.min(1, dt * (target ? 6 : 14));
+    inner.scale.y *= 1 - 0.1 * squash;
+    inner.scale.x *= 1 + 0.05 * squash;
+    inner.rotation.x = -0.12 * squash;
+    // phase change shockwave
+    if (st.phase !== undefined && st.phase !== lastPhase) {
+      if (lastPhase >= 0) shockT = 1;
+      lastPhase = st.phase;
+    }
+    shockT = Math.max(0, shockT - dt * 0.9);
+    const sm = shock.material as MeshBasicMaterial;
+    sm.opacity = shockT * 0.8;
+    shock.scale.setScalar(1 + (1 - shockT) * 5);
+    // ground rings breathe and spin faster when winding up
+    const pulse = 0.35 + 0.15 * Math.sin(t * 2.4) + (st.tele > 0 ? 0.4 : 0);
+    (ground.material as MeshBasicMaterial).opacity = pulse * ease;
+    (ground2.material as MeshBasicMaterial).opacity = pulse * 0.6 * ease;
+    ground.rotation.z += dt * (0.5 + squash * 3);
+    ground2.rotation.z -= dt * 0.4;
+    ground.scale.setScalar(1 + squash * 0.25);
+    // aura motes: orbit and drift upward, faster when angry
+    const sp = 0.5 + rage * 1.2;
+    for (let i = 0; i < N; i++) {
+      const a = seed[i * 3] + t * sp * (0.6 + seed[i * 3 + 2]);
+      const rise = ((t * 0.18 * (0.5 + seed[i * 3 + 2]) + seed[i * 3 + 2]) % 1);
+      const r = 0.25 + seed[i * 3 + 1] * 0.55;
+      pos[i * 3] = Math.cos(a) * r;
+      pos[i * 3 + 1] = 0.05 + rise * 1.3;
+      pos[i * 3 + 2] = Math.sin(a) * r;
+    }
+    geo.attributes.position.needsUpdate = true;
+    (motes.material as PointsMaterial).opacity = 0.85 * ease;
+  };
+  return base;
 }
