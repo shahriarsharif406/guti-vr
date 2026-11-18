@@ -311,6 +311,9 @@ function buildIgnar(def: BossDef): BossRig {
   const heartM = M({ color: 0xffe0a0, emissive: 0xff8a20, emissiveIntensity: 3.2, roughness: 0.3, metalness: 0 });
   const visor = M({ color: 0xffd080, emissive: 0xffa040, emissiveIntensity: 3, roughness: 0.2 }, true);
 
+  const lavaM = M({ color: 0xff9a40, emissive: 0xff6a10, emissiveIntensity: 2.2, roughness: 0.4, metalness: 0 });
+  const hornM = M({ color: 0x1a0e0c, emissive: 0xff4a10, emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.3, flatShading: true });
+
   const body = pivot(g, 0, 0, 0);
   // legs: short thick columns with splayed feet
   const legs: Group[] = [];
@@ -318,6 +321,8 @@ function buildIgnar(def: BossDef): BossRig {
     const hip = pivot(body, sx * 0.17, 0.34, -0.02);
     mesh(hip, new CylinderGeometry(0.1, 0.13, 0.3, 7), rock, 0, -0.15, 0);
     mesh(hip, new BoxGeometry(0.2, 0.08, 0.26), obsidian, 0, -0.3, 0.04);
+    mesh(hip, new BoxGeometry(0.16, 0.08, 0.14), obsidian, 0, -0.06, 0.1);
+    for (let k = 0; k < 3; k++) mesh(hip, new ConeGeometry(0.02, 0.09, 4), lavaM, (k - 1) * 0.06, -0.3, 0.17).rotation.x = Math.PI / 2;
     legs.push(hip);
   }
   mesh(body, new DodecahedronGeometry(0.2, 0), rock, 0, 0.38, 0).scale.set(1.4, 0.7, 1);
@@ -354,6 +359,30 @@ function buildIgnar(def: BossDef): BossRig {
     s.rotation.x = -1.0;
     s.rotation.z = (i - 1) * -0.35;
   }
+  // menacing face: glowing eyes, curved horns with hot tips, a lava-lit maw of teeth
+  for (const sx of [-1, 1]) {
+    mesh(head, new SphereGeometry(0.022, 8, 6), visor, sx * 0.055, 0.03, 0.105);
+    for (let j = 0; j < 3; j++) {
+      const h = mesh(head, new ConeGeometry(0.04 - j * 0.009, 0.16, 6), j === 2 ? lavaM : hornM, sx * (0.1 + j * 0.05), 0.07 + j * 0.1, -0.02 - j * 0.05);
+      h.rotation.set(-0.3 - j * 0.35, 0, -sx * (0.7 + j * 0.3));
+    }
+  }
+  mesh(head, new BoxGeometry(0.12, 0.02, 0.07), lavaM, 0, -0.065, 0.07);
+  for (let i = 0; i < 5; i++) {
+    const tu = mesh(head, new ConeGeometry(0.012, 0.05, 4), obsidian, -0.05 + i * 0.025, -0.045, 0.1);
+    tu.rotation.x = Math.PI;
+    const td = mesh(jaw, new ConeGeometry(0.012, 0.045, 4), obsidian, -0.05 + i * 0.025, 0.04, 0.04);
+    void td;
+  }
+  // spine ridge and molten veins wrapped around the torso
+  for (let i = 0; i < 7; i++) {
+    const sp = mesh(chest, new ConeGeometry(0.05 - i * 0.004, 0.2 - i * 0.012, 5), obsidian, 0, 0.5 - i * 0.07, -0.24 - i * 0.005);
+    sp.rotation.x = -0.9;
+  }
+  for (let i = 0; i < 6; i++) {
+    const vein = mesh(chest, new TorusGeometry(0.29 + (i % 2) * 0.02, 0.008, 5, 20, Math.PI * 0.6), lavaM, 0, 0.14 + i * 0.07, 0.02);
+    vein.rotation.set(0.1, i * 0.55 - 1.4, 0.15);
+  }
   // broken forge-wheel on the back: a half ring of spikes that frames the silhouette
   const wheel = pivot(chest, 0, 0.36, -0.22);
   mesh(wheel, new TorusGeometry(0.46, 0.035, 6, 24, Math.PI * 1.25), iron, 0, 0, 0).rotation.z = -Math.PI * 0.12;
@@ -372,6 +401,15 @@ function buildIgnar(def: BossDef): BossRig {
     chim.rotation.z = -sx * 0.25;
     chim.rotation.x = -0.25;
     (chim.material as MeshStandardMaterial).side = DoubleSide;
+    for (let k = 0; k < 3; k++) {
+      const pl = mesh(sh, new DodecahedronGeometry(0.16 - k * 0.03, 0), obsidian, sx * (0.05 + k * 0.03), 0.1 + k * 0.05, 0.02);
+      pl.scale.set(1.2, 0.35, 1);
+      pl.rotation.z = -sx * (0.25 + k * 0.1);
+    }
+    for (let k = 0; k < 3; k++) {
+      const sp = mesh(sh, new ConeGeometry(0.03, 0.16, 5), hornM, sx * (0.18 + k * 0.02), 0.06 + k * 0.05, 0.06 - k * 0.06);
+      sp.rotation.z = -sx * 1.2;
+    }
     const tip = pivot(sh, sx * 0.08, 0.4, -0.1);
     const flame = glowSprite(0xff7a20, 0.32, 0.8);
     tip.add(flame);
@@ -385,6 +423,12 @@ function buildIgnar(def: BossDef): BossRig {
     const fist = mesh(el, new DodecahedronGeometry(0.135, 0), rockArm, 0, -0.32, 0.02);
     fist.scale.set(1.15, 0.85, 1.05);
     mesh(el, new BoxGeometry(0.22, 0.04, 0.2), obsidian, 0, -0.24, 0.02);
+    mesh(el, new BoxGeometry(0.17, 0.12, 0.17), obsidian, 0, -0.1, 0.02).rotation.y = 0.4;
+    for (let k = 0; k < 4; k++) {
+      const kn = mesh(el, new ConeGeometry(0.025, 0.09, 5), lavaM, -0.09 + k * 0.06, -0.38, 0.1);
+      kn.rotation.x = Math.PI * 0.6;
+    }
+    mesh(arm, new TorusGeometry(0.1, 0.012, 5, 14), lavaM, 0, -0.08, 0).rotation.x = Math.PI / 2;
     // broken chain hanging from the wrist
     for (let k = 0; k < 4; k++) {
       const link = mesh(el, new TorusGeometry(0.03, 0.009, 5, 10), iron, sx * 0.1, -0.2 - k * 0.045, 0.05);

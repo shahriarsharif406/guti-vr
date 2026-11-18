@@ -66,14 +66,22 @@ class SfAudio {
     if (!this.sfxBus) {
       const c = core.ctx;
       this.sfxBus = c.createGain();
-      this.sfxBus.gain.value = 1.15;
-      this.sfxBus.connect(core.out);
+      this.sfxBus.gain.value = 1.6;
+      // soft saturation (tanh) so big hits get fat and dense instead of clipping
+      const sat = c.createWaveShaper();
+      const curve = new Float32Array(2048);
+      for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(((i / (curve.length - 1)) * 2 - 1) * 2.2) / Math.tanh(2.2);
+      sat.curve = curve;
+      sat.oversample = '2x';
+      const trim = c.createGain();
+      trim.gain.value = 0.66;
+      this.sfxBus.connect(sat).connect(trim).connect(core.out);
       this.meter = c.createAnalyser();
       this.meter.fftSize = 1024;
       this.meterBuf = new Float32Array(this.meter.fftSize);
-      this.sfxBus.connect(this.meter);
+      trim.connect(this.meter);
     }
-    this.sfxBus.gain.value = 1.15 * getSfxVolume();
+    this.sfxBus.gain.value = 1.6 * getSfxVolume();
     return { c: core.ctx, bus: this.sfxBus };
   }
   /** peak of the battle effects bus over the last analysis window (0..1+), for tests */
@@ -154,13 +162,22 @@ class SfAudio {
     f(e.c, this.dest(e.c, e.bus, x));
   }
 
+  /** the "DOOM": deep sub thump with a fast pitch drop, noisy crack, roar body and a rumble tail. size ~0.5..1.6 */
+  private boom(c: AudioContext, d: AudioNode, size: number, delay = 0, crackHz = 2600): void {
+    this.tn(c, d, 170, 46, 0.16, 0.95 * size, 'sine', delay); // fast pitch-drop thump
+    this.tn(c, d, 58, 30, 1.0 * size + 0.3, 0.85 * size, 'sine', delay + 0.02); // sub body
+    this.nz(c, d, 0.2, 0.85 * size, 'bandpass', crackHz, 500, 0.7, delay, 0.002); // crack
+    this.nz(c, d, 0.55 * size + 0.2, 0.7 * size, 'lowpass', 1900, 180, 0.7, delay, 0.004); // roar
+    this.nz(c, d, 1.1 * size + 0.4, 0.5 * size, 'lowpass', 170, 70, 0.8, delay + 0.05, 0.06); // rumble tail
+  }
   /** element index: 0 fire, 1 ice, 2 lightning, 3 aether, 4 nature, 5 shadow */
   cast(el: number, power: number, x = 0): void {
     this.sfxCount.cast++;
     const p = 0.7 + Math.min(1.3, power) * 0.5;
     this.fx(x, 1.2, (c, d) => {
       // common release whoosh
-      this.nz(c, d, 0.38, 0.38 * p, 'bandpass', 300, 2400, 0.9, 0, 0.03);
+      this.nz(c, d, 0.5, 0.65 * p, 'bandpass', 250, 2600, 0.9, 0, 0.05);
+      this.tn(c, d, 60, 110, 0.35, 0.4 * p, 'sine', 0.02);
       if (el === 0) {
         this.nz(c, d, 0.7, 0.5 * p, 'lowpass', 600, 2400, 0.7, 0, 0.06);
         this.tn(c, d, 150, 55, 0.6, 0.45 * p, 'sawtooth', 0, 700);
@@ -193,7 +210,9 @@ class SfAudio {
   hit(el: number, big: boolean, x = 0): void {
     this.sfxCount.hit++;
     const v = big ? 1.5 : 1;
-    this.fx(x, 1.0, (c, d) => {
+    const heavy = el === 0 || el === 5 || el === 4 ? 1 : 0.75;
+    this.fx(x, 2.2, (c, d) => {
+      this.boom(c, d, (big ? 1.35 : 0.85) * heavy, 0, el === 1 ? 4200 : 2600);
       this.tn(c, d, 130 * (big ? 0.8 : 1), 42, 0.26 * v, 0.55 * v, 'sine');
       this.nz(c, d, 0.22 * v, 0.5 * v, 'lowpass', 2800, 500, 0.7, 0, 0.003);
       if (el === 0) this.nz(c, d, 0.5 * v, 0.34, 'bandpass', 1200, 380, 0.8, 0.02, 0.04);
@@ -221,7 +240,9 @@ class SfAudio {
   }
   die(x = 0): void {
     this.sfxCount.die++;
-    this.fx(x, 1.2, (c, d) => {
+    this.fx(x, 2.4, (c, d) => {
+      this.boom(c, d, 1.5, 0);
+      this.boom(c, d, 0.8, 0.12, 1800);
       this.tn(c, d, 420, 70, 0.55, 0.38, 'sawtooth', 0, 1100);
       this.nz(c, d, 0.45, 0.5, 'bandpass', 2600, 400, 0.8, 0, 0.004);
       this.tn(c, d, 70, 28, 0.7, 0.55, 'sine', 0.03);
@@ -240,7 +261,8 @@ class SfAudio {
   }
   hurt(): void {
     this.sfxCount.hurt++;
-    this.fx(0, 1.0, (c, d) => {
+    this.fx(0, 2.0, (c, d) => {
+      this.boom(c, d, 1.1, 0, 2000);
       this.tn(c, d, 100, 36, 0.4, 0.8, 'sine');
       this.nz(c, d, 0.3, 0.7, 'lowpass', 1800, 220, 0.8, 0, 0.002);
       this.tn(c, d, 110, 60, 0.45, 0.3, 'sawtooth', 0, 500);
@@ -249,7 +271,10 @@ class SfAudio {
   }
   block(): void {
     this.sfxCount.block++;
-    this.fx(0, 1.0, (c, d) => {
+    this.fx(0, 1.6, (c, d) => {
+      this.tn(c, d, 150, 60, 0.25, 0.8, 'sine'); // body thud
+      this.nz(c, d, 0.14, 0.9, 'bandpass', 1800, 700, 0.8, 0, 0.001);
+      for (const [f, v] of [[233, 0.4], [311, 0.35], [467, 0.3]]) this.tn(c, d, f, f * 0.995, 1.0, v, 'square', 0, 1500); // ringing plate
       this.nz(c, d, 0.12, 0.7, 'highpass', 3000, 3000, 1, 0, 0.001);
       for (const [f, v] of [[820, 0.35], [1290, 0.3], [1930, 0.22], [2710, 0.14]]) this.tn(c, d, f, f * 0.98, 0.7, v, 'sine');
       this.tn(c, d, 180, 90, 0.2, 0.4, 'triangle');
@@ -267,14 +292,16 @@ class SfAudio {
   }
   stomp(): void {
     this.sfxCount.other++;
-    this.fx(0, 1.2, (c, d) => {
+    this.fx(0, 2.0, (c, d) => {
+      this.boom(c, d, 1.5, 0, 1500);
       this.tn(c, d, 80, 24, 0.7, 0.8, 'sine');
       this.nz(c, d, 0.6, 0.6, 'lowpass', 1200, 90, 0.7, 0, 0.005);
     });
   }
   roar(x = 0): void {
     this.sfxCount.other++;
-    this.fx(x, 2.4, (c, d) => {
+    this.fx(x, 2.6, (c, d) => {
+      this.boom(c, d, 1.0, 0.1, 1200);
       this.tn(c, d, 62, 34, 2.0, 0.6, 'sawtooth', 0, 340);
       this.tn(c, d, 93, 50, 1.8, 0.3, 'square', 0, 300);
       this.nz(c, d, 1.9, 0.5, 'bandpass', 220, 700, 1.6, 0, 0.3);
@@ -395,7 +422,7 @@ class SfAudio {
     const core = audioCore();
     if (!core || !this.bus) return;
     const c = core.ctx;
-    const want = this.active && this.musicOn ? 3.5 * getMusicVolume() : 0;
+    const want = this.active && this.musicOn ? 5.0 * getMusicVolume() : 0;
     this.bus.gain.setTargetAtTime(want, c.currentTime, 0.4);
     if (!this.active || !this.musicOn) {
       this.nextT = c.currentTime + 0.1;
