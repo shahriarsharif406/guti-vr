@@ -6,6 +6,7 @@ import {
   CanvasTexture,
   CircleGeometry,
   Color,
+  CapsuleGeometry,
   ConeGeometry,
   CylinderGeometry,
   Entity,
@@ -28,7 +29,8 @@ import {
   Vector3,
   createSystem,
 } from '@iwsdk/core';
-import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, sfx, musicState, withPan } from './audio.js';
+import { getMasterVolume, setMasterVolume, setMuted, setMusicVolume, setSfxVolume, musicState } from './audio.js';
+import { aa } from './auraaudio.js';
 import {
   CYAN,
   GOLD,
@@ -63,7 +65,7 @@ import { AuraOpt } from './ui-components.js';
 const BZ = -0.85;
 const BY = 0.9;
 /** The whole loom is drawn this much larger than its puzzle coordinates (puzzles keep their own metre units). */
-const S = 1.2;
+const S = 1.3;
 const BW = 1.16;
 const BH = 0.74;
 const PICK_R = 0.085;
@@ -347,11 +349,11 @@ export class AuraSystem extends createSystem({
 
     // HUD, compass and buttons
     this.hud = new TextPanel(0.92, 0.17, 1280);
-    this.hud.mesh.position.set(0, BY + (BH * S) / 2 + 0.045, BZ + 0.05);
+    this.hud.mesh.position.set(0, BY + (BH * S) / 2 + 0.018, BZ + 0.05);
     this.hud.mesh.rotation.x = -0.15;
     this.world.createTransformEntity(this.hud.mesh);
     this.compass = new TextPanel(0.24, 0.24, 512);
-    this.compass.mesh.position.set(-0.86, BY + (BH * S) / 2 - 0.02, BZ + 0.06);
+    this.compass.mesh.position.set(-0.7, BY + (BH * S) / 2 - 0.02, BZ + 0.06);
     this.compass.mesh.rotation.y = 0.35;
     this.world.createTransformEntity(this.compass.mesh);
     this.card = new TextPanel(0.96, 0.62, 1280);
@@ -377,7 +379,7 @@ export class AuraSystem extends createSystem({
       this.queries.opts.subscribe('qualify', (entity: Entity) => {
         if (modeState.mode !== 'aura' || this.optCooldown > 0) return;
         this.optCooldown = 0.3;
-        sfx.select();
+        aa.click();
         this.press(entity.getValue(AuraOpt, 'id') as number);
       }),
     );
@@ -385,7 +387,7 @@ export class AuraSystem extends createSystem({
     // event wiring: gameplay events drive visuals, audio, save and world state
     this.bus.on((e) => {
       if (e.t === 'rotate') {
-        sfx.auraTick(e.step);
+        aa.tick(e.step);
         this.buzz(12);
         this.idle = 0;
       } else if (e.t === 'awaken') {
@@ -394,13 +396,13 @@ export class AuraSystem extends createSystem({
         g.awake = true;
         this.ripple.fire(t.x, t.y, 0, 0.5, MASK_HEX[t.mask & 7]);
         celebrate(t.x * S, BY + t.y * S, BZ + 0.08, 1);
-        sfx.auraAwaken(e.i, this.chapterIdx());
+        aa.awaken(e.i, this.chapterIdx());
         this.buzz(40);
         this.save.stats.connections++;
         this.save.stats.hues[t.mask & 7]++;
         this.flash = this.save.settings.reducedFlash ? 0.3 : 1;
       } else if (e.t === 'impure') {
-        sfx.auraImpure();
+        aa.impure();
         const t = this.lv.targets[e.i];
         this.msg = 'The ' + MASK_NAME[t.mask & 7] + ' gate needs exactly ' + MASK_NAME[t.mask & 7] + ' light';
         this.msgT = 4;
@@ -423,7 +425,7 @@ export class AuraSystem extends createSystem({
         this.lotus[this.level].target = 1;
         this.ferns[this.level].lines.visible = true;
         this.pulseAge = 0;
-        sfx.auraPulse();
+        aa.pulse();
         this.buzz([60, 40, 120]);
         this.restore = this.save.solved.filter(Boolean).length / this.puzzles.length;
         this.msg = 'Sanctuary ' + Math.round(this.restore * 100) + '% restored';
@@ -435,7 +437,7 @@ export class AuraSystem extends createSystem({
       } else if (e.t === 'finale') {
         this.save.finished = true;
         this.finaleT = 0;
-        sfx.auraFinale();
+        aa.finale();
         this.persist();
       }
     });
@@ -454,7 +456,7 @@ export class AuraSystem extends createSystem({
         if (rots.length) {
           const k = rots.indexOf(this.sel);
           this.sel = rots[(k + (e.shiftKey ? rots.length - 1 : 1)) % rots.length];
-          sfx.auraTick(this.sel);
+          aa.tick(this.sel);
         }
       } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && this.sel >= 0 && !this.paused) {
         this.stepElem(this.sel, e.key === 'ArrowRight' ? 1 : -1);
@@ -495,6 +497,7 @@ export class AuraSystem extends createSystem({
     const w = window as unknown as Record<string, unknown>;
     w.__aura = () => ({ screen: this.screen, puzzle: this.pz?.id, stats: this.save.stats, msg: this.msgT > 0 ? this.msg : '', hints: this.save.hints, count: this.puzzles.length, unlocked: this.save.unlocked, time: this.save.time, settings: this.save.settings, mode: modeState.mode, level: this.level, solved: this.tr?.solved, ok: this.tr?.ok, got: this.tr?.got, awake: this.gates.map((g) => g.awake), saved: this.save.solved, restore: this.restore, moves: this.moves, paused: this.paused, finaleT: this.finaleT, sol: this.sol, ang: this.lv?.elems.map((e) => e.a) });
     w.__auraLevel = (i: number) => this.loadLevel(i);
+    w.__auraAudio = () => ({ ...aa.state(), peak: aa.peak() });
     w.__auraInfo = () => ({ geometries: this.world.renderer.info.memory.geometries, textures: this.world.renderer.info.memory.textures, programs: this.world.renderer.info.programs?.length ?? 0, children: this.elemGroup.children.length + this.srcGroup.children.length, listeners: this.cleanupFuncs.length });
     w.__auraSolve = () => {
       if (!this.sol) return;
@@ -589,9 +592,20 @@ export class AuraSystem extends createSystem({
 
   private buildSanctuary(): void {
     // ledge + lotus garden, fractal ferns and crystal spires below the board: the world that wakes up
-    const ledge = new Mesh(new BoxGeometry(1.2, 0.03, 0.22), new MeshStandardMaterial({ color: 0x0b0a14, roughness: 0.3, metalness: 0.85, emissive: 0x15103a, emissiveIntensity: 0.6 }));
+    const ledge = new Mesh(new BoxGeometry(1.24, 0.03, 0.22), new MeshStandardMaterial({ color: 0x0b0a14, roughness: 0.3, metalness: 0.85, emissive: 0x15103a, emissiveIntensity: 0.6 }));
     ledge.position.set(0, -BH / 2 - 0.06, 0.12);
     this.root.add(ledge);
+    // gold trim and a soft glow strip along the ledge front: a jewel-box finish
+    const gold = new MeshStandardMaterial({ color: 0xe8b84a, roughness: 0.25, metalness: 1, emissive: 0x5a3d08, emissiveIntensity: 0.35 });
+    const rail = new Mesh(new BoxGeometry(1.24, 0.006, 0.01), gold);
+    rail.position.set(0, -BH / 2 - 0.043, 0.232);
+    this.root.add(rail);
+    const rail2 = new Mesh(new BoxGeometry(1.24, 0.004, 0.01), gold);
+    rail2.position.set(0, -BH / 2 - 0.077, 0.232);
+    this.root.add(rail2);
+    const strip = new Mesh(new BoxGeometry(1.2, 0.012, 0.004), new MeshBasicMaterial({ color: 0x7fe0ff, transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false }));
+    strip.position.set(0, -BH / 2 - 0.06, 0.2325);
+    this.root.add(strip);
     const n = this.puzzles.length;
     for (let i = 0; i < n; i++) {
       const x = -0.5 + (i / (n - 1)) * 1.0;
@@ -610,10 +624,12 @@ export class AuraSystem extends createSystem({
     }
     // crystal spires: one instanced mesh, per-instance glow
     const NC = 16;
-    const cg = new ConeGeometry(0.014, 0.12, 5);
+    // smooth crystal capsules (lanterns) instead of spiky cones, each on a small gold base
+    const cg = new CapsuleGeometry(0.012, 0.04, 4, 14);
+    const baseGeo = new CylinderGeometry(0.02, 0.026, 0.008, 18);
     const glow = new InstancedBufferAttribute(new Float32Array(NC), 1);
     cg.setAttribute('aGlow', glow);
-    const cm = makeCrystalMaterial(0x24206a, 0x7fe0ff, 0.55);
+    const cm = makeCrystalMaterial(0x5a54c8, 0xa8ecff, 0.7);
     this.crystals = new InstancedMesh(cg, cm, NC);
     const m4 = new Matrix4();
     const p = new Vector3();
@@ -621,8 +637,11 @@ export class AuraSystem extends createSystem({
     const q = new Mesh().quaternion;
     for (let i = 0; i < NC; i++) {
       const x = -0.56 + (i / (NC - 1)) * 1.12;
-      s.set(1, 0.6 + ((i * 7) % 5) * 0.2, 1);
-      p.set(x, -BH / 2 - 0.02 + (s.y * 0.12) / 2, 0.02 + ((i * 3) % 4) * 0.012);
+      s.set(1, 0.85 + ((i * 7) % 5) * 0.14, 1);
+      p.set(x, -BH / 2 - 0.044 + (s.y * 0.064) / 2 + 0.01, 0.19);
+      const base = new Mesh(baseGeo, gold);
+      base.position.set(x, -BH / 2 - 0.041, 0.19);
+      this.root.add(base);
       m4.compose(p, q, s);
       this.crystals.setMatrixAt(i, m4);
       this.crystalVal.push(0);
@@ -917,7 +936,7 @@ export class AuraSystem extends createSystem({
     }
     const li = this.firstLevelOf(slot);
     if (li > this.save.unlocked) {
-      sfx.auraImpure();
+      aa.impure();
       return;
     }
     this.startLevel(li);
@@ -1008,7 +1027,7 @@ export class AuraSystem extends createSystem({
           a.remove();
           setTimeout(() => URL.revokeObjectURL(a.href), 4000);
         }
-        sfx.select();
+        aa.click();
       }, 'image/png');
     } catch {
       this.msg = 'Photo failed on this browser';
@@ -1095,7 +1114,7 @@ export class AuraSystem extends createSystem({
         pt.sy = by;
         pt.moved = false;
         this.sel = g;
-        sfx.grab();
+        aa.grab();
       }
     }
     if (pt.down && pt.grab >= 0) {
@@ -1141,7 +1160,7 @@ export class AuraSystem extends createSystem({
         this.loadLevel(Math.min(start, this.save.unlocked));
         this.drawMenu();
       } else {
-        sfx.auraBeams(0, 0, 0, 0);
+        aa.beams(0, 0, 0, 0);
         this.persist();
       }
     }
@@ -1318,68 +1337,68 @@ export class AuraSystem extends createSystem({
     };
     switch (e.t) {
       case 'grab':
-        withPan(this.panOf(pl, e.node), () => sfx.grab());
+        aa.pan(this.panOf(pl, e.node), () => aa.grab());
         this.buzz(10);
         break;
       case 'connect': {
         const p = nodePos(pl.w, e.b, this.nodeP);
         const m = pl.ev.mask[pl.s.era - 1][e.a] || 7;
         // pitch rises with tension: a taut thread rings higher
-        withPan(p.x / 0.6, () => sfx.auraTick(Math.round(e.len * 8)));
+        aa.pan(p.x / 0.6, () => aa.tick(Math.round(e.len * 8)));
         this.ripple.fire(p.x, p.y, 0, 0.25, MASK_HEX[m & 7]);
         this.buzz(18);
         st.threads++;
         break;
       }
       case 'refuse':
-        withPan(this.panOf(pl, e.a), () => sfx.auraImpure());
+        aa.pan(this.panOf(pl, e.a), () => aa.impure());
         say(REFUSE_TEXT[e.reason] ?? 'That thread cannot be woven');
         break;
       case 'cut':
-        withPan(this.panOf(pl, e.a), () => sfx.cut());
+        aa.pan(this.panOf(pl, e.a), () => aa.cut());
         this.buzz(14);
         break;
       case 'snap':
-        withPan(this.panOf(pl, e.a), () => sfx.auraImpure());
+        aa.pan(this.panOf(pl, e.a), () => aa.impure());
         say('A thread snapped: the ring carried a crystal out of reach');
         break;
       case 'hold':
       case 'echoHold':
-        withPan(this.panOf(pl, e.node), () => sfx.auraTick(e.node));
+        aa.pan(this.panOf(pl, e.node), () => aa.tick(e.node));
         break;
       case 'ring':
-        sfx.auraTick(e.step);
+        aa.tick(e.step);
         this.buzz(12);
         break;
       case 'ringLocked':
-        sfx.auraImpure();
+        aa.impure();
         say('This ring is locked: power its orbit engine first');
         break;
       case 'era':
-        sfx.whoosh();
+        aa.whoosh();
         st.eraShifts++;
         say(e.era === 1 ? 'The past. Threads woven here shape the present' : 'The present', 2.5);
         break;
       case 'recStart':
-        sfx.chime();
+        aa.chime();
         say('Recording an echo: hold a keystone, then let go', 4);
         break;
       case 'recStop':
         if (e.ok) {
-          sfx.auraPulse();
+          aa.pulse();
           st.echoes++;
           say('The echo remembers your hand', 3);
-        } else sfx.auraImpure();
+        } else aa.impure();
         break;
       case 'latch':
-        sfx.chime();
+        aa.chime();
         say('The memory crystal remembers. Tap it to record an echo', 4);
         break;
       case 'receiver':
         if (e.on) {
           const p = nodePos(pl.w, e.node, this.nodeP);
           const m = pl.w.nodes[e.node].mask & 7;
-          withPan(p.x / 0.6, () => sfx.auraAwaken(e.node % 3, this.chapterIdx()));
+          aa.pan(p.x / 0.6, () => aa.awaken(e.node % 3, this.chapterIdx()));
           this.ripple.fire(p.x, p.y, 0, 0.5, MASK_HEX[m]);
           celebrate(p.x * S, BY + p.y * S, BZ + 0.08, 1);
           this.buzz(40);
@@ -1389,7 +1408,7 @@ export class AuraSystem extends createSystem({
         }
         break;
       case 'align':
-        if (e.on) sfx.auraAwaken(0, this.chapterIdx());
+        if (e.on) aa.awaken(0, this.chapterIdx());
         break;
       case 'power':
       case 'release':
@@ -1605,7 +1624,7 @@ export class AuraSystem extends createSystem({
     }
     const lit = Math.round(this.restoreShown * this.crystalVal.length + (this.gates.filter((g) => g.awake).length / Math.max(1, this.lv.targets.length)) * 1.5);
     for (let i = 0; i < this.crystalVal.length; i++) {
-      const target = i < lit ? 1 : 0.22;
+      const target = i < lit ? 1 : 0.65;
       this.crystalVal[i] += (target - this.crystalVal[i]) * Math.min(1, dt * 2);
       this.crystalGlow.setX(i, this.crystalVal[i] * (0.8 + (reduced ? 0 : 0.2 * Math.sin(this.time * 2 + i))));
     }
@@ -1663,11 +1682,13 @@ export class AuraSystem extends createSystem({
   }
 
   private updateAudio(): void {
+    const flowNow = Math.min(1, this.beamLv[0] + this.beamLv[1] + this.beamLv[2] + this.threadLv[0] + this.threadLv[1] + this.threadLv[2]);
+    aa.update(flowNow);
     if (this.paused) return;
     this.bend += ((this.sel >= 0 ? this.lv.elems[this.sel].a / stepsOf(this.lv.elems[this.sel]) : 0) - this.bend) * 0.1;
     const awakeN = this.gates.filter((g) => g.awake).length;
     const tl = this.threadLv;
-    sfx.auraBeams(Math.min(1, this.beamLv[0] * (0.6 + 0.4 * (awakeN > 0 ? 1 : 0)) + tl[0]), Math.min(1, this.beamLv[1] + tl[1]), Math.min(1, this.beamLv[2] + tl[2]), this.bend);
+    aa.beams(Math.min(1, this.beamLv[0] * (0.6 + 0.4 * (awakeN > 0 ? 1 : 0)) + tl[0]), Math.min(1, this.beamLv[1] + tl[1]), Math.min(1, this.beamLv[2] + tl[2]), this.bend);
   }
 
   // ================================================================ drawing (canvas panels)

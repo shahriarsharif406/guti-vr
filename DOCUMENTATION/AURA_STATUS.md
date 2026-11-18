@@ -35,3 +35,12 @@ Run the checks: `npx tsc --noEmit`, `npm test`, then `npm run build && npx vite 
 - IMPLEMENTED: new glass-style panels for the title, chapter list, in-game HUD (bigger text), progress compass and completion card; new pill buttons with an icon badge and accent colour for the game row, ERA/HINT, chapter select and the 12 settings.
 - TESTED: tsc clean; npm test passes (4 suites); browser e2e (desktop Chromium, software GL) passes all checks incl. 15 puzzles; a mouse drag of a mirror on the enlarged board changed its angle; screenshots of title, chapters, a thread puzzle, a light puzzle and the pause menu were looked at.
 - NOT VERIFIED: any headset, XR ray/hand input on the scaled board, frame rate, legibility at real headset distance. Some icon glyphs (e.g. lightning, gear) depend on the system font.
+
+## Round 2 (audio, board, ledge art)
+- IMPLEMENTED: new `src/auraaudio.ts`: original procedural score (lydian pad, harp-like plucks fanning out from the centre to the edges, bell accents, dotted echo, long reverb) and event sounds (mirror tick tied to angle, gate-awaken chime cascade, solved swell, finale, grab, thread snip, whoosh, UI click, beam hum voices). Routed through the shared master compressor/limiter; voice cap 48. Aura sets `auraRoom.music` while open, so the workshop music steps aside (Aura music is the only music); on leaving Aura the music bus fades to 0 and Aura sounds are gated.
+- Why it was silent: Aura only used the small shared effects (gain ~0.05) with the quiet workshop pad; no dedicated score existed and nothing was audible in practice. This is a diagnosis from the code and a headless run, not from listening.
+- IMPLEMENTED: loom scale 1.2 to 1.3 (board bigger, HUD pulled closer so it stays on screen in a 1100x650 desktop view); compass moved inward.
+- IMPLEMENTED: ledge redesign: gold trim rails, glow strip, smooth glass lanterns on gold bases instead of spiky cones, rounded lotus petals. Lotuses still bloom per solved puzzle and the lanterns still light with progress.
+- TESTED: tsc clean for Aura files; npm test (81/64/39/48 pass); Aura browser e2e 35 checks pass (desktop, software GL).
+- TESTED (partly): headless run shows the AudioContext running, non-zero output, peak below 0 dBFS (sparse sampling at about 1 fps, so the true peak is not measured), music bus 0 after leaving Aura.
+- NOT VERIFIED: how it sounds (nobody listened), loudness balance, headset behaviour, FPS, the new look at real headset distance.

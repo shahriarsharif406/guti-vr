@@ -255,9 +255,11 @@ function petalGeometry(): BufferGeometry {
   if (petalGeo) return petalGeo;
   const s = new Shape();
   s.moveTo(0, 0);
-  s.quadraticCurveTo(0.014, 0.018, 0, 0.05);
-  s.quadraticCurveTo(-0.014, 0.018, 0, 0);
-  petalGeo = new ShapeGeometry(s, 6);
+  // soft teardrop petal: a full belly and a rounded tip (the old needle shape read as spiky stars)
+  s.bezierCurveTo(0.024, 0.01, 0.024, 0.036, 0.004, 0.048);
+  s.quadraticCurveTo(0, 0.052, -0.004, 0.048);
+  s.bezierCurveTo(-0.024, 0.036, -0.024, 0.01, 0, 0);
+  petalGeo = new ShapeGeometry(s, 10);
   return petalGeo;
 }
 export interface Lotus {
