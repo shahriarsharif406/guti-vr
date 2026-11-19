@@ -497,6 +497,23 @@ export class AuraSystem extends createSystem({
     const w = window as unknown as Record<string, unknown>;
     w.__aura = () => ({ screen: this.screen, puzzle: this.pz?.id, stats: this.save.stats, msg: this.msgT > 0 ? this.msg : '', hints: this.save.hints, count: this.puzzles.length, unlocked: this.save.unlocked, time: this.save.time, settings: this.save.settings, mode: modeState.mode, level: this.level, solved: this.tr?.solved, ok: this.tr?.ok, got: this.tr?.got, awake: this.gates.map((g) => g.awake), saved: this.save.solved, restore: this.restore, moves: this.moves, paused: this.paused, finaleT: this.finaleT, sol: this.sol, ang: this.lv?.elems.map((e) => e.a) });
     w.__auraLevel = (i: number) => this.loadLevel(i);
+    // demo-mode hooks: start a level as the play button would, and world positions of the rotatable elements
+    w.__auraPlay = (i: number) => this.startLevel(i);
+    w.__auraDemo = () => ({
+      screen: this.screen,
+      light: !this.tp && this.lv.elems.length > 0,
+      solved: this.tr?.solved,
+      sol: this.sol,
+      rot: this.rotIdx(),
+      elems: this.lv.elems.map((e) => ({
+        rot: e.rot,
+        a: e.a,
+        n: stepsOf(e),
+        span: e.kind === 'prism' ? Math.PI * 2 : Math.PI,
+        pos: [this.root.position.x + e.x * this.root.scale.x, this.root.position.y + e.y * this.root.scale.x, BZ + 0.04],
+      })),
+      scale: this.root.scale.x,
+    });
     w.__auraAudio = () => ({ ...aa.state(), peak: aa.peak() });
     w.__auraRender = renderAuraEvent;
     w.__auraInfo = () => ({ geometries: this.world.renderer.info.memory.geometries, textures: this.world.renderer.info.memory.textures, programs: this.world.renderer.info.programs?.length ?? 0, children: this.elemGroup.children.length + this.srcGroup.children.length, listeners: this.cleanupFuncs.length });

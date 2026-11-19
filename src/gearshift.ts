@@ -981,6 +981,20 @@ export class GearShiftSystem extends createSystem({
       return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
     };
     w.__gearLevel = (i: number) => this.loadLevel(i);
+    // demo-mode hook: world positions of rack items, pegs and levers (so scripted hands can physically reach them)
+    w.__gearDemo = () => ({
+      items: this.items.map((it) => [it.x, BY + it.y, BZ + 0.04]),
+      held: this.items.map((it) => it.held),
+      pegs: this.lv.pegs.map((p) => [p.x, BY + p.y, BZ + 0.04]),
+      solution: this.lv.solution.slice(),
+      placement: this.placement.slice(),
+      master: [this.master.x, BY + this.master.top - this.master.pos * TRAVEL, BZ + 0.078],
+      clutch: [this.clutch.x, BY + this.clutch.top - this.clutch.pos * TRAVEL, BZ + 0.078],
+      travel: TRAVEL,
+      clutchNeeded: needsClutch(this.level),
+      solved: this.solved,
+      pointers: this.pointers.map((q) => ({ src: q.src, down: q.down, was: q.was, x: +q.pos.x.toFixed(3), y: +q.pos.y.toFixed(3), lever: !!q.lever })),
+    });
     w.__gearWin = () => this.finishWin();
     w.__gearGrade = () => ({ line: this.gradeLine, mistakes: this.mistakes });
     w.__gearPegs = () => this.lv.pegs;

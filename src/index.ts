@@ -33,6 +33,10 @@ World.create(
   world.registerSystem(RaceSystem);
   world.registerSystem(AuraSystem);
   world.registerSystem(SpellforgeSystem);
+  // dev-only autoplay demo (?demo=all): dead code in production builds
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('demo')) {
+    import('./demo.js').then((m) => m.startDemo(world));
+  }
   const boot = document.getElementById('boot');
   if (boot) {
     boot.style.opacity = '0';

@@ -305,6 +305,7 @@ export class RaceSystem extends createSystem({
       raceT: this.sim?.raceT,
       result: this.result,
       settings: this.set,
+      win: this.sim ? this.sim.window() : null,
     });
     w.__raceOpen = () => this.enter();
     w.__racePress = (id: number) => this.press(id);
